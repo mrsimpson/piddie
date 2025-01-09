@@ -1284,3 +1284,92 @@ sequenceDiagram
    - Adapt to user patterns
    - Improve over time
    - Share common patterns
+
+## Workspace State Management
+
+### Purpose
+Manages the overall IDE workspace state, persisting user preferences and session information across browser refreshes.
+
+### Components
+
+#### 1. Workspace State Manager
+- Responsibilities:
+  - Layout configuration (split panels, sizes)
+  - Open files and tabs
+  - Terminal sessions
+  - Preview states
+  - Active project context
+  - Recent files/actions
+  - Scroll positions
+  - Collapsed folders in file tree
+  - Panel visibility states
+
+```typescript
+interface WorkspaceState {
+  layout: {
+    panels: PanelConfig[];
+    activePanel: string;
+    splitConfiguration: SplitConfig;
+  };
+  openFiles: {
+    paths: string[];
+    active: string;
+    pinned: string[];
+    scrollPositions: Record<string, number>;
+  };
+  terminals: {
+    sessions: TerminalSession[];
+    activeSession: string;
+  };
+  preview: {
+    isVisible: boolean;
+    url?: string;
+    size: PreviewSize;
+  };
+  fileExplorer: {
+    expandedFolders: string[];
+    selectedItems: string[];
+  };
+}
+```
+
+### State Persistence Flow
+
+```mermaid
+sequenceDiagram
+    participant UI as IDE UI
+    participant WM as Workspace Manager
+    participant IDB as IndexedDB
+    
+    Note over UI,IDB: State Change
+    UI->>WM: State Update
+    WM->>WM: Debounce Changes
+    WM->>IDB: Persist State
+    
+    Note over UI,IDB: Session Restore
+    UI->>WM: Initialize Workspace
+    WM->>IDB: Load State
+    WM->>UI: Restore Layout
+    WM->>UI: Reopen Files
+    WM->>UI: Restore Terminal Sessions
+```
+
+### Key Features
+
+1. **State Persistence**
+   - Automatic state saving
+   - Session recovery
+   - Layout persistence
+   - Cross-session continuity
+
+2. **Layout Management**
+   - Panel configurations
+   - Split views
+   - Size preferences
+   - View states
+
+3. **Session Context**
+   - Open files tracking
+   - Active terminals
+   - Preview states
+   - Recent actions
