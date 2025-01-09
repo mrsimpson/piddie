@@ -31,10 +31,10 @@ graph TD
     end
 
     subgraph "Core Systems"
-        PM[Prompt Manager]
+        CHM[Chat Manager]
+        CM[Context Manager]
         AM[Actions Manager]
         WM[Workspace Manager]
-        SM[Status Manager]
     end
 
     subgraph "File Management"
@@ -48,12 +48,12 @@ graph TD
         SH[Shell Handler]
     end
 
-    UI --> PM
+    UI --> CHM
     UI --> WM
     UI --> SM
     ED --> LFS
     
-    PM --> AM
+    CHM --> AM
     AM --> LFS
     AM --> WC
     
@@ -76,20 +76,20 @@ graph TD
 sequenceDiagram
     actor User
     participant UI as Web IDE UI
-    participant PM as Prompt Manager
+    participant CHM as Chat Manager
     participant AM as Actions Manager
     participant LFS as Lightning FS
     participant IG as isomorphic-git
     participant WC as WebContainer
     
     User->>UI: Submit Message
-    UI->>PM: Forward Message
+    UI->>CHM: Forward Message
     
-    activate PM
-    PM->>PM: Build Context
-    PM->>LLM: Send Prompt
-    LLM-->>PM: Response
-    PM->>AM: Execute Actions
+    activate CHM
+    CHM->>CHM: Request Context
+    CHM->>LLM: Send Message
+    LLM-->>CHM: Response
+    CHM->>AM: Execute Actions
     
     activate AM
     AM->>IG: Create Safety Commit
@@ -99,8 +99,8 @@ sequenceDiagram
     WC-->>AM: Sync Complete
     deactivate AM
     
-    PM-->>UI: Update Complete
-    deactivate PM
+    CHM-->>UI: Update Complete
+    deactivate CHM
 ```
 
 #### 2. Editor to Disk Flow
@@ -110,7 +110,7 @@ sequenceDiagram
     actor User
     participant ED as Monaco Editor
     participant LFS as Lightning FS
-    participant PM as Prompt Manager
+    participant CM as Context Manager
     participant FSW as File Sync Watcher
     participant LD as Local Disk
     
@@ -121,95 +121,129 @@ sequenceDiagram
         LFS->>FSW: Notify Change
         FSW->>LD: Sync to Disk
     and Context Update
-        LFS->>PM: Record Change
-        PM->>PM: Update Context
+        LFS->>CM: Record Change
+        CM->>CM: Update Context
     end
     
-    Note over PM: Change available for next LLM interaction
+    Note over CM: Change available for next LLM interaction
 ```
 
 ## System Components
 
-### 1. Prompt Management System
+### 1. Chat and Context System
 
 #### Purpose
-Manages the construction and organization of prompts sent to LLMs, ensuring consistent formatting and proper context inclusion.
+Manages the chat interaction flow with LLMs and maintains comprehensive context through the Context Manager.
 
 #### Components
-1. **Prompt Manager**
-   - Responsibilities:
-     - Assembles final prompts from multiple sources
-     - Manages project file context
-     - Coordinates file filtering
-     - Handles prompt template loading
-   - Key Interfaces:
-     ```typescript
-     interface PromptManager {
-       // Core prompt management
-       handleMessage(message: string): Promise<LLMResponse>;
-       buildContext(): Promise<PromptContext>;
-       
-       // Context management
-       recordManualChanges(changes: ManualChange[]): void;
-       getChangeContext(): ManualChange[];
-       
-       // Configuration
-       setSystemPrompt(prompt: string): void;
-       setProjectPrompt(prompt: string): void;
-       updateFileFilters(filters: FileFilter[]): void;
-     }
 
-     interface PromptContext {
-       systemPrompt: string;
-       projectPrompt?: string;
-       fileContext: FileContext[];
-       recentChanges: ManualChange[];
-       chatHistory: ChatMessage[];
-     }
+1. **Chat Manager**
+   - Core Responsibilities:
+     - Handle message processing and LLM interaction
+     - Coordinate with Context Manager for context needs
+     - Process and validate LLM responses
+   - Interface:
+   ```typescript
+   interface ChatManager {
+     // Core chat/LLM interaction
+     handleMessage(message: string): Promise<LLMResponse>;
+   }
+   ```
 
-     interface FileContext {
-       path: string;
-       content: string;
-       lastModified: Date;
-       gitHistory?: GitFileHistory;
-     }
+2. **Context Manager**
+   - Core Responsibilities:
+     - Full ownership of all context including system/project prompts
+     - Control all context sources and their integration
+     - Handle context optimization and relevance
+   - Interface:
+   ```typescript
+   interface ContextManager {
+     // Prompt configuration
+     setSystemPrompt(prompt: string): void;
+     setProjectPrompt(prompt: string): void;
+     
+     // Context assembly
+     getContext(options?: ContextOptions): Promise<Context>;
+     
+     // Context sources
+     addContextSource(source: ContextSource): void;
+     removeContextSource(sourceId: string): void;
+     
+     // Source configuration
+     configureSource(sourceId: string, config: SourceConfig): void;
+     setPriority(sourceId: string, priority: number): void;
+     
+     // Context state management
+     updateContext(source: string, data: any): void;
+     invalidateContext(source?: string): void;
+     
+     // Context optimization
+     pruneContext(maxTokens: number): void;
+     
+     // Context types
+     addFileContext(file: FileInfo): void;
+     addDocContext(doc: Documentation): void;
+     addChatHistory(messages: Message[]): void;
+     addWorkspaceState(state: WorkspaceState): void;
+   }
+   ```
 
-     interface ManualChange {
-       type: 'MODIFY' | 'CREATE' | 'DELETE';
-       path: string;
-       content?: string;
-       previousContent?: string;
-       timestamp: Date;
-     }
+#### Interaction Flow
 
-     interface LLMResponse {
-       message: string;
-       actions: Action[];
-       metadata: {
-         model: string;
-         temperature?: number;
-         timestamp: Date;
-       };
-     }
-     ```
+```mermaid
+sequenceDiagram
+    actor User
+    participant IDE as Web IDE UI
+    participant CHM as Chat Manager
+    participant CM as Context Manager
+    participant Sources as Context Sources
+    participant LLM as LLM Provider
 
-2. **File Filtering System**
-   - Architecture: Chain of Responsibility pattern
-   - Responsibilities:
-     - Filter project files based on various criteria
-     - Provide extensible filtering mechanism
-     - Allow dynamic filter chain construction
-   - Available Filters:
-     - ExtensionFilter: Filters by file extension
-     - IgnorePatternFilter: Excludes files matching patterns
-     - SizeFilter: Limits file sizes
+    User->>IDE: Submit Message
+    IDE->>CHM: Forward Message
 
-3. **Prompt Construction Pipeline**
-   - Steps:
-     1. Load system prompt (formatting conventions)
-     2. Gather filtered project context
-     3. Include custom `.llmprompt` if present
-     4. Append user message
+    activate CHM
+    CHM->>CM: Request Context
+    
+    activate CM
+    CM->>CM: Load System/Project Prompts
+    
+    par Context Collection
+        CM->>Sources: Request File Context
+        CM->>Sources: Request Doc Context
+        CM->>Sources: Request Chat History
+        CM->>Sources: Request Workspace State
+    end
+    
+    CM->>CM: Assemble & Optimize
+    CM-->>CHM: Return Full Context
+    deactivate CM
+    
+    CHM->>LLM: Send Message with Context
+    LLM-->>CHM: Response
+    
+    CHM-->>IDE: Return Result
+    deactivate CHM
+```
+
+#### Key Features
+
+1. **Clear Separation of Responsibilities**
+   - Prompt Manager focuses solely on chat/LLM interaction
+   - Context Manager has complete control over all context-related operations
+
+2. **Comprehensive Context Management**
+   - Full ownership of all context sources
+   - Dynamic source prioritization
+   - Intelligent context assembly
+   - Token budget management
+
+3. **Flexible Context Sources**
+   - File context (open files, project files)
+   - Documentation context
+   - Chat history
+   - Workspace state
+   - Custom context providers
 
 ### 2. LLM Integration Layer
 
@@ -233,14 +267,13 @@ Provides unified access to multiple LLM providers while maintaining a consistent
 
 ## Data Flow
 
-### Prompt Processing Flow
-1. User submits prompt through IDE interface
-2. Prompt Manager:
-   - Loads system prompt
-   - Add optinoal project prompt
-   - Filters project files through filter chain
-   - Assembles final prompt
-3. LangChain processes prompt
+### Chat Processing Flow
+1. User submits message through IDE interface
+2. Chat Manager:
+   - Coordinates with Context Manager
+   - Processes message with LLM
+   - Handles response processing
+3. LangChain processes message
 4. litellm forwards to appropriate LLM
 5. Response returned to IDE
 
@@ -502,34 +535,24 @@ sequenceDiagram
     participant ME as Monaco Editor
     participant EM as Editor Manager
     participant LFS as Lightning FS
+    participant CHM as Chat Manager
     participant IG as isomorphic-git
     participant SW as Sync Watcher
     participant LS as Local Storage
 
     ME->>EM: File Changed
-    activate EM
     
-    Note over EM: Debounce Changes
-    
-    EM->>LFS: Write Changes
-    activate LFS
-    
-    alt Auto-commit enabled
+    par File System Update
+        EM->>LFS: Write Changes
         LFS->>IG: Stage Changes
         IG->>IG: Create Commit
+    and Context Update
+        EM->>CHM: Update File Context
+        CHM->>CHM: Update Context Cache
     end
     
     LFS-->>SW: Change Detected
-    activate SW
     SW->>LS: Sync Changes
-    LS-->>SW: Sync Complete
-    deactivate SW
-    
-    LFS-->>EM: Write Complete
-    deactivate LFS
-    
-    EM-->>ME: Update Editor State
-    deactivate EM
 ```
 
 #### Key Features
@@ -584,15 +607,10 @@ interface ManualChange {
   timestamp: Date;
 }
 
-// In Prompt Manager
-interface PromptManager {
-  // ... other methods
-
-  // Record manual changes for context
-  recordManualChanges(changes: ManualChange[]): void;
-  
-  // Get relevant changes for context
-  getChangeContext(): ManualChange[];
+// In Chat Manager
+interface ChatManager {
+  // Core chat/LLM interaction
+  handleMessage(message: string): Promise<LLMResponse>;
 }
 
 // Example integration with Editor
@@ -603,8 +621,8 @@ editor.onDidChangeContent(async (change) => {
     editor.getValue()
   );
 
-  // Record change in Prompt Manager for context
-  promptManager.recordManualChanges([{
+  // Record change in Context Manager for context
+  contextManager.recordManualChanges([{
     type: 'MODIFY',
     path: currentFile.path,
     content: editor.getValue(),
@@ -616,8 +634,8 @@ editor.onDidChangeContent(async (change) => {
 
 This ensures:
 1. Changes are available as context for next LLM interaction
-2. Prompt Manager maintains full conversation context
-3. Clear separation between action execution (Actions Manager) and context tracking (Prompt Manager)
+2. Context Manager maintains full conversation context
+3. Clear separation between action execution (Actions Manager) and context tracking (Context Manager)
 4. Changes are properly timestamped for chronological context
 
 ### Conflict Resolution Flow
@@ -709,15 +727,15 @@ Manages file changes resulting from LLM interactions through the Actions Manager
 ```mermaid
 sequenceDiagram
     participant LLM as LLM
-    participant PM as Prompt Manager
+    participant CHM as Chat Manager
     participant AM as Actions Manager
     participant FCH as File Change Handler
     participant LFS as Lightning FS
     participant IG as isomorphic-git
     
-    LLM-->>PM: Response
-    activate PM
-    PM->>AM: Parse Response
+    LLM-->>CHM: Response
+    activate CHM
+    CHM->>AM: Parse Response
     
     activate AM
     AM->>FCH: Execute File Changes
@@ -745,10 +763,10 @@ sequenceDiagram
     end
     deactivate FCH
     
-    AM-->>PM: Action Results
+    AM-->>CHM: Action Results
     deactivate AM
-    PM-->>User: Final Response
-    deactivate PM
+    CHM-->>User: Final Response
+    deactivate CHM
 ```
 
 ### File Change Action Structure
@@ -848,15 +866,15 @@ Interprets and executes various types of actions derived from LLM responses, pro
 ```mermaid
 sequenceDiagram
     participant LLM as LLM
-    participant PM as Prompt Manager
+    participant CHM as Chat Manager
     participant AM as Actions Manager
     participant FCH as File Change Handler
     participant CEH as Code Execution Handler
     participant CH as Config Handler
     
-    LLM-->>PM: Response
-    activate PM
-    PM->>AM: Parse & Execute Actions
+    LLM-->>CHM: Response
+    activate CHM
+    CHM->>AM: Parse & Execute Actions
     
     activate AM
     Note over AM: Analyze Response
@@ -882,10 +900,10 @@ sequenceDiagram
         deactivate CH
     end
     
-    AM-->>PM: Action Results
+    AM-->>CHM: Action Results
     deactivate AM
-    PM-->>User: Final Response
-    deactivate PM
+    CHM-->>User: Final Response
+    deactivate CHM
 ```
 
 ### Action Interface
@@ -1518,14 +1536,14 @@ interface ScaffoldingAction extends Action {
 ```mermaid
 sequenceDiagram
     participant User
-    participant PM as Prompt Manager
+    participant CHM as Chat Manager
     participant AM as Actions Manager
     participant SH as Scaffolding Handler
     participant FCH as File Change Handler
     participant LFS as Lightning FS
 
-    User->>PM: "Create a React app with TypeScript and testing"
-    PM->>AM: Create Scaffold Action
+    User->>CHM: "Create a React app with TypeScript and testing"
+    CHM->>AM: Create Scaffold Action
     
     activate AM
     AM->>SH: Execute Scaffolding
