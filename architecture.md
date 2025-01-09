@@ -648,3 +648,159 @@ interface ActionMetadata {
    - Performance metrics
    - Error reporting
    - Audit trail
+
+## Preview System
+
+### Purpose
+Provides a development environment with live preview capabilities by running code through WebContainers, managing shell interactions, and displaying the running application.
+
+### Components
+
+#### 1. WebContainer Manager
+- Responsibilities:
+  - Boot and manage WebContainer instance
+  - Mount file system from Lightning FS
+  - Handle container lifecycle
+  - Manage environment setup
+  - Subscribe to Lightning FS events
+  - Handle incremental file updates
+  - Manage file system synchronization
+- Key Features:
+  - Single container instance per session
+  - File system synchronization
+  - Environment persistence
+  - Resource cleanup
+  - Direct FS event subscription
+  - Incremental sync support
+  - Change debouncing
+
+#### 2. Shell Handler
+- Responsibilities:
+  - Manage terminal instance
+  - Execute commands
+  - Stream command output
+  - Handle user input
+- Features:
+  - Command history
+  - Output streaming
+  - Error handling
+  - Interactive shell support
+
+#### 3. Preview Component
+- Responsibilities:
+  - Display running application
+  - Handle preview refresh
+  - Manage preview state
+  - Handle preview errors
+- Features:
+  - Iframe isolation
+  - Port management
+  - Live reload
+  - Error overlay
+
+### Integration Flow
+
+```mermaid
+sequenceDiagram
+    participant LFS as Lightning FS
+    participant WCM as WebContainer Manager
+    participant SH as Shell Handler
+    participant PC as Preview Component
+    
+    Note over LFS,PC: Initial Setup
+    WCM->>LFS: Mount & Subscribe to Events
+    WCM->>WCM: Boot WebContainer
+    WCM->>WCM: Initial File System Sync
+    
+    Note over LFS,PC: File Change Flow
+    LFS->>WCM: File System Event
+    WCM->>WCM: Debounce Changes
+    WCM->>WCM: Sync to Container
+    
+    alt Build Required
+        WCM->>SH: Trigger Build
+        SH-->>PC: Update Preview
+    end
+```
+
+### Key Interactions
+
+1. **File System to WebContainer**
+```typescript
+interface WebContainerSync {
+  syncFiles(): Promise<void>;
+  watchChanges(): void;
+  handleFileUpdates(path: string): Promise<void>;
+}
+```
+
+2. **Shell Command Execution**
+```typescript
+interface ShellExecution {
+  executeCommand(command: string): Promise<CommandResult>;
+  startDevServer(): Promise<void>;
+  killProcess(pid: number): Promise<void>;
+}
+```
+
+3. **Preview Management**
+```typescript
+interface PreviewManager {
+  updatePreview(url: string): void;
+  handlePreviewError(error: Error): void;
+  reload(): Promise<void>;
+}
+```
+
+### Development Workflow
+
+1. **Initial Setup**
+   - Mount Lightning FS contents to WebContainer
+   - Initialize development environment
+   - Start shell instance
+
+2. **File Changes**
+   - Detect changes in Lightning FS
+   - Sync to WebContainer
+   - Trigger rebuild if needed
+   - Update preview
+
+3. **Command Execution**
+   - User enters command in shell
+   - Execute in WebContainer
+   - Stream output to terminal
+   - Update preview if needed
+
+### Error Handling
+
+1. **Container Errors**
+   - Container boot failures
+   - Resource exhaustion
+   - Environment issues
+
+2. **Preview Errors**
+   - Build failures
+   - Runtime errors
+   - Connection issues
+
+3. **Shell Errors**
+   - Command execution failures
+   - Process termination
+   - Permission issues
+
+### Performance Considerations
+
+1. **Resource Management**
+   - Memory usage monitoring
+   - Process cleanup
+   - Cache management
+
+2. **Preview Optimization**
+   - Debounced updates
+   - Incremental builds
+   - Resource preloading
+
+3. **File System Performance**
+   - Efficient change detection
+   - Batched updates
+   - Selective synchronization
