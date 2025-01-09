@@ -144,10 +144,52 @@ Manages the construction and organization of prompts sent to LLMs, ensuring cons
      - Handles prompt template loading
    - Key Interfaces:
      ```typescript
-     interface PromptManagerConfig {
-       systemPromptPath?: string;
-       defaultUserPromptPath?: string;
-       fileFilters?: FileFilter[];
+     interface PromptManager {
+       // Core prompt management
+       handleMessage(message: string): Promise<LLMResponse>;
+       buildContext(): Promise<PromptContext>;
+       
+       // Context management
+       recordManualChanges(changes: ManualChange[]): void;
+       getChangeContext(): ManualChange[];
+       
+       // Configuration
+       setSystemPrompt(prompt: string): void;
+       setProjectPrompt(prompt: string): void;
+       updateFileFilters(filters: FileFilter[]): void;
+     }
+
+     interface PromptContext {
+       systemPrompt: string;
+       projectPrompt?: string;
+       fileContext: FileContext[];
+       recentChanges: ManualChange[];
+       chatHistory: ChatMessage[];
+     }
+
+     interface FileContext {
+       path: string;
+       content: string;
+       lastModified: Date;
+       gitHistory?: GitFileHistory;
+     }
+
+     interface ManualChange {
+       type: 'MODIFY' | 'CREATE' | 'DELETE';
+       path: string;
+       content?: string;
+       previousContent?: string;
+       timestamp: Date;
+     }
+
+     interface LLMResponse {
+       message: string;
+       actions: Action[];
+       metadata: {
+         model: string;
+         temperature?: number;
+         timestamp: Date;
+       };
      }
      ```
 
@@ -195,8 +237,8 @@ Provides unified access to multiple LLM providers while maintaining a consistent
 1. User submits prompt through IDE interface
 2. Prompt Manager:
    - Loads system prompt
+   - Add optinoal project prompt
    - Filters project files through filter chain
-   - Checks for `.llmprompt` file
    - Assembles final prompt
 3. LangChain processes prompt
 4. litellm forwards to appropriate LLM
