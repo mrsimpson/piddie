@@ -338,6 +338,134 @@ sequenceDiagram
     deactivate SW
 ```
 
+### Editor to File System Flow
+
+#### Purpose
+Handles file changes initiated through the Monaco Editor, ensuring proper synchronization with both the browser-based file system and local storage.
+
+```mermaid
+sequenceDiagram
+    participant ME as Monaco Editor
+    participant EM as Editor Manager
+    participant LFS as Lightning FS
+    participant IG as isomorphic-git
+    participant SW as Sync Watcher
+    participant LS as Local Storage
+
+    ME->>EM: File Changed
+    activate EM
+    
+    Note over EM: Debounce Changes
+    
+    EM->>LFS: Write Changes
+    activate LFS
+    
+    alt Auto-commit enabled
+        LFS->>IG: Stage Changes
+        IG->>IG: Create Commit
+    end
+    
+    LFS-->>SW: Change Detected
+    activate SW
+    SW->>LS: Sync Changes
+    LS-->>SW: Sync Complete
+    deactivate SW
+    
+    LFS-->>EM: Write Complete
+    deactivate LFS
+    
+    EM-->>ME: Update Editor State
+    deactivate EM
+```
+
+#### Key Features
+
+1. **Change Management**
+   - Debounced save operations
+   - Atomic file writes
+   - Change detection
+   - Editor state synchronization
+
+2. **Git Integration**
+   - Optional auto-commit
+   - Change staging
+   - Commit message generation
+   - History tracking
+
+3. **Sync Behavior**
+   - Immediate local sync
+   - Conflict detection
+   - Change queuing
+   - Error recovery
+
+#### Implementation Example
+```typescript
+interface EditorFileSync {
+  // Handle editor content changes
+  handleChange(path: string, content: string): Promise<void>;
+  
+  // Sync to file systems
+  syncToFileSystems(change: FileChange): Promise<void>;
+  
+  // Optional git operations
+  createCommitForChange(change: FileChange): Promise<string>;
+}
+
+// Example usage
+editor.onDidChangeContent(async (change) => {
+  await editorFileSync.handleChange(
+    currentFile.path,
+    editor.getValue()
+  );
+});
+```
+
+#### Manual Change Tracking
+```typescript
+interface ManualChange {
+  type: 'MODIFY';
+  path: string;
+  content: string;
+  previousContent: string;
+  timestamp: Date;
+}
+
+// In Prompt Manager
+interface PromptManager {
+  // ... other methods
+
+  // Record manual changes for context
+  recordManualChanges(changes: ManualChange[]): void;
+  
+  // Get relevant changes for context
+  getChangeContext(): ManualChange[];
+}
+
+// Example integration with Editor
+editor.onDidChangeContent(async (change) => {
+  // Handle file system sync
+  await editorFileSync.handleChange(
+    currentFile.path,
+    editor.getValue()
+  );
+
+  // Record change in Prompt Manager for context
+  promptManager.recordManualChanges([{
+    type: 'MODIFY',
+    path: currentFile.path,
+    content: editor.getValue(),
+    previousContent: previousContent,
+    timestamp: new Date()
+  }]);
+});
+```
+
+This ensures:
+1. Changes are available as context for next LLM interaction
+2. Prompt Manager maintains full conversation context
+3. Clear separation between action execution (Actions Manager) and context tracking (Prompt Manager)
+4. Changes are properly timestamped for chronological context
+
 ### Conflict Resolution Flow
 
 ```mermaid
