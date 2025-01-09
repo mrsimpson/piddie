@@ -1110,15 +1110,21 @@ interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   actions?: Action[];
+  branchId: string;
+  parentMessageId?: string;
+  originalMessageId?: string;
+  version: number;
+  isLatest: boolean;
 }
 
-interface SyncRecord {
+interface ChatBranch {
   id: string;
-  entityType: 'project' | 'chat' | 'file';
-  entityId: string;
-  timestamp: Date;
-  operation: 'create' | 'update' | 'delete';
-  status: 'pending' | 'completed' | 'failed';
+  projectId: string;
+  name: string;
+  createdAt: Date;
+  parentBranchId?: string;
+  rootMessageId: string;
+  isActive: boolean;
 }
 ```
 
@@ -1148,3 +1154,39 @@ sequenceDiagram
         end
     end
 ```
+
+### Chat Branching Flow
+
+```mermaid
+graph TD
+    M1[Message 1] --> M2[Message 2]
+    M2 --> M3[Message 3]
+    M2 --> E1[Edit of Message 2]
+    E1 --> B1[New Branch Message 1]
+    M3 --> M4[Message 4]
+    B1 --> B2[New Branch Message 2]
+
+    style E1 fill:#f9f,stroke:#333
+    style B1 fill:#9ef,stroke:#333
+    style B2 fill:#9ef,stroke:#333
+```
+
+### Branching Scenarios
+
+1. **Message Editing**
+   - Creates new branch from edited message
+   - Maintains reference to original
+   - Previous branch remains intact
+   - New messages continue in new branch
+
+2. **Branch Management**
+   - Multiple active branches
+   - Branch switching
+   - Branch merging (future enhancement)
+   - Branch archiving
+
+3. **Message Relationships**
+   - Parent-child relationships
+   - Branch lineage tracking
+   - Version history
+   - Cross-branch references
