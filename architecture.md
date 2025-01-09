@@ -833,13 +833,26 @@ Provides a full-featured code editing experience integrated with the file system
    - Save operations
    - File creation/deletion
 
-2. **Language Services**
-   - TypeScript/JavaScript support
-   - Language server protocol
-   - Custom completions
-   - Diagnostics
+2. **Navigation Services**
+   - Built-in Monaco Features:
+     - In-file symbol navigation
+     - Basic go-to-definition
+     - File-level search
+     - Simple outline view
+   - Extended Capabilities:
+     - Recent files tracking
+     - Navigation history (back/forward)
+     - Custom file tree integration
+     - Project-wide search
 
-3. **Extension System**
+3. **Future Navigation Enhancements**
+   > Note: To be implemented with LSP
+   - Cross-file references
+   - Project-wide symbol search
+   - Advanced go-to-definition
+   - Type hierarchy navigation
+
+4. **Extension System**
    - Custom commands
    - Keybindings
    - Themes
