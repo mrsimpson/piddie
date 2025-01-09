@@ -1,4 +1,4 @@
-# Web-based IDE Architecture Documentation
+# Prompt-Driven-Development Environment: Architecture Documentation
 
 ## Project Overview
 
@@ -14,7 +14,119 @@ This document describes the architecture of a web-based IDE that implements a pr
 1. Multiple LLM providers should be supported without increasing complexity
 2. The system should be extensible for future agent implementations
 3. Prompt construction requires context from the entire project
-4. Users may want to customize prompt behavior through `.llmprompt` files
+4. Users may want to customize prompt behavior specifically for a project
+5. A seamless interaction between the local file system and the browser file system as well as easy revisioning is essential for a good DX
+
+## System Overview
+
+### Component Architecture
+
+```mermaid
+graph TD
+    subgraph "User Interface"
+        UI[Web IDE UI]
+        ED[Monaco Editor]
+        PV[Preview Panel]
+        TR[Terminal]
+    end
+
+    subgraph "Core Systems"
+        PM[Prompt Manager]
+        AM[Actions Manager]
+        WM[Workspace Manager]
+        SM[Status Manager]
+    end
+
+    subgraph "File Management"
+        LFS[Lightning FS]
+        IG[isomorphic-git]
+        FSW[File Sync Watcher]
+    end
+
+    subgraph "Execution Environment"
+        WC[WebContainer]
+        SH[Shell Handler]
+    end
+
+    UI --> PM
+    UI --> WM
+    UI --> SM
+    ED --> LFS
+    
+    PM --> AM
+    AM --> LFS
+    AM --> WC
+    
+    LFS --> IG
+    LFS --> FSW
+    FSW --> LocalFS[Local File System]
+    
+    WC --> SH
+    WC --> PV
+    WC --> TR
+    
+    style LocalFS fill:#f9f,stroke:#333
+```
+
+### Key Interaction Flows
+
+#### 1. LLM-Driven File Modification Flow
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI as Web IDE UI
+    participant PM as Prompt Manager
+    participant AM as Actions Manager
+    participant LFS as Lightning FS
+    participant IG as isomorphic-git
+    participant WC as WebContainer
+    
+    User->>UI: Submit Message
+    UI->>PM: Forward Message
+    
+    activate PM
+    PM->>PM: Build Context
+    PM->>LLM: Send Prompt
+    LLM-->>PM: Response
+    PM->>AM: Execute Actions
+    
+    activate AM
+    AM->>IG: Create Safety Commit
+    AM->>LFS: Apply File Changes
+    AM->>IG: Create Result Commit
+    AM->>WC: Sync Changes
+    WC-->>AM: Sync Complete
+    deactivate AM
+    
+    PM-->>UI: Update Complete
+    deactivate PM
+```
+
+#### 2. Editor to Disk Flow
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant ED as Monaco Editor
+    participant LFS as Lightning FS
+    participant PM as Prompt Manager
+    participant FSW as File Sync Watcher
+    participant LD as Local Disk
+    
+    User->>ED: Edit File
+    ED->>LFS: Save Changes
+    
+    par File Sync
+        LFS->>FSW: Notify Change
+        FSW->>LD: Sync to Disk
+    and Context Update
+        LFS->>PM: Record Change
+        PM->>PM: Update Context
+    end
+    
+    Note over PM: Change available for next LLM interaction
+```
 
 ## System Components
 
