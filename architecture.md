@@ -804,3 +804,137 @@ interface PreviewManager {
    - Efficient change detection
    - Batched updates
    - Selective synchronization
+
+## Code Editor System
+
+### Purpose
+Provides a full-featured code editing experience integrated with the file system and preview capabilities.
+
+### Components
+
+#### 1. Monaco Editor Manager
+- Responsibilities:
+  - Initialize and configure Monaco instances
+  - Handle file opening/closing
+  - Manage editor state
+  - Coordinate with Lightning FS
+  - Handle language services
+- Key Features:
+  - Multi-file editing
+  - Split views
+  - Minimap
+  - IntelliSense
+  - Custom language services
+
+#### 2. Editor Integration Services
+1. **File System Integration**
+   - Direct integration with Lightning FS
+   - File change notifications
+   - Save operations
+   - File creation/deletion
+
+2. **Language Services**
+   - TypeScript/JavaScript support
+   - Language server protocol
+   - Custom completions
+   - Diagnostics
+
+3. **Extension System**
+   - Custom commands
+   - Keybindings
+   - Themes
+   - Snippets
+
+### Editor Integration Flow
+
+```mermaid
+sequenceDiagram
+    participant LFS as Lightning FS
+    participant EM as Editor Manager
+    participant ME as Monaco Editor
+    participant LS as Language Services
+    
+    Note over LFS,LS: File Open Flow
+    LFS->>EM: File Content
+    EM->>ME: Initialize Editor
+    ME->>LS: Request Language Services
+    LS-->>ME: Provide Completions/Hints
+    
+    Note over LFS,LS: Save Flow
+    ME->>EM: Content Changed
+    EM->>LFS: Save File
+    LFS-->>EM: File Saved
+    
+    Note over LFS,LS: Sync Flow
+    LFS->>EM: External Change
+    EM->>ME: Update Content
+```
+
+### Key Features
+
+1. **Editor Capabilities**
+   - Syntax highlighting
+   - Code completion
+   - Error detection
+   - Find/Replace
+   - Multiple cursors
+   - Code folding
+
+2. **Integration Features**
+   - Direct file system access
+   - Git decoration support
+   - Preview integration
+   - Terminal integration
+
+3. **Performance Features**
+   - Large file handling
+   - Lazy loading
+   - Worker-based processing
+   - Memory management
+
+### Language Services Architecture
+
+#### 1. Initial Implementation: Built-in Monaco Services
+- Basic IntelliSense
+- Syntax highlighting
+- Simple completions
+- File-level analysis
+- TypeScript/JavaScript language support
+- Basic diagnostics
+
+#### 2. Future Enhancements
+
+##### Language Server Protocol (LSP)
+> Note: Planned for future implementation
+- Advanced capabilities through LSP:
+  - Project-wide analysis
+  - Advanced type checking
+  - Dependency resolution
+  - Cross-file refactoring
+
+##### Custom Intelligence System
+> Note: Planned for future implementation
+- LLM-enhanced capabilities:
+  - Context-aware suggestions
+  - Natural language interactions
+  - Project-specific intelligence
+  - Smart diagnostics
+  - Interactive assistance
+
+### Initial Language Support Scope
+1. **JavaScript/TypeScript**
+   - Built-in Monaco support
+   - Type definitions
+   - Basic refactoring
+   - Syntax validation
+
+2. **Common Web Languages**
+   - HTML
+   - CSS
+   - JSON
+   - Markdown
+
+3. **Basic Support for Others**
+   - Syntax highlighting
+   - Basic formatting
+   - Simple completions
