@@ -1386,3 +1386,194 @@ sequenceDiagram
    - Active terminals
    - Preview states
    - Recent actions
+
+## Status & Notification System
+
+### Purpose
+Provides a centralized system for managing, aggregating, and displaying status updates and notifications from various system components, with special handling for long-running and streaming operations.
+
+### Components
+
+#### 1. Status Manager
+- Responsibilities:
+  - Aggregate status updates
+  - Manage notification lifecycle
+  - Handle stream subscriptions
+  - Coordinate status display
+- Key Features:
+  - Stream aggregation
+  - Priority management
+  - Status persistence
+  - Progress tracking
+
+```typescript
+interface StatusManager {
+  // Core status management
+  createStatus(config: StatusConfig): StatusHandle;
+  updateStatus(id: string, update: StatusUpdate): void;
+  completeStatus(id: string, result?: any): void;
+  
+  // Stream handling
+  createStreamStatus<T>(stream: Observable<T>, config: StreamStatusConfig): StatusHandle;
+  attachToStream<T>(statusId: string, stream: Observable<T>): void;
+  
+  // Subscriptions
+  subscribeToStatus(id: string): Observable<StatusUpdate>;
+  subscribeToType(type: StatusType): Observable<StatusUpdate>;
+}
+
+interface StatusConfig {
+  type: StatusType;
+  title: string;
+  message: string;
+  priority?: Priority;
+  progress?: number;
+  cancelable?: boolean;
+  persistent?: boolean;
+}
+
+type StatusType = 
+  | 'llm-processing'
+  | 'file-operation'
+  | 'git-operation'
+  | 'build-process'
+  | 'preview-update'
+  | 'terminal-operation';
+```
+
+#### 2. Notification Hub
+```typescript
+interface NotificationHub {
+  // Notification display
+  show(notification: Notification): void;
+  dismiss(id: string): void;
+  update(id: string, update: Partial<Notification>): void;
+  
+  // Grouping & organization
+  groupNotifications(criteria: GroupingCriteria): void;
+  setDisplayStrategy(strategy: DisplayStrategy): void;
+}
+
+interface Notification extends StatusConfig {
+  id: string;
+  timestamp: Date;
+  actions?: NotificationAction[];
+  progress?: {
+    current: number;
+    total?: number;
+    status?: string;
+  };
+}
+```
+
+### Status Flow
+
+```mermaid
+sequenceDiagram
+    participant C as Component
+    participant SM as Status Manager
+    participant NH as Notification Hub
+    participant UI as UI Components
+    
+    C->>SM: Create Status
+    activate SM
+    SM->>NH: Create Notification
+    NH->>UI: Display Status
+    
+    loop Stream Updates
+        C->>SM: Update Status
+        SM->>NH: Update Notification
+        NH->>UI: Refresh Display
+    end
+    
+    C->>SM: Complete Status
+    SM->>NH: Update Final State
+    NH->>UI: Show Completion
+    deactivate SM
+```
+
+### Integration Examples
+
+1. **LLM Processing**
+```typescript
+// Example of LLM processing status
+statusManager.createStreamStatus(
+  llmResponse$,
+  {
+    type: 'llm-processing',
+    title: 'Processing Request',
+    message: 'Generating code changes...',
+    priority: 'high'
+  }
+);
+```
+
+2. **Build Process**
+```typescript
+// Example of build process with progress
+const status = statusManager.createStatus({
+  type: 'build-process',
+  title: 'Building Project',
+  message: 'Compiling...',
+  progress: 0
+});
+
+buildProcess.on('progress', (progress) => {
+  status.update({ progress });
+});
+```
+
+3. **File Write Stream**
+```typescript
+// Example of file write operation with streaming status
+const writeStatus = statusManager.createStreamStatus(
+  fileWriteStream$,
+  {
+    type: 'file-operation',
+    title: 'Saving large file',
+    message: 'Writing to disk...',
+    priority: 'normal',
+    cancelable: true
+  }
+);
+
+// Example stream implementation
+interface WriteProgress {
+  bytesWritten: number;
+  totalBytes: number;
+  fileName: string;
+}
+
+const fileWriteStream$ = new Observable<WriteProgress>(observer => {
+  let written = 0;
+  const total = file.size;
+  
+  const chunk$ = from(file.chunks).pipe(
+    mergeMap(async chunk => {
+      await LFS.write(chunk);
+      written += chunk.length;
+      observer.next({
+        bytesWritten: written,
+        totalBytes: total,
+        fileName: file.name
+      });
+    }),
+    finalize(() => observer.complete())
+  );
+
+  // Allow cancellation
+  return () => chunk$.unsubscribe();
+});
+
+// Status updates automatically as stream emits
+writeStatus.progress$.subscribe(({ bytesWritten, totalBytes }) => {
+  const percentage = Math.round((bytesWritten / totalBytes) * 100);
+  updateStatusBar(`Writing ${percentage}% complete`);
+});
+```
+
+The status system will:
+- Show write progress in real-time
+- Allow operation cancellation
+- Update UI components automatically
+- Handle errors gracefully
