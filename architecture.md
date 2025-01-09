@@ -1577,3 +1577,80 @@ The status system will:
 - Allow operation cancellation
 - Update UI components automatically
 - Handle errors gracefully
+
+## Error Handling Strategy
+
+### Purpose
+Provides a simple, git-based approach to error handling and recovery, particularly focused on LLM interactions.
+
+### Core Concepts
+
+1. **Safety Commits**
+   - Create automatic safety points before LLM changes
+   - Store interaction metadata in commit messages
+   - Enable clean rollback points
+
+2. **Error Recovery**
+   - Reset to last known good state via git
+   - Clean up any partial changes
+   - Provide clear user feedback
+
+### Implementation
+
+```typescript
+interface LLMActionSafety {
+  // Create safety point before LLM changes
+  createSafetyCommit(): Promise<string>; // returns commit hash
+  
+  // Roll back to last safe state
+  rollback(commitHash: string): Promise<void>;
+}
+
+// Example Usage
+async function handleLLMAction(prompt: string) {
+  const safetyCommit = await createSafetyCommit();
+  
+  try {
+    const result = await executeLLMAction(prompt);
+    return result;
+  } catch (error) {
+    await rollback(safetyCommit);
+    throw new Error(`LLM action failed: ${error.message}`);
+  }
+}
+```
+
+### Error Categories
+
+1. **Recoverable via Git**
+   - Failed LLM actions
+   - Invalid file changes
+   - Syntax errors
+   - Partial completions
+
+2. **System Errors** (non-recoverable)
+   - Git system failures
+   - Storage corruption
+   - Browser crashes
+   - Hardware limitations
+
+### Recovery Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant AM as Action Manager
+    participant Git
+    participant UI
+
+    User->>AM: Execute LLM Action
+    AM->>Git: Create Safety Commit
+    
+    alt Action Succeeds
+        AM->>Git: Commit Changes
+        AM->>UI: Show Success
+    else Action Fails
+        AM->>Git: Reset to Safety Commit
+        AM->>UI: Show Error
+    end
+```
