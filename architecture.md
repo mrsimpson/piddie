@@ -142,51 +142,20 @@ Manages the chat interaction flow with LLMs and maintains comprehensive context 
      - Handle message processing and LLM interaction
      - Coordinate with Context Manager for context needs
      - Process and validate LLM responses
-   - Interface:
-   ```typescript
-   interface ChatManager {
-     // Core chat/LLM interaction
-     handleMessage(message: string): Promise<LLMResponse>;
-   }
-   ```
 
 2. **Context Manager**
    - Core Responsibilities:
      - Full ownership of all context including system/project prompts
      - Control all context sources and their integration
      - Handle context optimization and relevance
-   - Interface:
-   ```typescript
-   interface ContextManager {
-     // Prompt configuration
-     setSystemPrompt(prompt: string): void;
-     setProjectPrompt(prompt: string): void;
-     
-     // Context assembly
-     getContext(options?: ContextOptions): Promise<Context>;
-     
-     // Context sources
-     addContextSource(source: ContextSource): void;
-     removeContextSource(sourceId: string): void;
-     
-     // Source configuration
-     configureSource(sourceId: string, config: SourceConfig): void;
-     setPriority(sourceId: string, priority: number): void;
-     
-     // Context state management
-     updateContext(source: string, data: any): void;
-     invalidateContext(source?: string): void;
-     
-     // Context optimization
-     pruneContext(maxTokens: number): void;
-     
-     // Context types
-     addFileContext(file: FileInfo): void;
-     addDocContext(doc: Documentation): void;
-     addChatHistory(messages: Message[]): void;
-     addWorkspaceState(state: WorkspaceState): void;
-   }
-   ```
+   - Key Operations:
+     - Prompt configuration (system/project)
+     - Context assembly and retrieval
+     - Context source management
+     - Source configuration and prioritization
+     - Context state management
+     - Context optimization
+     - Various context type handling (files, docs, chat, workspace)
 
 #### Interaction Flow
 
@@ -598,41 +567,8 @@ editor.onDidChangeContent(async (change) => {
 ```
 
 #### Manual Change Tracking
-```typescript
-interface ManualChange {
-  type: 'MODIFY';
-  path: string;
-  content: string;
-  previousContent: string;
-  timestamp: Date;
-}
 
-// In Chat Manager
-interface ChatManager {
-  // Core chat/LLM interaction
-  handleMessage(message: string): Promise<LLMResponse>;
-}
-
-// Example integration with Editor
-editor.onDidChangeContent(async (change) => {
-  // Handle file system sync
-  await editorFileSync.handleChange(
-    currentFile.path,
-    editor.getValue()
-  );
-
-  // Record change in Context Manager for context
-  contextManager.recordManualChanges([{
-    type: 'MODIFY',
-    path: currentFile.path,
-    content: editor.getValue(),
-    previousContent: previousContent,
-    timestamp: new Date()
-  }]);
-});
-```
-
-This ensures:
+#### Key Features
 1. Changes are available as context for next LLM interaction
 2. Context Manager maintains full conversation context
 3. Clear separation between action execution (Actions Manager) and context tracking (Context Manager)
@@ -1356,35 +1292,6 @@ graph TD
    - Data backup
    - Cross-device sync
 
-### Data Models
-```typescript
-// Dexie Database Schema
-class ProjectDatabase extends Dexie {
-  projects: Table<Project>;
-  chatHistory: Table<ChatMessage>;
-  syncQueue: Table<SyncRecord>;
-
-  constructor() {
-    super('ProjectDB');
-    this.version(1).stores({
-      projects: 'id, name, lastAccessed',
-      chatHistory: 'id, projectId, timestamp',
-      syncQueue: 'id, entityType, status'
-    });
-  }
-}
-
-interface Project {
-  id: string;
-  name: string;
-  rootPath: string;
-  created: Date;
-  lastAccessed: Date;
-  config: ProjectConfig;
-  syncStatus: SyncStatus;
-}
-```
-
 ### Key Features
 
 1. **Project Isolation**
@@ -1404,42 +1311,6 @@ interface Project {
    - Conflict resolution
    - Change tracking
    - Queue management
-
-### Data Models
-
-```typescript
-interface ProjectMetadata {
-  id: string;
-  name: string;
-  created: Date;
-  lastAccessed: Date;
-  syncStatus: SyncStatus;
-}
-
-interface ChatMessage {
-  id: string;
-  projectId: string;
-  timestamp: Date;
-  role: 'user' | 'assistant';
-  content: string;
-  actions?: Action[];
-  branchId: string;
-  parentMessageId?: string;
-  originalMessageId?: string;
-  version: number;
-  isLatest: boolean;
-}
-
-interface ChatBranch {
-  id: string;
-  projectId: string;
-  name: string;
-  createdAt: Date;
-  parentBranchId?: string;
-  rootMessageId: string;
-  isActive: boolean;
-}
-```
 
 ### Sync Flow
 
@@ -1605,46 +1476,17 @@ Manages the overall IDE workspace state, persisting user preferences and session
 
 ### Components
 
-#### 1. Workspace State Manager
-- Responsibilities:
-  - Layout configuration (split panels, sizes)
-  - Open files and tabs
-  - Terminal sessions
-  - Preview states
-  - Active project context
-  - Recent files/actions
-  - Scroll positions
-  - Collapsed folders in file tree
-  - Panel visibility states
-
-```typescript
-interface WorkspaceState {
-  layout: {
-    panels: PanelConfig[];
-    activePanel: string;
-    splitConfiguration: SplitConfig;
-  };
-  openFiles: {
-    paths: string[];
-    active: string;
-    pinned: string[];
-    scrollPositions: Record<string, number>;
-  };
-  terminals: {
-    sessions: TerminalSession[];
-    activeSession: string;
-  };
-  preview: {
-    isVisible: boolean;
-    url?: string;
-    size: PreviewSize;
-  };
-  fileExplorer: {
-    expandedFolders: string[];
-    selectedItems: string[];
-  };
-}
-```
+1. **Workspace State Manager**
+   - Responsibilities:
+     - Layout configuration (split panels, sizes)
+     - Open files and tabs
+     - Terminal sessions
+     - Preview states
+     - Active project context
+     - Recent files/actions
+     - Scroll positions
+     - Collapsed folders in file tree
+     - Panel visibility states
 
 ### State Persistence Flow
 
@@ -1694,77 +1536,29 @@ Provides a centralized system for managing, aggregating, and displaying status u
 
 ### Components
 
-#### 1. Status Manager
-- Responsibilities:
-  - Aggregate status updates
-  - Manage notification lifecycle
-  - Handle stream subscriptions
-  - Coordinate status display
-- Key Features:
-  - Stream aggregation
-  - Priority management
-  - Status persistence
-  - Progress tracking
+1. **Status Manager**
+   - Responsibilities:
+     - Aggregate status updates
+     - Manage notification lifecycle
+     - Handle stream subscriptions
+     - Coordinate status display
+   - Key Features:
+     - Stream aggregation
+     - Priority management
+     - Status persistence
+     - Progress tracking
 
-```typescript
-interface StatusManager {
-  // Core status management
-  createStatus(config: StatusConfig): StatusHandle;
-  updateStatus(id: string, update: StatusUpdate): void;
-  completeStatus(id: string, result?: any): void;
-  
-  // Stream handling
-  createStreamStatus<T>(stream: Observable<T>, config: StreamStatusConfig): StatusHandle;
-  attachToStream<T>(statusId: string, stream: Observable<T>): void;
-  
-  // Subscriptions
-  subscribeToStatus(id: string): Observable<StatusUpdate>;
-  subscribeToType(type: StatusType): Observable<StatusUpdate>;
-}
-
-interface StatusConfig {
-  type: StatusType;
-  title: string;
-  message: string;
-  priority?: Priority;
-  progress?: number;
-  cancelable?: boolean;
-  persistent?: boolean;
-}
-
-type StatusType = 
-  | 'llm-processing'
-  | 'file-operation'
-  | 'git-operation'
-  | 'build-process'
-  | 'preview-update'
-  | 'terminal-operation';
-```
-
-#### 2. Notification Hub
-```typescript
-interface NotificationHub {
-  // Notification display
-  show(notification: Notification): void;
-  dismiss(id: string): void;
-  update(id: string, update: Partial<Notification>): void;
-  
-  // Grouping & organization
-  groupNotifications(criteria: GroupingCriteria): void;
-  setDisplayStrategy(strategy: DisplayStrategy): void;
-}
-
-interface Notification extends StatusConfig {
-  id: string;
-  timestamp: Date;
-  actions?: NotificationAction[];
-  progress?: {
-    current: number;
-    total?: number;
-    status?: string;
-  };
-}
-```
+2. **Notification Hub**
+   - Responsibilities:
+     - Display notifications
+     - Manage notification lifecycle
+     - Group related notifications
+     - Handle notification actions
+   - Key Features:
+     - Notification grouping
+     - Priority-based display
+     - Action handling
+     - Progress tracking
 
 ### Status Flow
 
@@ -1792,98 +1586,12 @@ sequenceDiagram
     deactivate SM
 ```
 
-### Integration Examples
+### Error Handling Strategy
 
-1. **LLM Processing**
-```typescript
-// Example of LLM processing status
-statusManager.createStreamStatus(
-  llmResponse$,
-  {
-    type: 'llm-processing',
-    title: 'Processing Request',
-    message: 'Generating code changes...',
-    priority: 'high'
-  }
-);
-```
-
-2. **Build Process**
-```typescript
-// Example of build process with progress
-const status = statusManager.createStatus({
-  type: 'build-process',
-  title: 'Building Project',
-  message: 'Compiling...',
-  progress: 0
-});
-
-buildProcess.on('progress', (progress) => {
-  status.update({ progress });
-});
-```
-
-3. **File Write Stream**
-```typescript
-// Example of file write operation with streaming status
-const writeStatus = statusManager.createStreamStatus(
-  fileWriteStream$,
-  {
-    type: 'file-operation',
-    title: 'Saving large file',
-    message: 'Writing to disk...',
-    priority: 'normal',
-    cancelable: true
-  }
-);
-
-// Example stream implementation
-interface WriteProgress {
-  bytesWritten: number;
-  totalBytes: number;
-  fileName: string;
-}
-
-const fileWriteStream$ = new Observable<WriteProgress>(observer => {
-  let written = 0;
-  const total = file.size;
-  
-  const chunk$ = from(file.chunks).pipe(
-    mergeMap(async chunk => {
-      await LFS.write(chunk);
-      written += chunk.length;
-      observer.next({
-        bytesWritten: written,
-        totalBytes: total,
-        fileName: file.name
-      });
-    }),
-    finalize(() => observer.complete())
-  );
-
-  // Allow cancellation
-  return () => chunk$.unsubscribe();
-});
-
-// Status updates automatically as stream emits
-writeStatus.progress$.subscribe(({ bytesWritten, totalBytes }) => {
-  const percentage = Math.round((bytesWritten / totalBytes) * 100);
-  updateStatusBar(`Writing ${percentage}% complete`);
-});
-```
-
-The status system will:
-- Show write progress in real-time
-- Allow operation cancellation
-- Update UI components automatically
-- Handle errors gracefully
-
-## Error Handling Strategy
-
-### Purpose
+#### Purpose
 Provides a simple, git-based approach to error handling and recovery, particularly focused on LLM interactions.
 
-### Core Concepts
+#### Core Concepts
 
 1. **Safety Commits**
    - Create automatic safety points before LLM changes
@@ -1895,32 +1603,7 @@ Provides a simple, git-based approach to error handling and recovery, particular
    - Clean up any partial changes
    - Provide clear user feedback
 
-### Implementation
-
-```typescript
-interface LLMActionSafety {
-  // Create safety point before LLM changes
-  createSafetyCommit(): Promise<string>; // returns commit hash
-  
-  // Roll back to last safe state
-  rollback(commitHash: string): Promise<void>;
-}
-
-// Example Usage
-async function handleLLMAction(prompt: string) {
-  const safetyCommit = await createSafetyCommit();
-  
-  try {
-    const result = await executeLLMAction(prompt);
-    return result;
-  } catch (error) {
-    await rollback(safetyCommit);
-    throw new Error(`LLM action failed: ${error.message}`);
-  }
-}
-```
-
-### Error Categories
+#### Error Categories
 
 1. **Recoverable via Git**
    - Failed LLM actions
@@ -1934,7 +1617,7 @@ async function handleLLMAction(prompt: string) {
    - Browser crashes
    - Hardware limitations
 
-### Recovery Flow
+#### Recovery Flow
 
 ```mermaid
 sequenceDiagram
