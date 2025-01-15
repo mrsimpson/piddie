@@ -50,9 +50,9 @@ graph TD
 
     UI --> CHM
     UI --> WM
-    UI --> SM
     ED --> LFS
     
+    CHM --> CM
     CHM --> AM
     AM --> LFS
     AM --> WC
@@ -133,7 +133,7 @@ sequenceDiagram
 ### 1. Chat and Context System
 
 #### Purpose
-Manages the chat interaction flow with LLMs and maintains comprehensive context through the Context Manager.
+The system is split into two main components: the Chat Manager for handling conversation flow and the Context Manager for comprehensive context assembly and management.
 
 #### Components
 
@@ -142,75 +142,41 @@ Manages the chat interaction flow with LLMs and maintains comprehensive context 
      - Handle message processing and LLM interaction
      - Coordinate with Context Manager for context needs
      - Process and validate LLM responses
+     - Manage conversation flow
+     - Route responses to appropriate action handlers
 
 2. **Context Manager**
    - Core Responsibilities:
      - Full ownership of all context including system/project prompts
-     - Control all context sources and their integration
+     - Assemble and optimize context for each message
+     - Manage message history and summarization
      - Handle context optimization and relevance
    - Key Operations:
-     - Prompt configuration (system/project)
+     - System and project prompt management
      - Context assembly and retrieval
-     - Context source management
-     - Source configuration and prioritization
-     - Context state management
-     - Context optimization
+     - Message history retrieval and summarization
+     - File context filtering and integration
+     - Context source prioritization
+     - Token budget management
      - Various context type handling (files, docs, chat, workspace)
-
-#### Interaction Flow
-
-```mermaid
-sequenceDiagram
-    actor User
-    participant IDE as Web IDE UI
-    participant CHM as Chat Manager
-    participant CM as Context Manager
-    participant Sources as Context Sources
-    participant LLM as LLM Provider
-
-    User->>IDE: Submit Message
-    IDE->>CHM: Forward Message
-
-    activate CHM
-    CHM->>CM: Request Context
-    
-    activate CM
-    CM->>CM: Load System/Project Prompts
-    
-    par Context Collection
-        CM->>Sources: Request File Context
-        CM->>Sources: Request Doc Context
-        CM->>Sources: Request Chat History
-        CM->>Sources: Request Workspace State
-    end
-    
-    CM->>CM: Assemble & Optimize
-    CM-->>CHM: Return Full Context
-    deactivate CM
-    
-    CHM->>LLM: Send Message with Context
-    LLM-->>CHM: Response
-    
-    CHM-->>IDE: Return Result
-    deactivate CHM
-```
 
 #### Key Features
 
 1. **Clear Separation of Responsibilities**
-   - Prompt Manager focuses solely on chat/LLM interaction
-   - Context Manager has complete control over all context-related operations
+   - Chat Manager focuses on conversation flow and LLM interaction
+   - Context Manager handles all context-related operations and prompt assembly
 
 2. **Comprehensive Context Management**
    - Full ownership of all context sources
    - Dynamic source prioritization
    - Intelligent context assembly
    - Token budget management
+   - Message history summarization
 
 3. **Flexible Context Sources**
    - File context (open files, project files)
    - Documentation context
-   - Chat history
+   - Chat history (potentially with with summarization)
    - Workspace state
    - Custom context providers
 
@@ -285,117 +251,6 @@ The architecture is designed to support:
    - Response time optimization
    - Token usage management
    - Request batching capabilities
-
-## Diagrams
-
-### Component Overview
-
-```mermaid
-graph TD
-    subgraph "Frontend"
-        UI[Web IDE UI]
-        PM[Prompt Manager]
-    end
-
-    subgraph "Prompt Management"
-        PM --> |uses| FF[File Filters]
-        PM --> |loads| SP[System Prompt]
-        PM --> |loads| UP[User Prompt/.llmprompt]
-        PM --> |builds| FP[Final Prompt]
-        
-        FF --> |chain| EF[Extension Filter]
-        FF --> |chain| IF[Ignore Filter]
-        FF --> |chain| SF[Size Filter]
-    end
-
-    subgraph "LLM Integration"
-        LC[LangChain.js]
-        LP[litellm Proxy]
-        LC --> LP
-        LP --> |abstracts| LLMs[LLM Providers]
-    end
-
-    UI --> PM
-    PM --> |sends prompt| LC
-```
-
-### Message Processing Sequence
-
-```mermaid
-sequenceDiagram
-    actor User
-    participant IDE as Web IDE UI
-    participant PM as Prompt Manager
-    participant FF as File Filters
-    participant LC as LangChain
-    participant LP as litellm Proxy
-    participant LLM as LLM Provider
-
-    User->>IDE: Submit Message
-    IDE->>PM: Forward Message
-
-    %% Context Collection Phase
-    activate PM
-    PM->>PM: Load System Prompt
-    PM->>PM: Check for .llmprompt
-    PM->>FF: Request File Filtering
-    activate FF
-    FF->>FF: Apply Extension Filter
-    FF->>FF: Apply Ignore Patterns
-    FF->>FF: Apply Size Limits
-    FF-->>PM: Return Filtered Files
-    deactivate FF
-
-    %% Prompt Assembly Phase
-    PM->>PM: Assemble Final Prompt
-    note right of PM: Combines:
-    note right of PM: 1. System Prompt
-    note right of PM: 2. Filtered Files
-    note right of PM: 3. .llmprompt (if exists)
-    note right of PM: 4. User Message
-
-    %% LLM Processing Phase
-    PM->>LC: Send Assembled Prompt
-    deactivate PM
-    activate LC
-    LC->>LP: Forward to litellm
-    activate LP
-    LP->>LLM: Make API Call
-    activate LLM
-    LLM-->>LP: Return Response
-    deactivate LLM
-    LP-->>LC: Forward Response
-    deactivate LP
-    LC-->>IDE: Process & Return Result
-    deactivate LC
-    IDE-->>User: Display Response
-```
-
-### File Filter Chain Structure
-
-```mermaid
-graph LR
-    Input[Project Files] --> EF[Extension Filter]
-    EF --> IF[Ignore Pattern Filter]
-    IF --> SF[Size Filter]
-    SF --> Output[Filtered Files]
-
-    style Input fill:#f9f,stroke:#333,stroke-width:2px
-    style Output fill:#9ff,stroke:#333,stroke-width:2px
-```
-
-The diagrams illustrate:
-
-1. **Component Overview**: Shows the main architectural components and their relationships
-2. **Message Processing Sequence**: Details the step-by-step flow of a user message through the system
-3. **File Filter Chain**: Demonstrates the chain of responsibility pattern used in file filtering
-
-Key interactions shown:
-- User message flow through the system
-- Context collection and prompt assembly process
-- File filtering pipeline
-- LLM integration chain
-- Response processing and return path
 
 ## File Management System
 
