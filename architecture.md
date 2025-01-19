@@ -33,6 +33,7 @@ graph TD
     subgraph "Core Systems"
         CHM[Chat Manager]
         CM[Context Manager]
+        PM[Prompt Manager]
         AM[Actions Manager]
         WM[Workspace Manager]
     end
@@ -51,6 +52,7 @@ graph TD
     ED --> FM
     
     CHM --> CM
+    CM --> PM
     CHM --> AM
     AM --> FM
     
@@ -73,6 +75,7 @@ sequenceDiagram
     participant AM as Actions Manager
     participant FM as Files Manager
     participant WC as WebContainer
+    participant CM as Context Manager
     
     User->>UI: Submit Message
     UI->>CHM: Forward Message
@@ -86,6 +89,7 @@ sequenceDiagram
     activate AM
     AM->>FM: Apply File Changes
     AM->>FM: Create Result Commit
+    FM->>CM: Record Changes
     AM->>WC: Sync Changes
     WC-->>AM: Sync Complete
     deactivate AM
@@ -101,16 +105,18 @@ sequenceDiagram
     participant ED as Editor
     participant FM as Files Manager
     participant CM as Context Manager
+    participant WC as WebContainer
     
-    Note over ED,CM: File Open
+    Note over ED,FM: File Open
     ED->>FM: Open File Request
     FM->>FM: Load from Storage
     FM-->>ED: File Contents
     
-    Note over ED,CM: File Save
+    Note over ED,WC: File Save
     ED->>FM: Save File
     FM->>FM: Write to Storage
     FM->>FM: Trigger Local Sync
+    FM->>WC: Sync to WebContainer
     FM->>CM: Record Change
     CM-->>ED: Update Status
 ```
@@ -134,12 +140,12 @@ The system is split into two main components: the Chat Manager for handling conv
 
 2. **Context Manager**
    - Core Responsibilities:
-     - Full ownership of all context including system/project prompts
-     - Assemble and optimize context for each message
+     - Full ownership of all context required for LLM interactions.
+     - Assemble and optimize the complete context for each message, including the compiled prompt obtained from the Prompt Manager.
      - Manage message history and summarization
      - Handle context optimization and relevance
    - Key Operations:
-     - System and project prompt management
+     - Request the compiled prompt from the Prompt Manager.
      - Context assembly and retrieval
      - Message history retrieval and summarization
      - File context filtering and integration
@@ -147,11 +153,25 @@ The system is split into two main components: the Chat Manager for handling conv
      - Token budget management
      - Various context type handling (files, docs, chat, workspace)
 
+3. **Prompt Manager**
+    - Core Responsibilities:
+      - Manage and customize prompts used for LLM interactions.
+      - **Construct the compiled prompt for LLM interactions, which may involve combining system prompts, project-specific prompts, and the current user message.**
+    - Key Operations:
+      - Storing and retrieving prompt templates.
+      - Managing system prompts (global and project-specific).
+      - Compiling the final prompt based on relevant templates and context.
+      - Dynamically generating prompt components.
+      - Allowing users to customize prompts.
+      - Versioning and potentially evaluating prompts.
+      - Providing the compiled prompt to the Context Manager.
+
 #### Key Features
 
 1. **Clear Separation of Responsibilities**
    - Chat Manager focuses on conversation flow and LLM interaction
    - Context Manager handles all context-related operations and prompt assembly
+   - Prompt Manager handles everything that it related to the actual user message and intent
 
 2. **Comprehensive Context Management**
    - Full ownership of all context sources
@@ -298,6 +318,9 @@ Provides a robust file management system that works primarily in the browser whi
   - Conflict states
 
 #### 5. WebContainer Sync
+
+While the File watcher handles synchronization with the local file system, the WebContainer Sync does something similar with respect to the WebContainer that provides the preview execution environment.
+
 The WebContainer Sync component is responsible for:
 - Maintain synchronization between Files Manager and WebContainer filesystem
 - Convert Files Manager events to WebContainer mount/write operations
