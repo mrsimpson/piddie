@@ -38,9 +38,7 @@ graph TD
     end
 
     subgraph "File Management"
-        LFS[Lightning FS]
-        IG[isomorphic-git]
-        FSW[File Sync Watcher]
+        FM[Files Manager]
     end
 
     subgraph "Execution Environment"
@@ -50,22 +48,17 @@ graph TD
 
     UI --> CHM
     UI --> WM
-    ED --> LFS
+    ED --> FM
     
     CHM --> CM
     CHM --> AM
-    AM --> LFS
-    AM --> WC
+    AM --> FM
     
-    LFS --> IG
-    LFS --> FSW
-    FSW --> LocalFS[Local File System]
+    FM --> WC
     
     WC --> SH
     WC --> PV
     WC --> TR
-    
-    style LocalFS fill:#f9f,stroke:#333
 ```
 
 ### Key Interaction Flows
@@ -78,8 +71,7 @@ sequenceDiagram
     participant UI as Web IDE UI
     participant CHM as Chat Manager
     participant AM as Actions Manager
-    participant LFS as Lightning FS
-    participant IG as isomorphic-git
+    participant FM as Files Manager
     participant WC as WebContainer
     
     User->>UI: Submit Message
@@ -92,9 +84,8 @@ sequenceDiagram
     CHM->>AM: Execute Actions
     
     activate AM
-    AM->>IG: Create Safety Commit
-    AM->>LFS: Apply File Changes
-    AM->>IG: Create Result Commit
+    AM->>FM: Apply File Changes
+    AM->>FM: Create Result Commit
     AM->>WC: Sync Changes
     WC-->>AM: Sync Complete
     deactivate AM
@@ -107,25 +98,21 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    actor User
-    participant ED as Monaco Editor
-    participant LFS as Lightning FS
+    participant ED as Editor
+    participant FM as Files Manager
     participant CM as Context Manager
-    participant FSW as File Sync Watcher
-    participant LD as Local Disk
     
-    User->>ED: Edit File
-    ED->>LFS: Save Changes
+    Note over ED,CM: File Open
+    ED->>FM: Open File Request
+    FM->>FM: Load from Storage
+    FM-->>ED: File Contents
     
-    par File Sync
-        LFS->>FSW: Notify Change
-        FSW->>LD: Sync to Disk
-    and Context Update
-        LFS->>CM: Record Change
-        CM->>CM: Update Context
-    end
-    
-    Note over CM: Change available for next LLM interaction
+    Note over ED,CM: File Save
+    ED->>FM: Save File
+    FM->>FM: Write to Storage
+    FM->>FM: Trigger Local Sync
+    FM->>CM: Record Change
+    CM-->>ED: Update Status
 ```
 
 ## System Components
@@ -255,7 +242,7 @@ The architecture is designed to support:
 ## File Management System
 
 ### Purpose
-Provides a robust file management system that works primarily in the browser while maintaining synchronization with the local file system. Uses isomorphic-git and Lightning FS to handle version control and browser-based file storage.
+Provides a robust file management system that works primarily in the browser while maintaining synchronization with the local file system and execution environment.
 
 ### Components
 
@@ -310,44 +297,46 @@ Provides a robust file management system that works primarily in the browser whi
   - Git repository changes
   - Conflict states
 
+#### 5. WebContainer Sync
+The WebContainer Sync component is responsible for:
+- Maintain synchronization between Files Manager and WebContainer filesystem
+- Convert Files Manager events to WebContainer mount/write operations
+- Handle WebContainer file changes and sync back to Files Manager
+- Key Features:
+  - Bidirectional sync
+  - File system format conversion
+  - Change debouncing
+  - Atomic operations
+
 ### File Synchronization Flow
 
 ```mermaid
 sequenceDiagram
-    participant LD as Local Disk
-    participant LS as Local Server
-    participant SW as Sync Watcher
-    participant SM as Sync Manager
-    participant LFS as Lightning FS
-    participant IG as isomorphic-git
+    participant FM as Files Manager
+    participant WC as WebContainer
     
-    Note over LD,IG: Local File Edit Flow
+    Note over FM,WC: Files Manager to WebContainer Flow
+    activate FM
+    FM->>FM: Convert to WebContainer Format
+    FM->>WC: Write File
+    WC-->>FM: Write Complete
+    deactivate FM
     
-    LD->>LS: File changed
-    LS->>SW: Change notification
-    activate SW
-    SW->>SM: Report change
-    
-    activate SM
-    SM->>LD: Read updated file
-    LD-->>SM: File content
-    
-    SM->>IG: Generate diff
-    IG-->>SM: Diff result
-    
-    alt No Conflicts
-        SM->>LFS: Apply changes
-        SM->>IG: Stage changes
-        IG->>IG: Create commit
-    else Conflicts Detected
-        SM->>LFS: Mark conflict
-        SM->>SW: Notify conflict
-    end
-    
-    deactivate SM
-    SW->>LS: Acknowledge sync
-    deactivate SW
+    Note over FM,WC: WebContainer to Files Manager Flow
+    WC->>FM: File Change Event
+    activate FM
+    FM->>FM: Handle File Change
+    FM-->>WC: Change Complete
+    deactivate FM
 ```
+
+The Files Manager handles synchronization with WebContainer, managing the different file system representations and ensuring changes are properly propagated in both directions. This maintains the independence of both systems while ensuring data consistency.
+
+Key aspects of the synchronization:
+1. Files Manager is the source of truth for the file system
+2. WebContainer maintains its own working copy for execution
+3. Changes are synchronized bidirectionally through the Files Manager
+4. The sync process handles format conversion between the systems
 
 ### Editor to File System Flow
 
@@ -358,25 +347,20 @@ Handles file changes initiated through the Monaco Editor, ensuring proper synchr
 sequenceDiagram
     participant ME as Monaco Editor
     participant EM as Editor Manager
-    participant LFS as Lightning FS
-    participant CHM as Chat Manager
-    participant IG as isomorphic-git
-    participant SW as Sync Watcher
-    participant LS as Local Storage
-
-    ME->>EM: File Changed
+    participant FM as Files Manager
     
-    par File System Update
-        EM->>LFS: Write Changes
-        LFS->>IG: Stage Changes
-        IG->>IG: Create Commit
-    and Context Update
-        EM->>CHM: Update File Context
-        CHM->>CHM: Update Context Cache
-    end
+    Note over ME,FM: File Open Flow
+    FM->>EM: File Content
+    EM->>ME: Initialize Editor
     
-    LFS-->>SW: Change Detected
-    SW->>LS: Sync Changes
+    Note over ME,FM: Save Flow
+    ME->>EM: Content Changed
+    EM->>FM: Save File
+    FM-->>EM: File Saved
+    
+    Note over ME,FM: Sync Flow
+    FM->>EM: External Change
+    EM->>ME: Update Content
 ```
 
 #### Key Features
@@ -494,7 +478,7 @@ graph TD
    - Implement file size restrictions
    - Handle large repository performance
 
-## LLM Change Management
+## Changing files via LLM interation
 
 ### Purpose
 Manages file changes resulting from LLM interactions through the Actions Manager, ensuring atomic operations and proper version control traceability.
@@ -521,8 +505,7 @@ sequenceDiagram
     participant CHM as Chat Manager
     participant AM as Actions Manager
     participant FCH as File Change Handler
-    participant LFS as Lightning FS
-    participant IG as isomorphic-git
+    participant FM as Files Manager
     
     LLM-->>CHM: Response
     activate CHM
@@ -535,21 +518,21 @@ sequenceDiagram
     Note over FCH: Collect all changes
     
     loop For each file change
-        FCH->>LFS: Stage change
+        FCH->>FM: Stage change
     end
     
-    FCH->>IG: Prepare commit
+    FCH->>FM: Prepare commit
     Note over FCH: Create commit message with:
     Note over FCH: - Action metadata
     Note over FCH: - LLM info
     Note over FCH: - Full prompt
     
     alt Changes Valid
-        FCH->>IG: Create commit
-        IG-->>FCH: Commit success
+        FCH->>FM: Create commit
+        FM-->>FCH: Commit success
         FCH-->>AM: Action complete
     else Invalid Changes
-        FCH->>LFS: Rollback changes
+        FCH->>FM: Rollback changes
         FCH-->>AM: Action failed
     end
     deactivate FCH
@@ -793,18 +776,18 @@ Provides a development environment with live preview capabilities by running cod
 
 ```mermaid
 sequenceDiagram
-    participant LFS as Lightning FS
+    participant FM as Files Manager
     participant WCM as WebContainer Manager
     participant SH as Shell Handler
     participant PC as Preview Component
     
-    Note over LFS,PC: Initial Setup
-    WCM->>LFS: Mount & Subscribe to Events
+    Note over FM,PC: Initial Setup
+    WCM->>FM: Subscribe to Events
     WCM->>WCM: Boot WebContainer
     WCM->>WCM: Initial File System Sync
     
-    Note over LFS,PC: File Change Flow
-    LFS->>WCM: File System Event
+    Note over FM,PC: File Change Flow
+    FM->>WCM: File System Event
     WCM->>WCM: Debounce Changes
     WCM->>WCM: Sync to Container
     
@@ -903,7 +886,7 @@ Provides a full-featured code editing experience integrated with the file system
 
 ### Components
 
-#### 1. Monaco Editor Manager
+#### 1. Editor Manager
 - Responsibilities:
   - Initialize and configure Monaco instances
   - Handle file opening/closing
@@ -919,7 +902,7 @@ Provides a full-featured code editing experience integrated with the file system
 
 #### 2. Editor Integration Services
 1. **File System Integration**
-   - Direct integration with Lightning FS
+   - Direct integration with Files Manager
    - File change notifications
    - Save operations
    - File creation/deletion
@@ -942,37 +925,6 @@ Provides a full-featured code editing experience integrated with the file system
    - Project-wide symbol search
    - Advanced go-to-definition
    - Type hierarchy navigation
-
-4. **Extension System**
-   - Custom commands
-   - Keybindings
-   - Themes
-   - Snippets
-
-### Editor Integration Flow
-
-```mermaid
-sequenceDiagram
-    participant LFS as Lightning FS
-    participant EM as Editor Manager
-    participant ME as Monaco Editor
-    participant LS as Language Services
-    
-    Note over LFS,LS: File Open Flow
-    LFS->>EM: File Content
-    EM->>ME: Initialize Editor
-    ME->>LS: Request Language Services
-    LS-->>ME: Provide Completions/Hints
-    
-    Note over LFS,LS: Save Flow
-    ME->>EM: Content Changed
-    EM->>LFS: Save File
-    LFS-->>EM: File Saved
-    
-    Note over LFS,LS: Sync Flow
-    LFS->>EM: External Change
-    EM->>ME: Update Content
-```
 
 ### Key Features
 
@@ -1324,14 +1276,14 @@ sequenceDiagram
    - Improve over time
    - Share common patterns
 
-## Workspace State Management
+## Workbench
 
 ### Purpose
 Manages the overall IDE workspace state, persisting user preferences and session information across browser refreshes.
 
 ### Components
 
-1. **Workspace State Manager**
+1. **Workbench**
    - Responsibilities:
      - Layout configuration (split panels, sizes)
      - Open files and tabs
@@ -1342,13 +1294,14 @@ Manages the overall IDE workspace state, persisting user preferences and session
      - Scroll positions
      - Collapsed folders in file tree
      - Panel visibility states
+     - Trigger project-global actions (like import/export/sync)
 
 ### State Persistence Flow
 
 ```mermaid
 sequenceDiagram
     participant UI as IDE UI
-    participant WM as Workspace Manager
+    participant WM as Workbench
     participant IDB as IndexedDB
     
     Note over UI,IDB: State Change
