@@ -72,16 +72,20 @@ sequenceDiagram
     actor User
     participant UI as Web IDE UI
     participant CHM as Chat Manager
+    participant CM as Context Manager
+    participant PM as Prompt Manager
     participant AM as Actions Manager
     participant FM as Files Manager
     participant WC as WebContainer
-    participant CM as Context Manager
-    
+
     User->>UI: Submit Message
     UI->>CHM: Forward Message
     
     activate CHM
-    CHM->>CHM: Request Context
+    CHM->>CM: Request Context
+    CM->>PM: Request Prompt
+    PM->>CM: Compiled Prompt
+    CM->>CHM: Full Conversation Context
     CHM->>LLM: Send Message
     LLM-->>CHM: Response
     CHM->>AM: Execute Actions
