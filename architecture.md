@@ -37,6 +37,7 @@ graph TD
         AM[Actions Manager]
         WM[Workspace Manager]
         ERM[Error Resolution Manager]
+        LIM[LLM Integration Layer]
     end
 
     subgraph "File Management"
@@ -56,6 +57,10 @@ graph TD
     CM --> PM
     CHM --> AM
     AM --> FM
+    CHM --> LIM
+    
+    LIM --> CM
+    LIM --> FM
     
     FM --> WC
     
@@ -149,18 +154,66 @@ The system is split into two main components: the Chat Manager for handling conv
 
 2. **Context Manager**
    - Core Responsibilities:
-     - Full ownership of all context required for LLM interactions.
-     - Assemble and optimize the complete context for each message, including the compiled prompt obtained from the Prompt Manager.
+     - Full ownership of all context required for LLM interactions
+     - Assemble and optimize the complete context for each message
      - Manage message history and summarization
      - Handle context optimization and relevance
+     - Implement MCP-compliant context server
    - Key Operations:
-     - Request the compiled prompt from the Prompt Manager.
+     - Request the compiled prompt from the Prompt Manager
      - Context assembly and retrieval
      - Message history retrieval and summarization
      - File context filtering and integration
      - Context source prioritization
      - Token budget management
      - Various context type handling (files, docs, chat, workspace)
+
+#### MCP Context Server Integration
+
+##### Purpose
+The Context Manager extends its capabilities by implementing an MCP-compliant server, which provides:
+- Standardized context exposure
+- Secure, controlled access to project context
+- Dynamic context retrieval mechanisms
+
+##### Key MCP Server Features
+1. **Resource Exposure**
+   - Expose project context as discoverable, standardized resources
+   - Provide metadata about available context sources
+   - Enable fine-grained context selection
+
+2. **Context Tools**
+   - Implement tools for retrieving context with flexible parameters
+   - Support token limit management
+   - Enable source-specific context extraction
+
+3. **Transport Mechanisms**
+   - Support multiple transport protocols (stdio, HTTP)
+   - Implement secure communication channels
+   - Handle authentication and access control
+
+##### Benefits of MCP Integration
+1. **Enhanced Interoperability**
+   - Standardized interface for context retrieval
+   - Easier integration with different LLM providers
+   - Support for multiple client applications
+
+2. **Improved Context Management**
+   - Dynamic context source discovery
+   - Flexible context assembly
+   - Advanced filtering and prioritization
+
+3. **Security and Control**
+   - Granular access controls
+   - Context sanitization
+   - Audit logging of context access
+
+
+##### Future Enhancements
+- Support for context source plugins
+- Advanced context tracking and versioning
+- Machine learning-based context optimization
+- Cross-session context preservation
 
 3. **Prompt Manager**
     - Core Responsibilities:
@@ -199,22 +252,85 @@ The system is split into two main components: the Chat Manager for handling conv
 ### 2. LLM Integration Layer
 
 #### Purpose
-Provides unified access to multiple LLM providers while maintaining a consistent interface.
+Provides unified access to multiple LLM providers while maintaining a consistent interface, managing context transmission, and handling protocol-specific interactions.
 
 #### Components
-1. **litellm Proxy**
+
+1. **LLM Proxy**
    - Responsibilities:
      - Abstract different LLM providers
      - Provide OpenAI-compatible interface
      - Handle rate limiting and errors
      - Manage API authentication
 
-2. **LangChain.js Integration**
+2. **MCP Transmission Manager**
    - Responsibilities:
-     - Manage prompt templates
-     - Handle conversation chains
-     - Provide foundation for future agents
-     - Manage conversation context
+     - Handle MCP-specific context transmission
+     - Transform context for different LLM providers
+     - Manage protocol-level metadata
+     - Implement context sanitization
+     - Handle transmission errors
+     - Provide audit logging for context access
+
+   - Key Features:
+     - Protocol-agnostic context transmission
+     - Secure context handling
+     - Comprehensive error management
+     - Detailed transmission logging
+
+3. **Provider Adapters**
+   - Responsibilities:
+     - Implement provider-specific request transformations
+     - Handle unique provider capabilities
+     - Normalize responses across different providers
+
+#### Information Flow Diagram
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant ChatManager
+    participant ContextManager
+    participant MCPTransmissionManager
+    participant LLMProxy
+    participant LLMProvider
+
+    User->>ChatManager: Send Message
+    
+    ChatManager->>ContextManager: Request Context
+    ContextManager->>MCPTransmissionManager: Retrieve Contextualized Data
+    
+    MCPTransmissionManager->>ContextManager: Request Context Assembly
+    ContextManager-->>MCPTransmissionManager: Assembled Context
+    
+    MCPTransmissionManager->>MCPTransmissionManager: Sanitize Context
+    MCPTransmissionManager->>LLMProxy: Prepare Transmission
+    
+    LLMProxy->>LLMProvider: Send Contextualized Request
+    LLMProvider-->>LLMProxy: Generate Response
+    
+    LLMProxy-->>MCPTransmissionManager: Return Response
+    MCPTransmissionManager->>ChatManager: Processed Response
+    ChatManager-->>User: Display Response
+```
+
+#### Key Integration Patterns
+
+1. **Context Transmission**
+   - Standardized context packaging
+   - Provider-agnostic transmission
+   - Secure metadata handling
+
+2. **Logging and Monitoring**
+   - Comprehensive transmission logs
+   - Performance metrics
+   - Error tracking
+
+#### Future Enhancements
+- Advanced context compression
+- Machine learning-based provider selection
+- Dynamic transmission optimization
+- Enhanced multi-provider support
 
 ## Data Flow
 

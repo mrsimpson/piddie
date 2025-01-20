@@ -267,73 +267,111 @@ graph TD
   - Bidirectional change tracking
   - Conflict resolution mechanism
 
-## 6. Runtime View
+## 6. Runtime View and MCP Integration
 
-### 6.1 LLM-Driven File Modification Flow
+### 6.1 Model Context Protocol (MCP) Integration
+
+#### Purpose of MCP Integration
+The Model Context Protocol (MCP) provides a standardized mechanism for:
+- Seamless integration between LLM applications and external data sources
+- Flexible context transmission
+- Secure and controlled access to project resources
+
+#### MCP Architecture Components
+
+##### 6.1.1 MCP Hosts
+- **Web IDE Interface**: Primary MCP host
+- **Capabilities**:
+  - Initiate connections to MCP servers
+  - Manage multiple server connections
+  - Handle context retrieval and transmission
+
+##### 6.1.2 MCP Servers
+1. **Context Server**
+   - Exposed by Context Manager
+   - Provides project-wide context resources
+   - Supports fine-grained context retrieval
+
+2. **File System Server**
+   - Exposed by Files Manager
+   - Enables secure file access and manipulation
+   - Implements access control and sanitization
+
+3. **Prompt Server**
+   - Managed by Prompt Manager
+   - Exposes prompt templates and generation capabilities
+   - Supports dynamic prompt customization
+
+#### MCP Communication Flow
 ```mermaid
 sequenceDiagram
-    actor User
-    participant UI as Workbench
-    participant CHM as Chat Manager
-    participant CM as Context Manager
-    participant PM as Prompt Manager
-    participant AM as Actions Manager
-    participant FM as Files Manager
-    participant WC as WebContainer
+    participant User
+    participant MCPHost as MCP Host (Web IDE)
+    participant ContextServer as Context MCP Server
+    participant FileServer as File System MCP Server
+    participant LLMProvider as LLM Provider
 
-    User->>UI: Submit Message
-    UI->>CHM: Forward Message
+    User->>MCPHost: Initiate Interaction
+    MCPHost->>ContextServer: Request Project Context
+    ContextServer-->>MCPHost: Provide Contextualized Resources
     
-    activate CHM
-    CHM->>CM: Request Context
-    CM->>PM: Request Prompt
-    PM->>CM: Compiled Prompt
-    CM->>CHM: Full Conversation Context
-    CHM->>LLM: Send Message
-    LLM-->>CHM: Response
-    CHM->>AM: Execute Actions
+    MCPHost->>FileServer: Request File Access
+    FileServer-->>MCPHost: Provide Controlled File Access
     
-    activate AM
-    AM->>FM: Apply File Changes
-    AM->>FM: Create Result Commit
-    FM->>CM: Record Changes
-    AM->>WC: Sync Changes
-    WC-->>AM: Sync Complete
-    deactivate AM
-    
-    CHM-->>UI: Update Complete
-    deactivate CHM
+    MCPHost->>LLMProvider: Transmit Contextualized Request
+    LLMProvider-->>MCPHost: Generate Response
 ```
 
-### 6.2 Editor to Disk Flow
-```mermaid
-sequenceDiagram
-    participant ED as Editor
-    participant FM as Files Manager
-    participant CM as Context Manager
-    participant WC as WebContainer
-    
-    Note over ED,FM: File Open
-    ED->>FM: Open File Request
-    FM->>FM: Load from Storage
-    FM-->>ED: File Contents
-    
-    Note over ED,WC: File Save
-    ED->>FM: Save File
-    FM->>FM: Write to Storage
-    FM->>FM: Trigger Local Sync
-    FM->>WC: Sync to WebContainer
-    FM->>CM: Record Change
-    CM-->>ED: Update Status
-```
+#### Key Integration Patterns
+
+##### 6.2.1 Resource Exposure
+- Standardized resource discovery
+- Metadata-rich context providers
+- Dynamic capability negotiation
+
+##### 6.2.2 Security Mechanisms
+- **Authentication**
+  - OAuth 2.0 support
+  - Fine-grained access controls
+- **Context Sanitization**
+  - Remove sensitive information
+  - Implement access restrictions
+
+##### 6.2.3 Transport Mechanisms
+- Support for multiple protocols
+  - Standard I/O
+  - HTTP with Server-Sent Events
+  - WebSocket
+
+#### Future Roadmap
+
+##### 6.4.1 Planned Enhancements
+- Remote MCP server support
+- Advanced service discovery
+- Machine learning-based context optimization
+- Enhanced multi-provider integration
+
+##### 6.4.2 Potential Innovations
+- Context source plugins
+- Dynamic provider selection
+- Advanced transmission metrics
+- Cross-session context preservation
 
 ## 7. Deployment View
-- The application is primarily local-first, potentially running inside a desktop application.
-- An option may be provided to sync projects, including chat histories, to remote storage for backup and collaboration purposes.
 
-## 8. Crosscutting Concepts
-- **Security**: Prompt sanitization, secure file access.
-- **Performance**: Efficient file filtering, response time optimization.
+### 7.1 MCP Deployment Considerations
+- Lightweight server implementations
+- Minimal resource consumption
+- Support for stateless and stateful environments
+- Secure, scalable architecture
+
+## 8. Cross-Cutting Concepts
+
+### 8.1 MCP Protocol Concepts
+- Standardized context transmission
+- Secure resource access
+- Flexible provider integration
+- Comprehensive error management
 
 ## 9. Architecture Decisions
 - Use of modular architecture for clear separation of responsibilities.
