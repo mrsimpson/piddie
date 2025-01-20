@@ -185,7 +185,58 @@ graph TD
   - Lightning FS for project files
   - Support for future remote synchronization
 
-### 5.3 Storage Architecture
+#### 5.2.4 Error Resolution System
+
+##### Error Resolution Manager
+- **Primary Responsibilities:**
+  - Capture and normalize errors from various sources
+  - Create structured error context
+  - Coordinate with Actions Manager for resolution
+  - Track resolution attempts
+  - Maintain error history
+  - Provide error context to LLM interactions
+  - Handle rollbacks if resolution fails
+
+##### Error Collectors
+1. **WebContainer Collector**
+   - Runtime errors
+   - Build failures
+   - Package manager issues
+   - Process crashes
+   - Resource exhaustion
+
+2. **Editor Collector**
+   - Syntax errors
+   - Type errors
+   - Linting issues
+   - Formatting problems
+
+3. **Action Collector**
+   - LLM action failures
+   - File operation errors
+   - Git operation issues
+   - Invalid state transitions
+
+##### Integration Strategy
+- **Context Manager Integration**
+  - Error context as first-class context type
+  - Priority handling in context assembly
+  - Error history tracking
+  - Resolution attempt history
+
+- **Actions Manager Integration**
+  - Error-specific action types
+  - Rollback coordination
+  - Resolution validation
+  - State recovery
+
+- **Chat Manager Integration**
+  - Error-focused prompts
+  - Resolution suggestions
+  - Progressive refinement
+  - Context continuity
+
+## 5.3 Storage Architecture
 ```mermaid
 graph TD
     subgraph "Local Storage"

@@ -36,6 +36,7 @@ graph TD
         PM[Prompt Manager]
         AM[Actions Manager]
         WM[Workspace Manager]
+        ERM[Error Resolution Manager]
     end
 
     subgraph "File Management"
@@ -61,6 +62,10 @@ graph TD
     WC --> SH
     WC --> PV
     WC --> TR
+    
+    WC --> ERM
+    AM --> ERM
+    CHM --> ERM
 ```
 
 ### Key Interaction Flows
@@ -1421,54 +1426,170 @@ sequenceDiagram
     deactivate SM
 ```
 
-### Error Handling Strategy
+## Error Resolution System
 
-#### Purpose
-Provides a simple, git-based approach to error handling and recovery, particularly focused on LLM interactions.
+### Purpose
+Provides intelligent error handling and resolution by converting runtime errors, build failures, and other issues into structured context that can be used for LLM-assisted debugging and resolution.
 
-#### Core Concepts
+### Components
 
-1. **Safety Commits**
-   - Create automatic safety points before LLM changes
-   - Store interaction metadata in commit messages
-   - Enable clean rollback points
+#### 1. Error Resolution Manager
+- Responsibilities:
+  - Capture and normalize errors from various sources
+  - Create structured error context
+  - Coordinate with Actions Manager for resolution
+  - Track resolution attempts
+  - Maintain error history
+  - Provide error context to LLM interactions
+  - Handle rollbacks if resolution fails
 
-2. **Error Recovery**
-   - Reset to last known good state via git
-   - Clean up any partial changes
-   - Provide clear user feedback
+#### 2. Error Collectors
+1. **WebContainer Collector**
+   - Runtime errors
+   - Build failures
+   - Package manager issues
+   - Process crashes
+   - Resource exhaustion
 
-#### Error Categories
-
-1. **Recoverable via Git**
-   - Failed LLM actions
-   - Invalid file changes
+2. **Editor Collector**
    - Syntax errors
-   - Partial completions
+   - Type errors
+   - Linting issues
+   - Formatting problems
 
-2. **System Errors** (non-recoverable)
-   - Git system failures
-   - Storage corruption
-   - Browser crashes
-   - Hardware limitations
+3. **Action Collector**
+   - LLM action failures
+   - File operation errors
+   - Git operation issues
+   - Invalid state transitions
 
-#### Recovery Flow
+### Error Resolution Flow
 
 ```mermaid
 sequenceDiagram
-    participant User
-    participant AM as Action Manager
-    participant Git
-    participant UI
+    participant WC as WebContainer
+    participant ERM as Error Resolution Manager
+    participant CHM as Chat Manager
+    participant AM as Actions Manager
+    participant CM as Context Manager
 
-    User->>AM: Execute LLM Action
-    AM->>Git: Create Safety Commit
+    Note over WC,CM: Error Detection
+    WC->>ERM: Runtime Error
+    activate ERM
+    ERM->>ERM: Normalize Error
+    ERM->>ERM: Create Error Context
     
-    alt Action Succeeds
-        AM->>Git: Commit Changes
-        AM->>UI: Show Success
-    else Action Fails
-        AM->>Git: Reset to Safety Commit
-        AM->>UI: Show Error
+    ERM->>CM: Add Error Context
+    ERM->>CHM: Request Resolution
+    
+    CHM->>AM: Execute Resolution Actions
+    
+    alt Resolution Succeeds
+        AM-->>ERM: Resolution Complete
+        ERM->>ERM: Record Success
+    else Resolution Fails
+        AM-->>ERM: Resolution Failed
+        ERM->>ERM: Update Error Context
+        ERM->>CHM: Request New Resolution
     end
+    
+    deactivate ERM
 ```
+
+### Key Features
+
+1. **Error Context Assembly**
+   - Stack trace analysis
+   - Related file content
+   - Recent changes
+   - Previous resolution attempts
+   - Environment state
+   - Dependencies context
+
+2. **Resolution Strategy**
+   - Automatic resolution attempts
+   - Guided manual resolution
+   - Progressive refinement
+   - Rollback capabilities
+   - Learning from successful resolutions
+
+3. **Integration Points**
+   - Direct WebContainer monitoring
+   - Editor error stream
+   - Build process integration
+   - Runtime error catching
+   - Action failure handling
+
+### Error Context Flow
+
+```mermaid
+graph TD
+    subgraph "Error Sources"
+        WC[WebContainer]
+        ED[Editor]
+        AM[Actions Manager]
+    end
+    
+    subgraph "Error Processing"
+        EC[Error Collectors]
+        ERM[Error Resolution Manager]
+        CTX[Context Assembly]
+    end
+    
+    subgraph "Resolution"
+        CHM[Chat Manager]
+        ACT[Actions Manager]
+        RB[Rollback Manager]
+    end
+    
+    WC -->|Runtime Errors| EC
+    ED -->|Syntax Errors| EC
+    AM -->|Action Failures| EC
+    
+    EC --> ERM
+    ERM --> CTX
+    CTX --> CHM
+    CHM --> ACT
+    ACT --> RB
+    RB -.->|Failure| ERM
+```
+
+### Error Categories and Handling
+
+1. **Build Errors**
+   - Compilation failures
+   - Dependency issues
+   - Configuration problems
+   - Resource constraints
+
+2. **Runtime Errors**
+   - JavaScript exceptions
+   - Network failures
+   - Resource exhaustion
+   - Timing issues
+
+3. **Action Errors**
+   - Invalid file operations
+   - Failed LLM actions
+   - Synchronization issues
+   - State conflicts
+
+### Integration with Existing Systems
+
+1. **Context Manager Integration**
+   - Error context as first-class context type
+   - Priority handling in context assembly
+   - Error history tracking
+   - Resolution attempt history
+
+2. **Actions Manager Integration**
+   - Error-specific action types
+   - Rollback coordination
+   - Resolution validation
+   - State recovery
+
+3. **Chat Manager Integration**
+   - Error-focused prompts
+   - Resolution suggestions
+   - Progressive refinement
+   - Context continuity
