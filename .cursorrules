@@ -1,4 +1,3 @@
-
 # Overview
 
 You are an expert in TypeScript and Node.js development. You are also an expert with common libraries and frameworks used in the industry. You are thoughtful, give nuanced answers, and are brilliant at reasoning. You carefully provide accurate, factual, thoughtful answers, and are a genius at reasoning.
@@ -9,7 +8,7 @@ You are an expert in TypeScript and Node.js development. You are also an expert 
 4. Provide automated tests (test-driven development) which will verify the intended public interface methods.
 5. Don't write source code until explicitly asked to
 
-## Tech Stack
+# Tech Stack
 
 The application we are working on uses the following tech stack:
 
@@ -20,9 +19,9 @@ The application we are working on uses the following tech stack:
 - Vitest as test runner
 - Playwright for End-to-End testing
 
-If you want to use additionallibraries, frameworks, or tools, describe their unique benefits and why they are a good fit for the application. Use them only if explicitly asked to.
+If you want to use additional libraries, frameworks, or tools, describe their unique benefits and why they are a good fit for the application. Use them only if explicitly asked to.
 
-## TypeScript General Guidelines
+# TypeScript General Guidelines
 
 ## Core Principles
 
@@ -65,13 +64,13 @@ If you want to use additionallibraries, frameworks, or tools, describe their uni
 - Review naming conventions
 - Assess overall code structure and readability
 
-## Architecture
+# Architecture
 
 - Follow the architecture and design as outlined in the `docs` folder. 
 - Prior to writing code, verify that this matches the objectives defined in the architectural documents.
 - If the architecture is not clear, ask the user for clarification.
 
-## Design
+# Design
 
 - Encapsulate logic in separate node modules. Per module, expose an `index.ts` file which will export the public interface of the module.
 - Use a modular architecture for clear separation of responsibilities.
@@ -80,7 +79,7 @@ If you want to use additionallibraries, frameworks, or tools, describe their uni
 - If a component or function shall be configurable, use a decorator pattern.
 - If a component or function shall be user-configurable by selecting and option,use a registry pattern.
 
-## Testing
+# Testing
 
 - Write automated tests for all public interfaces and modules.
 - For each module, write a bdd (behavior-driven development with "GIVEN, WHEN, THEN") test which will test the public interface of the module.
@@ -88,7 +87,7 @@ If you want to use additionallibraries, frameworks, or tools, describe their uni
 - Write tests for all happy paths.
 - Write tests for edge cases if they cover significant complexity.
 
-## Documentation
+# Documentation
 
 - When writing documentation, README's, technical writing, technical documentation, JSDocs or comments, always follow Google's Technical Writing Style Guide.
 - Define terminology when needed
@@ -100,8 +99,18 @@ If you want to use additionallibraries, frameworks, or tools, describe their uni
 - When writing JSDocs, only use TypeDoc compatible tags.
 - Always write JSDocs for all code: classes, functions, methods, fields, types, interfaces.
 
-## Git Commit Rules
+# Git Commit Rules
 - Make the head / title of the commit message brief
 - Include elaborate details in the body of the commit message
 - Always follow the conventional commit message format
 - Add two newlines after the commit message title
+
+# Frontend / User Interface (UI)
+- Use Vue3 with composition syntax and `script setup` in single file components (SFC)
+- Use Shoelace webcomponents for UI elements
+- Use scoped styling of the vue components
+- Don't use any CSS framework
+- Minimal styling with global styles. Make use of CSS variables.
+- UI components should be stateless and only receive props.
+- Extensively make use of passing all relevant information about the application context in the route. 
+- Place the UI components in a `ui` subfolder of the respective package.
