@@ -1,0 +1,11 @@
+:root {
+  --vp-c-brand: #646cff;
+  --vp-c-brand-light: #747bff;
+}
+
+.mermaid {
+  background-color: #ffffff;
+  padding: 1rem;
+  border-radius: 8px;
+  margin: 1rem 0;
+} 

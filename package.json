@@ -1,6 +1,7 @@
 {
   "name": "piddie",
   "version": "0.0.1",
+  "type": "module",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -9,19 +10,31 @@
     "dev": "turbo run dev",
     "lint": "turbo run lint",
     "format": "prettier --write .",
-    "lint:fix": "eslint . --ext .ts --fix"
+    "lint:fix": "eslint . --ext .ts --fix",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@braintree/sanitize-url": "7.1.1",
     "@types/node": "22.10.7",
     "@typescript-eslint/eslint-plugin": "8.21.0",
     "@typescript-eslint/parser": "8.21.0",
+    "cytoscape": "3.31.0",
+    "cytoscape-cose-bilkent": "4.1.0",
+    "dayjs": "1.11.13",
+    "debug": "4.4.0",
     "eslint": "9.18.0",
+    "markdown-it-mermaid": "0.2.5",
+    "mermaid": "11.4.1",
     "prettier": "3.4.2",
     "turbo": "2.3.3",
-    "typescript": "5.7.3"
+    "typescript": "5.7.3",
+    "vitepress": "1.6.1",
+    "vitepress-plugin-mermaid": "2.0.17"
   },
   "packageManager": "pnpm@9.14.2"
 }
