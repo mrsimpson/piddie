@@ -1,6 +1,6 @@
 {
-  "name": "prompt-dev",
-  "version": "1.0.0",
+  "name": "piddie",
+  "version": "0.0.1",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -23,5 +23,5 @@
     "turbo": "2.3.3",
     "typescript": "5.7.3"
   },
-  "packageManager": "pnpm@10"
+  "packageManager": "pnpm@9.14.2"
 }
