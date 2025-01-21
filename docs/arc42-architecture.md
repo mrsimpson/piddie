@@ -70,7 +70,7 @@ graph TD
     end
 
     subgraph "Execution Environment"
-        WC[WebContainer]
+        WC[Container]
         SH[Shell Handler]
     end
 
@@ -198,7 +198,7 @@ graph TD
   - Handle rollbacks if resolution fails
 
 ##### Error Collectors
-1. **WebContainer Collector**
+1. **Container Collector**
    - Runtime errors
    - Build failures
    - Package manager issues
