@@ -5,12 +5,14 @@
 This document describes the architecture of a web-based IDE that implements a prompt-first development paradigm. The system allows developers to create, modify, and execute code primarily through natural language interactions with Large Language Models (LLMs).
 
 ### Core Purpose
+
 - Enable prompt-first development workflow
 - Provide a web-based IDE interface
 - Facilitate LLM-driven code generation and modification
 - Support code execution capabilities
 
 ### Key Assumptions
+
 1. Multiple LLM providers should be supported without increasing complexity
 2. The system should be extensible for future agent implementations
 3. Prompt construction requires context from the entire project
@@ -52,22 +54,22 @@ graph TD
     UI --> CHM
     UI --> WM
     ED --> FM
-    
+
     CHM --> CM
     CM --> PM
     CHM --> AM
     AM --> FM
     CHM --> LIM
-    
+
     LIM --> CM
     LIM --> FM
-    
+
     FM --> WC
-    
+
     WC --> SH
     WC --> PV
     WC --> TR
-    
+
     WC --> ERM
     AM --> ERM
     CHM --> ERM
@@ -90,7 +92,7 @@ sequenceDiagram
 
     User->>UI: Submit Message
     UI->>CHM: Forward Message
-    
+
     activate CHM
     CHM->>CM: Request Context
     CM->>PM: Request Prompt
@@ -99,7 +101,7 @@ sequenceDiagram
     CHM->>LLM: Send Message
     LLM-->>CHM: Response
     CHM->>AM: Execute Actions
-    
+
     activate AM
     AM->>FM: Apply File Changes
     AM->>FM: Create Result Commit
@@ -107,7 +109,7 @@ sequenceDiagram
     AM->>WC: Sync Changes
     WC-->>AM: Sync Complete
     deactivate AM
-    
+
     CHM-->>UI: Update Complete
     deactivate CHM
 ```
@@ -120,12 +122,12 @@ sequenceDiagram
     participant FM as Files Manager
     participant CM as Context Manager
     participant WC as WebContainer
-    
+
     Note over ED,FM: File Open
     ED->>FM: Open File Request
     FM->>FM: Load from Storage
     FM-->>ED: File Contents
-    
+
     Note over ED,WC: File Save
     ED->>FM: Save File
     FM->>FM: Write to Storage
@@ -140,11 +142,13 @@ sequenceDiagram
 ### 1. Chat and Context System
 
 #### Purpose
+
 The system is split into two main components: the Chat Manager for handling conversation flow and the Context Manager for comprehensive context assembly and management.
 
 #### Components
 
 1. **Chat Manager**
+
    - Core Responsibilities:
      - Handle message processing and LLM interaction
      - Coordinate with Context Manager for context needs
@@ -171,18 +175,23 @@ The system is split into two main components: the Chat Manager for handling conv
 #### MCP Context Server Integration
 
 ##### Purpose
+
 The Context Manager extends its capabilities by implementing an MCP-compliant server, which provides:
+
 - Standardized context exposure
 - Secure, controlled access to project context
 - Dynamic context retrieval mechanisms
 
 ##### Key MCP Server Features
+
 1. **Resource Exposure**
+
    - Expose project context as discoverable, standardized resources
    - Provide metadata about available context sources
    - Enable fine-grained context selection
 
 2. **Context Tools**
+
    - Implement tools for retrieving context with flexible parameters
    - Support token limit management
    - Enable source-specific context extraction
@@ -193,12 +202,15 @@ The Context Manager extends its capabilities by implementing an MCP-compliant se
    - Handle authentication and access control
 
 ##### Benefits of MCP Integration
+
 1. **Enhanced Interoperability**
+
    - Standardized interface for context retrieval
    - Easier integration with different LLM providers
    - Support for multiple client applications
 
 2. **Improved Context Management**
+
    - Dynamic context source discovery
    - Flexible context assembly
    - Advanced filtering and prioritization
@@ -208,34 +220,36 @@ The Context Manager extends its capabilities by implementing an MCP-compliant se
    - Context sanitization
    - Audit logging of context access
 
-
 ##### Future Enhancements
+
 - Support for context source plugins
 - Advanced context tracking and versioning
 - Machine learning-based context optimization
 - Cross-session context preservation
 
 3. **Prompt Manager**
-    - Core Responsibilities:
-      - Manage and customize prompts used for LLM interactions.
-      - **Construct the compiled prompt for LLM interactions, which may involve combining system prompts, project-specific prompts, and the current user message.**
-    - Key Operations:
-      - Storing and retrieving prompt templates.
-      - Managing system prompts (global and project-specific).
-      - Compiling the final prompt based on relevant templates and context.
-      - Dynamically generating prompt components.
-      - Allowing users to customize prompts.
-      - Versioning and potentially evaluating prompts.
-      - Providing the compiled prompt to the Context Manager.
+   - Core Responsibilities:
+     - Manage and customize prompts used for LLM interactions.
+     - **Construct the compiled prompt for LLM interactions, which may involve combining system prompts, project-specific prompts, and the current user message.**
+   - Key Operations:
+     - Storing and retrieving prompt templates.
+     - Managing system prompts (global and project-specific).
+     - Compiling the final prompt based on relevant templates and context.
+     - Dynamically generating prompt components.
+     - Allowing users to customize prompts.
+     - Versioning and potentially evaluating prompts.
+     - Providing the compiled prompt to the Context Manager.
 
 #### Key Features
 
 1. **Clear Separation of Responsibilities**
+
    - Chat Manager focuses on conversation flow and LLM interaction
    - Context Manager handles all context-related operations and prompt assembly
    - Prompt Manager handles everything that it related to the actual user message and intent
 
 2. **Comprehensive Context Management**
+
    - Full ownership of all context sources
    - Dynamic source prioritization
    - Intelligent context assembly
@@ -252,11 +266,13 @@ The Context Manager extends its capabilities by implementing an MCP-compliant se
 ### 2. LLM Integration Layer
 
 #### Purpose
+
 Provides unified access to multiple LLM providers while maintaining a consistent interface, managing context transmission, and handling protocol-specific interactions.
 
 #### Components
 
 1. **LLM Proxy**
+
    - Responsibilities:
      - Abstract different LLM providers
      - Provide OpenAI-compatible interface
@@ -264,7 +280,9 @@ Provides unified access to multiple LLM providers while maintaining a consistent
      - Manage API authentication
 
 2. **MCP Transmission Manager**
+
    - Responsibilities:
+
      - Handle MCP-specific context transmission
      - Transform context for different LLM providers
      - Manage protocol-level metadata
@@ -296,19 +314,19 @@ sequenceDiagram
     participant LLMProvider
 
     User->>ChatManager: Send Message
-    
+
     ChatManager->>ContextManager: Request Context
     ContextManager->>MCPTransmissionManager: Retrieve Contextualized Data
-    
+
     MCPTransmissionManager->>ContextManager: Request Context Assembly
     ContextManager-->>MCPTransmissionManager: Assembled Context
-    
+
     MCPTransmissionManager->>MCPTransmissionManager: Sanitize Context
     MCPTransmissionManager->>LLMProxy: Prepare Transmission
-    
+
     LLMProxy->>LLMProvider: Send Contextualized Request
     LLMProvider-->>LLMProxy: Generate Response
-    
+
     LLMProxy-->>MCPTransmissionManager: Return Response
     MCPTransmissionManager->>ChatManager: Processed Response
     ChatManager-->>User: Display Response
@@ -317,6 +335,7 @@ sequenceDiagram
 #### Key Integration Patterns
 
 1. **Context Transmission**
+
    - Standardized context packaging
    - Provider-agnostic transmission
    - Secure metadata handling
@@ -327,6 +346,7 @@ sequenceDiagram
    - Error tracking
 
 #### Future Enhancements
+
 - Advanced context compression
 - Machine learning-based provider selection
 - Dynamic transmission optimization
@@ -335,6 +355,7 @@ sequenceDiagram
 ## Data Flow
 
 ### Chat Processing Flow
+
 1. User submits message through IDE interface
 2. Chat Manager:
    - Coordinates with Context Manager
@@ -345,6 +366,7 @@ sequenceDiagram
 5. Response returned to IDE
 
 ### File Filtering Flow
+
 1. Project files passed through filter chain
 2. Each filter:
    - Applies its specific filtering logic
@@ -354,6 +376,7 @@ sequenceDiagram
 ## Security Considerations
 
 1. **Prompt Security**
+
    - Need for prompt sanitization
    - Content filtering requirements
    - Rate limiting implementation
@@ -366,6 +389,7 @@ sequenceDiagram
 ## Future Extensibility
 
 The architecture is designed to support:
+
 1. Additional file filters
 2. New LLM providers
 3. Advanced agent implementations
@@ -375,6 +399,7 @@ The architecture is designed to support:
 ## Performance Considerations
 
 1. **File Filtering**
+
    - Efficient chain execution
    - Caching of filtered results
    - Incremental updates
@@ -387,11 +412,13 @@ The architecture is designed to support:
 ## File Management System
 
 ### Purpose
+
 Provides a robust file management system that works primarily in the browser while maintaining synchronization with the local file system and execution environment.
 
 ### Components
 
 #### 1. Browser File System (Lightning FS)
+
 - Responsibilities:
   - Provide POSIX-like file system in the browser
   - Store file contents in IndexedDB
@@ -405,6 +432,7 @@ Provides a robust file management system that works primarily in the browser whi
   - Atomic write operations
 
 #### 2. Git Management (isomorphic-git)
+
 - Responsibilities:
   - Track file versions
   - Handle branching and merging
@@ -418,6 +446,7 @@ Provides a robust file management system that works primarily in the browser whi
   - Generate diffs
 
 #### 3. Sync Manager
+
 - Responsibilities:
   - Coordinate synchronization between local and browser filesystem
   - Track file modification states
@@ -431,6 +460,7 @@ Provides a robust file management system that works primarily in the browser whi
   - Syncing
 
 #### 4. File Watcher
+
 - Responsibilities:
   - Monitor local file system changes
   - Detect browser file system changes
@@ -447,6 +477,7 @@ Provides a robust file management system that works primarily in the browser whi
 While the File watcher handles synchronization with the local file system, the WebContainer Sync does something similar with respect to the WebContainer that provides the preview execution environment.
 
 The WebContainer Sync component is responsible for:
+
 - Maintain synchronization between Files Manager and WebContainer filesystem
 - Convert Files Manager events to WebContainer mount/write operations
 - Handle WebContainer file changes and sync back to Files Manager
@@ -462,14 +493,14 @@ The WebContainer Sync component is responsible for:
 sequenceDiagram
     participant FM as Files Manager
     participant WC as WebContainer
-    
+
     Note over FM,WC: Files Manager to WebContainer Flow
     activate FM
     FM->>FM: Convert to WebContainer Format
     FM->>WC: Write File
     WC-->>FM: Write Complete
     deactivate FM
-    
+
     Note over FM,WC: WebContainer to Files Manager Flow
     WC->>FM: File Change Event
     activate FM
@@ -481,6 +512,7 @@ sequenceDiagram
 The Files Manager handles synchronization with WebContainer, managing the different file system representations and ensuring changes are properly propagated in both directions. This maintains the independence of both systems while ensuring data consistency.
 
 Key aspects of the synchronization:
+
 1. Files Manager is the source of truth for the file system
 2. WebContainer maintains its own working copy for execution
 3. Changes are synchronized bidirectionally through the Files Manager
@@ -489,6 +521,7 @@ Key aspects of the synchronization:
 ### Editor to File System Flow
 
 #### Purpose
+
 Handles file changes initiated through the Monaco Editor, ensuring proper synchronization with both the browser-based file system and local storage.
 
 ```mermaid
@@ -496,16 +529,16 @@ sequenceDiagram
     participant ME as Monaco Editor
     participant EM as Editor Manager
     participant FM as Files Manager
-    
+
     Note over ME,FM: File Open Flow
     FM->>EM: File Content
     EM->>ME: Initialize Editor
-    
+
     Note over ME,FM: Save Flow
     ME->>EM: Content Changed
     EM->>FM: Save File
     FM-->>EM: File Saved
-    
+
     Note over ME,FM: Sync Flow
     FM->>EM: External Change
     EM->>ME: Update Content
@@ -514,12 +547,14 @@ sequenceDiagram
 #### Key Features
 
 1. **Change Management**
+
    - Debounced save operations
    - Atomic file writes
    - Change detection
    - Editor state synchronization
 
 2. **Git Integration**
+
    - Optional auto-commit
    - Change staging
    - Commit message generation
@@ -532,30 +567,29 @@ sequenceDiagram
    - Error recovery
 
 #### Implementation Example
+
 ```typescript
 interface EditorFileSync {
   // Handle editor content changes
   handleChange(path: string, content: string): Promise<void>;
-  
+
   // Sync to file systems
   syncToFileSystems(change: FileChange): Promise<void>;
-  
+
   // Optional git operations
   createCommitForChange(change: FileChange): Promise<string>;
 }
 
 // Example usage
 editor.onDidChangeContent(async (change) => {
-  await editorFileSync.handleChange(
-    currentFile.path,
-    editor.getValue()
-  );
+  await editorFileSync.handleChange(currentFile.path, editor.getValue());
 });
 ```
 
 #### Manual Change Tracking
 
 #### Key Features
+
 1. Changes are available as context for next LLM interaction
 2. Context Manager maintains full conversation context
 3. Clear separation between action execution (Actions Manager) and context tracking (Context Manager)
@@ -570,7 +604,7 @@ graph TD
         B -->|Different Base| C[Mark Conflict]
         B -->|Same Base| D[Fast-forward]
     end
-    
+
     subgraph "Resolution"
         C --> E{Resolution Strategy}
         E -->|Auto-merge| F[Merge Changes]
@@ -578,7 +612,7 @@ graph TD
         E -->|Keep Local| H[Use Local Version]
         E -->|Keep Remote| I[Use Remote Version]
     end
-    
+
     subgraph "Sync"
         F --> J[Update Lightning FS]
         G --> J
@@ -591,6 +625,7 @@ graph TD
 ### Key Interactions
 
 1. **Local to Browser Sync**
+
    - Local file system changes detected
    - Changes read and diffed
    - Applied to Lightning FS
@@ -598,6 +633,7 @@ graph TD
    - Sync state updated
 
 2. **Browser to Local Sync**
+
    - Browser file system changes detected
    - Changes written to local file system
    - Git commit created
@@ -612,11 +648,13 @@ graph TD
 ### Performance Considerations
 
 1. **Change Batching**
+
    - Group multiple changes into single sync operation
    - Debounce rapid changes
    - Optimize commit frequency
 
 2. **Caching Strategy**
+
    - Cache frequently accessed files
    - Maintain diff history
    - Store recent conflict resolutions
@@ -629,11 +667,13 @@ graph TD
 ## Changing files via LLM interation
 
 ### Purpose
+
 Manages file changes resulting from LLM interactions through the Actions Manager, ensuring atomic operations and proper version control traceability.
 
 ### Integration with Actions Manager
 
 #### File Change Handler
+
 - Responsibilities:
   - Process file change actions from LLM responses
   - Manage atomic batch operations
@@ -654,27 +694,27 @@ sequenceDiagram
     participant AM as Actions Manager
     participant FCH as File Change Handler
     participant FM as Files Manager
-    
+
     LLM-->>CHM: Response
     activate CHM
     CHM->>AM: Parse Response
-    
+
     activate AM
     AM->>FCH: Execute File Changes
-    
+
     activate FCH
     Note over FCH: Collect all changes
-    
+
     loop For each file change
         FCH->>FM: Stage change
     end
-    
+
     FCH->>FM: Prepare commit
     Note over FCH: Create commit message with:
     Note over FCH: - Action metadata
     Note over FCH: - LLM info
     Note over FCH: - Full prompt
-    
+
     alt Changes Valid
         FCH->>FM: Create commit
         FM-->>FCH: Commit success
@@ -684,7 +724,7 @@ sequenceDiagram
         FCH-->>AM: Action failed
     end
     deactivate FCH
-    
+
     AM-->>CHM: Action Results
     deactivate AM
     CHM-->>User: Final Response
@@ -692,12 +732,13 @@ sequenceDiagram
 ```
 
 ### File Change Action Structure
+
 ```typescript
 interface FileChangeAction extends Action {
-  type: 'FILE_CHANGE';
+  type: "FILE_CHANGE";
   payload: {
     changes: Array<{
-      type: 'CREATE' | 'MODIFY' | 'DELETE';
+      type: "CREATE" | "MODIFY" | "DELETE";
       path: string;
       content?: string;
     }>;
@@ -711,6 +752,7 @@ interface FileChangeAction extends Action {
 ```
 
 ### Commit Message Structure
+
 ```
 feat(ai): [action-id] AI-assisted changes
 
@@ -732,12 +774,14 @@ Metadata:
 ### Key Features
 
 1. **Action Integration**
+
    - File changes handled as formal actions
    - Consistent action lifecycle management
    - Integration with other action types
    - Standardized error handling
 
 2. **Atomic Operations**
+
    - All changes in an action treated as single unit
    - Automatic rollback on action failure
    - Consistent repository state guaranteed
@@ -750,11 +794,13 @@ Metadata:
 ## Actions Management
 
 ### Purpose
+
 Interprets and executes various types of actions derived from LLM responses, providing a pluggable system for different operation types.
 
 ### Components
 
 #### 1. Actions Manager
+
 - Responsibilities:
   - Parse LLM responses into executable actions
   - Coordinate action execution
@@ -767,13 +813,16 @@ Interprets and executes various types of actions derived from LLM responses, pro
   - Error handling
 
 #### 2. Action Handlers
+
 1. **File Change Handler**
+
    - Manages file operations and git commits
    - Implements atomic changes
    - Handles rollbacks
    - Creates git commits with metadata
 
 2. **Code Execution Handler**
+
    - Runs code in sandbox
    - Captures output
    - Manages execution context
@@ -793,35 +842,35 @@ sequenceDiagram
     participant FCH as File Change Handler
     participant CEH as Code Execution Handler
     participant CH as Config Handler
-    
+
     LLM-->>CHM: Response
     activate CHM
     CHM->>AM: Parse & Execute Actions
-    
+
     activate AM
     Note over AM: Analyze Response
-    
+
     alt File Changes Detected
         AM->>FCH: Execute File Changes
         activate FCH
         FCH-->>AM: Changes Result
         deactivate FCH
     end
-    
+
     alt Code Execution Required
         AM->>CEH: Execute Code
         activate CEH
         CEH-->>AM: Execution Result
         deactivate CEH
     end
-    
+
     alt Config Changes Needed
         AM->>CH: Update Config
         activate CH
         CH-->>AM: Config Result
         deactivate CH
     end
-    
+
     AM-->>CHM: Action Results
     deactivate AM
     CHM-->>User: Final Response
@@ -829,6 +878,7 @@ sequenceDiagram
 ```
 
 ### Action Interface
+
 ```typescript
 interface Action {
   type: ActionType;
@@ -844,7 +894,7 @@ interface ActionHandler<T = unknown> {
 }
 
 interface ActionMetadata {
-  source: string;  // LLM identifier
+  source: string; // LLM identifier
   timestamp: Date;
   prompt: string;
   confidence?: number;
@@ -854,12 +904,14 @@ interface ActionMetadata {
 ### Key Features
 
 1. **Extensibility**
+
    - Pluggable action handler system
    - Custom action type support
    - Middleware capabilities
    - Action composition
 
 2. **Validation & Safety**
+
    - Pre-execution validation
    - Action authorization
    - Resource limits
@@ -874,11 +926,13 @@ interface ActionMetadata {
 ## Preview System
 
 ### Purpose
+
 Provides a development environment with live preview capabilities by running code through WebContainers, managing shell interactions, and displaying the running application.
 
 ### Components
 
 #### 1. WebContainer Manager
+
 - Responsibilities:
   - Boot and manage WebContainer instance
   - Mount file system from Lightning FS
@@ -897,6 +951,7 @@ Provides a development environment with live preview capabilities by running cod
   - Change debouncing
 
 #### 2. Shell Handler
+
 - Responsibilities:
   - Manage terminal instance
   - Execute commands
@@ -909,6 +964,7 @@ Provides a development environment with live preview capabilities by running cod
   - Interactive shell support
 
 #### 3. Preview Component
+
 - Responsibilities:
   - Display running application
   - Handle preview refresh
@@ -928,17 +984,17 @@ sequenceDiagram
     participant WCM as WebContainer Manager
     participant SH as Shell Handler
     participant PC as Preview Component
-    
+
     Note over FM,PC: Initial Setup
     WCM->>FM: Subscribe to Events
     WCM->>WCM: Boot WebContainer
     WCM->>WCM: Initial File System Sync
-    
+
     Note over FM,PC: File Change Flow
     FM->>WCM: File System Event
     WCM->>WCM: Debounce Changes
     WCM->>WCM: Sync to Container
-    
+
     alt Build Required
         WCM->>SH: Trigger Build
         SH-->>PC: Update Preview
@@ -948,6 +1004,7 @@ sequenceDiagram
 ### Key Interactions
 
 1. **File System to WebContainer**
+
 ```typescript
 interface WebContainerSync {
   syncFiles(): Promise<void>;
@@ -957,6 +1014,7 @@ interface WebContainerSync {
 ```
 
 2. **Shell Command Execution**
+
 ```typescript
 interface ShellExecution {
   executeCommand(command: string): Promise<CommandResult>;
@@ -966,6 +1024,7 @@ interface ShellExecution {
 ```
 
 3. **Preview Management**
+
 ```typescript
 interface PreviewManager {
   updatePreview(url: string): void;
@@ -977,11 +1036,13 @@ interface PreviewManager {
 ### Development Workflow
 
 1. **Initial Setup**
+
    - Mount Lightning FS contents to WebContainer
    - Initialize development environment
    - Start shell instance
 
 2. **File Changes**
+
    - Detect changes in Lightning FS
    - Sync to WebContainer
    - Trigger rebuild if needed
@@ -996,11 +1057,13 @@ interface PreviewManager {
 ### Error Handling
 
 1. **Container Errors**
+
    - Container boot failures
    - Resource exhaustion
    - Environment issues
 
 2. **Preview Errors**
+
    - Build failures
    - Runtime errors
    - Connection issues
@@ -1013,11 +1076,13 @@ interface PreviewManager {
 ### Performance Considerations
 
 1. **Resource Management**
+
    - Memory usage monitoring
    - Process cleanup
    - Cache management
 
 2. **Preview Optimization**
+
    - Debounced updates
    - Incremental builds
    - Resource preloading
@@ -1030,11 +1095,13 @@ interface PreviewManager {
 ## Code Editor System
 
 ### Purpose
+
 Provides a full-featured code editing experience integrated with the file system and preview capabilities.
 
 ### Components
 
 #### 1. Editor Manager
+
 - Responsibilities:
   - Initialize and configure Monaco instances
   - Handle file opening/closing
@@ -1049,13 +1116,16 @@ Provides a full-featured code editing experience integrated with the file system
   - Custom language services
 
 #### 2. Editor Integration Services
+
 1. **File System Integration**
+
    - Direct integration with Files Manager
    - File change notifications
    - Save operations
    - File creation/deletion
 
 2. **Navigation Services**
+
    - Built-in Monaco Features:
      - In-file symbol navigation
      - Basic go-to-definition
@@ -1077,6 +1147,7 @@ Provides a full-featured code editing experience integrated with the file system
 ### Key Features
 
 1. **Editor Capabilities**
+
    - Syntax highlighting
    - Code completion
    - Error detection
@@ -1085,6 +1156,7 @@ Provides a full-featured code editing experience integrated with the file system
    - Code folding
 
 2. **Integration Features**
+
    - Direct file system access
    - Git decoration support
    - Preview integration
@@ -1099,6 +1171,7 @@ Provides a full-featured code editing experience integrated with the file system
 ### Language Services Architecture
 
 #### 1. Initial Implementation: Built-in Monaco Services
+
 - Basic IntelliSense
 - Syntax highlighting
 - Simple completions
@@ -1109,7 +1182,9 @@ Provides a full-featured code editing experience integrated with the file system
 #### 2. Future Enhancements
 
 ##### Language Server Protocol (LSP)
+
 > Note: Planned for future implementation
+
 - Advanced capabilities through LSP:
   - Project-wide analysis
   - Advanced type checking
@@ -1117,7 +1192,9 @@ Provides a full-featured code editing experience integrated with the file system
   - Cross-file refactoring
 
 ##### Custom Intelligence System
+
 > Note: Planned for future implementation
+
 - LLM-enhanced capabilities:
   - Context-aware suggestions
   - Natural language interactions
@@ -1126,13 +1203,16 @@ Provides a full-featured code editing experience integrated with the file system
   - Interactive assistance
 
 ### Initial Language Support Scope
+
 1. **JavaScript/TypeScript**
+
    - Built-in Monaco support
    - Type definitions
    - Basic refactoring
    - Syntax validation
 
 2. **Common Web Languages**
+
    - HTML
    - CSS
    - JSON
@@ -1146,11 +1226,13 @@ Provides a full-featured code editing experience integrated with the file system
 ## Project Management System
 
 ### Purpose
+
 Manages multiple independent projects with local-first storage and optional remote synchronization.
 
 ### Components
 
 #### 1. Project Manager
+
 - Responsibilities:
   - Manage project lifecycle
   - Handle project configuration
@@ -1163,6 +1245,7 @@ Manages multiple independent projects with local-first storage and optional remo
   - Resource management
 
 #### 2. Storage System
+
 1. **Local Storage Layer**
    - IndexedDB (via Dexie.js):
      - Project data
@@ -1190,17 +1273,17 @@ graph TD
         end
         LFS[Lightning FS] --> PF[Project Files]
     end
-    
+
     subgraph future_sync["Future: Sync Layer"]
         SE[Sync Engine]
         CT[Change Tracker]
         SQ[Sync Queue]
     end
-    
+
     subgraph future_remote["Future: Remote Storage"]
         PG[PostgreSQL]
     end
-    
+
     PD -.-> SE
     CH -.-> SE
     LFS -.-> SE
@@ -1218,6 +1301,7 @@ graph TD
 ```
 
 ### Initial Storage Implementation
+
 1. **Local Storage Layer**
    - IndexedDB (via Dexie.js):
      - Project data
@@ -1233,9 +1317,11 @@ graph TD
      - Transaction support
 
 ### Future Storage Enhancements
+
 > Note: Planned for future implementation
 
 1. **Sync Engine**
+
    - Bidirectional sync
    - Change tracking
    - Conflict resolution
@@ -1250,12 +1336,14 @@ graph TD
 ### Key Features
 
 1. **Project Isolation**
+
    - Separate root directories
    - Independent git repositories
    - Isolated chat histories
    - Project-specific configuration
 
 2. **Local-First Operations**
+
    - Offline capability
    - Local data persistence
    - Fast operations
@@ -1279,11 +1367,11 @@ sequenceDiagram
 
     LC->>CT: Record Change
     CT->>SQ: Queue Change
-    
+
     loop Sync Process
         SQ->>SE: Get Next Change
         SE->>PG: Sync Change
-        
+
         alt Sync Success
             PG-->>SE: Confirm
             SE->>SQ: Mark Complete
@@ -1313,12 +1401,14 @@ graph TD
 ### Branching Scenarios
 
 1. **Message Editing**
+
    - Creates new branch from edited message
    - Maintains reference to original
    - Previous branch remains intact
    - New messages continue in new branch
 
 2. **Branch Management**
+
    - Multiple active branches
    - Branch switching
    - Branch merging (future enhancement)
@@ -1333,14 +1423,16 @@ graph TD
 ### Project Scaffolding Action
 
 #### Purpose
+
 Provides AI-driven project initialization and scaffolding through the Actions system, allowing natural language description of desired project structure.
 
 #### Scaffolding Handler
+
 ```typescript
 interface ScaffoldingAction extends Action {
-  type: 'SCAFFOLD_PROJECT';
+  type: "SCAFFOLD_PROJECT";
   payload: {
-    description: string;      // User's project description
+    description: string; // User's project description
     preferences?: {
       framework?: string;
       testing?: string;
@@ -1351,7 +1443,7 @@ interface ScaffoldingAction extends Action {
       maxFiles?: number;
       requiredFeatures?: string[];
       // ... other constraints
-    }
+    };
   };
   metadata: ActionMetadata;
 }
@@ -1370,30 +1462,30 @@ sequenceDiagram
 
     User->>CHM: "Create a React app with TypeScript and testing"
     CHM->>AM: Create Scaffold Action
-    
+
     activate AM
     AM->>SH: Execute Scaffolding
-    
+
     activate SH
     Note over SH: Generate Project Structure
-    
+
     SH->>FCH: Create Project Files
     activate FCH
-    
+
     loop For each scaffold file
         FCH->>LFS: Create File
     end
-    
+
     FCH->>LFS: Create package.json
     FCH->>LFS: Create config files
     FCH->>LFS: Create initial source files
-    
+
     FCH-->>SH: Files Created
     deactivate FCH
-    
+
     SH-->>AM: Scaffold Complete
     deactivate SH
-    
+
     AM-->>User: Project Ready
     deactivate AM
 ```
@@ -1401,18 +1493,21 @@ sequenceDiagram
 #### Key Features
 
 1. **Intelligent Structure Generation**
+
    - Framework detection
    - Best practice adherence
    - Convention following
    - Dependency management
 
 2. **Context-Aware Scaffolding**
+
    - Project type recognition
    - Technology stack awareness
    - Testing framework selection
    - Style system integration
 
 3. **Progressive Enhancement**
+
    - Start with basic structure
    - Add features through conversation
    - Refine through iterations
@@ -1427,6 +1522,7 @@ sequenceDiagram
 ## Workbench
 
 ### Purpose
+
 Manages the overall IDE workspace state, persisting user preferences and session information across browser refreshes.
 
 ### Components
@@ -1451,12 +1547,12 @@ sequenceDiagram
     participant UI as IDE UI
     participant WM as Workbench
     participant IDB as IndexedDB
-    
+
     Note over UI,IDB: State Change
     UI->>WM: State Update
     WM->>WM: Debounce Changes
     WM->>IDB: Persist State
-    
+
     Note over UI,IDB: Session Restore
     UI->>WM: Initialize Workspace
     WM->>IDB: Load State
@@ -1468,12 +1564,14 @@ sequenceDiagram
 ### Key Features
 
 1. **State Persistence**
+
    - Automatic state saving
    - Session recovery
    - Layout persistence
    - Cross-session continuity
 
 2. **Layout Management**
+
    - Panel configurations
    - Split views
    - Size preferences
@@ -1488,11 +1586,13 @@ sequenceDiagram
 ## Status & Notification System
 
 ### Purpose
+
 Provides a centralized system for managing, aggregating, and displaying status updates and notifications from various system components, with special handling for long-running and streaming operations.
 
 ### Components
 
 1. **Status Manager**
+
    - Responsibilities:
      - Aggregate status updates
      - Manage notification lifecycle
@@ -1524,18 +1624,18 @@ sequenceDiagram
     participant SM as Status Manager
     participant NH as Notification Hub
     participant UI as UI Components
-    
+
     C->>SM: Create Status
     activate SM
     SM->>NH: Create Notification
     NH->>UI: Display Status
-    
+
     loop Stream Updates
         C->>SM: Update Status
         SM->>NH: Update Notification
         NH->>UI: Refresh Display
     end
-    
+
     C->>SM: Complete Status
     SM->>NH: Update Final State
     NH->>UI: Show Completion
@@ -1545,11 +1645,13 @@ sequenceDiagram
 ## Error Resolution System
 
 ### Purpose
+
 Provides intelligent error handling and resolution by converting runtime errors, build failures, and other issues into structured context that can be used for LLM-assisted debugging and resolution.
 
 ### Components
 
 #### 1. Error Resolution Manager
+
 - Responsibilities:
   - Capture and normalize errors from various sources
   - Create structured error context
@@ -1560,7 +1662,9 @@ Provides intelligent error handling and resolution by converting runtime errors,
   - Handle rollbacks if resolution fails
 
 #### 2. Error Collectors
+
 1. **WebContainer Collector**
+
    - Runtime errors
    - Build failures
    - Package manager issues
@@ -1568,6 +1672,7 @@ Provides intelligent error handling and resolution by converting runtime errors,
    - Resource exhaustion
 
 2. **Editor Collector**
+
    - Syntax errors
    - Type errors
    - Linting issues
@@ -1594,12 +1699,12 @@ sequenceDiagram
     activate ERM
     ERM->>ERM: Normalize Error
     ERM->>ERM: Create Error Context
-    
+
     ERM->>CM: Add Error Context
     ERM->>CHM: Request Resolution
-    
+
     CHM->>AM: Execute Resolution Actions
-    
+
     alt Resolution Succeeds
         AM-->>ERM: Resolution Complete
         ERM->>ERM: Record Success
@@ -1608,13 +1713,14 @@ sequenceDiagram
         ERM->>ERM: Update Error Context
         ERM->>CHM: Request New Resolution
     end
-    
+
     deactivate ERM
 ```
 
 ### Key Features
 
 1. **Error Context Assembly**
+
    - Stack trace analysis
    - Related file content
    - Recent changes
@@ -1623,6 +1729,7 @@ sequenceDiagram
    - Dependencies context
 
 2. **Resolution Strategy**
+
    - Automatic resolution attempts
    - Guided manual resolution
    - Progressive refinement
@@ -1645,23 +1752,23 @@ graph TD
         ED[Editor]
         AM[Actions Manager]
     end
-    
+
     subgraph "Error Processing"
         EC[Error Collectors]
         ERM[Error Resolution Manager]
         CTX[Context Assembly]
     end
-    
+
     subgraph "Resolution"
         CHM[Chat Manager]
         ACT[Actions Manager]
         RB[Rollback Manager]
     end
-    
+
     WC -->|Runtime Errors| EC
     ED -->|Syntax Errors| EC
     AM -->|Action Failures| EC
-    
+
     EC --> ERM
     ERM --> CTX
     CTX --> CHM
@@ -1673,12 +1780,14 @@ graph TD
 ### Error Categories and Handling
 
 1. **Build Errors**
+
    - Compilation failures
    - Dependency issues
    - Configuration problems
    - Resource constraints
 
 2. **Runtime Errors**
+
    - JavaScript exceptions
    - Network failures
    - Resource exhaustion
@@ -1693,12 +1802,14 @@ graph TD
 ### Integration with Existing Systems
 
 1. **Context Manager Integration**
+
    - Error context as first-class context type
    - Priority handling in context assembly
    - Error history tracking
    - Resolution attempt history
 
 2. **Actions Manager Integration**
+
    - Error-specific action types
    - Rollback coordination
    - Resolution validation

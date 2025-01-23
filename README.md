@@ -19,21 +19,27 @@ For a detailed architectural overview, please refer to our [arc42 Architecture D
 ## Project Components
 
 ### 1. [Chat Context Package](/packages/chat-context/README.md)
+
 Manages conversational context and prompt generation, serving as the intelligent communication layer of the system.
 
 ### 2. [LLM Integration Package](/packages/llm-integration/README.md)
+
 Provides a unified, extensible interface for interacting with multiple Large Language Model providers.
 
 ### 3. [File System Package](/packages/file-system/README.md)
+
 Implements a robust file management system with comprehensive synchronization capabilities across browser and local file systems.
 
 ### 4. [Actions Package](/packages/actions/README.md)
+
 Interprets and executes various types of actions derived from LLM responses, offering a flexible action management system.
 
 ### 5. [Error Resolution Package](/packages/error-resolution/README.md)
+
 Provides intelligent error handling and resolution through structured context and LLM-assisted debugging.
 
 ### 6. [Workbench Package](/packages/workbench/README.md)
+
 Manages the overall IDE workspace state, persisting user preferences and session information.
 
 ## Project Setup and Monorepo Design Decisions
@@ -41,17 +47,21 @@ Manages the overall IDE workspace state, persisting user preferences and session
 ### Monorepo Tooling Selection
 
 #### Chosen Solution: Turborepo with pnpm
+
 - **Performance**: Optimized build and dependency management
 - **Flexibility**: Lightweight and minimally invasive
 - **Scalability**: Supports future expansion of project components
 
 #### Key Design Principles
+
 1. **Modular Architecture**
+
    - Clear separation of concerns
    - Independent package development
    - Easy maintenance and testing
 
 2. **Dependency Management**
+
    - Centralized dependency control
    - Simplified version synchronization
    - Shared configuration across packages
@@ -62,7 +72,9 @@ Manages the overall IDE workspace state, persisting user preferences and session
    - Minimal rebuild overhead
 
 ### Package Structure Rationale
-- **Packages Directory**: 
+
+- **Packages Directory**:
+
   - Hosts shared libraries and core modules
   - Enables code reuse across applications
   - Provides clear architectural boundaries
@@ -73,17 +85,20 @@ Manages the overall IDE workspace state, persisting user preferences and session
   - Easy to understand and modify
 
 ### Technology Agnostic Approach
+
 - Avoid premature framework commitment
 - Flexible structure for future technology decisions
 - Focus on core system design and interactions
 
 ## Prerequisites
+
 - Node.js (v18+)
 - pnpm
 
 ## Getting Started
 
 ### Installation
+
 ```bash
 # Clone the repository
 git clone https://github.com/yourusername/prompt-dev.git
@@ -96,6 +111,7 @@ pnpm dev
 ```
 
 ## Development Scripts
+
 - `pnpm build`: Build all packages
 - `pnpm dev`: Start development servers
 - `pnpm test`: Run all tests
@@ -103,12 +119,15 @@ pnpm dev
 - `pnpm format`: Format code
 
 ## Technologies
+
 - Turborepo
 - pnpm
 - TypeScript
 
 ## License
+
 MIT License
 
 ## Contributing
-We welcome contributions! Please see our contributing guidelines for more details. 
+
+We welcome contributions! Please see our contributing guidelines for more details.

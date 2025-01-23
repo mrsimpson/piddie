@@ -1,6 +1,25 @@
+# Generated files
 node_modules
 dist
+.DS_Store
+
+# Typescript
+*.tsbuildinfo
+*.d.ts
+
+# Turborepo
 .turbo
-.env
-.vitepress
-**/.vitepress/cache
+
+# Jest
+coverage
+.coverage
+
+# Env files
+.env*
+!.env.example
+
+# vitepress
+docs/.vitepress/cache
+
+# samples for templating
+packages/_example*
