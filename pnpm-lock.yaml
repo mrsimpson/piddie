@@ -98,15 +98,23 @@ importers:
 
   packages/_example-2: {}
 
+  packages/files-management:
+    dependencies:
+      '@piddie/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
+
   packages/runtime-environment:
     dependencies:
+      '@piddie/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
+
+  packages/shared-types:
+    dependencies:
       '@webcontainer/api':
-        specifier: ^1.0.0
-        version: 1.5.1
-    devDependencies:
-      typescript:
-        specifier: ^5.0.0
-        version: 5.7.3
+        specifier: 1.5.1-internal.6
+        version: 1.5.1-internal.6
 
 packages:
 
@@ -1171,8 +1179,8 @@ packages:
   '@vueuse/shared@12.5.0':
     resolution: {integrity: sha512-vMpcL1lStUU6O+kdj6YdHDixh0odjPAUM15uJ9f7MY781jcYkIwFA4iv2EfoIPO6vBmvutI1HxxAwmf0cx5ISQ==}
 
-  '@webcontainer/api@1.5.1':
-    resolution: {integrity: sha512-+ELk+TbTOUx0LawAUdB+nnxaofg/FxUXo/Ac/+CzHSP3SOc3ebBAW3fLo4UZfvJdUW+ygWZOiQMthPLQXvKZEg==}
+  '@webcontainer/api@1.5.1-internal.6':
+    resolution: {integrity: sha512-HErRz351Wa2porp9AZAeKqzwyl9UIuj09hQyKLLzDdT+p/VOKyCeWghV0wBhuzJA1K4gExvyCzblnOPaJq0trg==}
 
   acorn-jsx@5.3.2:
     resolution: {integrity: sha512-rq9s+JNhf0IChjtDXxllJ7g41oZk5SlXtp0LHwyA5cejwn7vKmKp4pPri6YEePv2PU65sAsegbXtIinmDFDXgQ==}
@@ -3627,7 +3635,7 @@ snapshots:
     transitivePeerDependencies:
       - typescript
 
-  '@webcontainer/api@1.5.1': {}
+  '@webcontainer/api@1.5.1-internal.6': {}
 
   acorn-jsx@5.3.2(acorn@8.14.0):
     dependencies:

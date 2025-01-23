@@ -3,10 +3,6 @@
   "include": ["**/*", ".*.js"],
   "compilerOptions": {
     "types": ["vitest/globals"],
-    "baseUrl": ".",
-    "paths": {
-      "@mme/typescript-example-1/*": ["packages/typescript-example-1/src/*"],
-      "@mme/typescript-example-2/*": ["packages/typescript-example-2/src/*"]
-    }
+    "baseUrl": "."
   }
 }

@@ -26,7 +26,7 @@ Manages conversational context and prompt generation, serving as the intelligent
 
 Provides a unified, extensible interface for interacting with multiple Large Language Model providers.
 
-### 3. [File System Package](/packages/file-system/README.md)
+### 3. [Files Management Package](/packages/files-management/README.md)
 
 Implements a robust file management system with comprehensive synchronization capabilities across browser and local file systems.
 

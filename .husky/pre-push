@@ -3,4 +3,4 @@
 pnpm turbo run --parallel lint format typecheck
 
 # Run unit tests
-pnpm test
+pnpm turbo run --parallel test -- --passWithNoTests 
