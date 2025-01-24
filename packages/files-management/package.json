@@ -16,6 +16,7 @@
     "typecheck": "tsc"
   },
   "dependencies": {
+    "@isomorphic-git/lightning-fs": "4.6.0",
     "@piddie/shared-types": "workspace:*"
   }
 }

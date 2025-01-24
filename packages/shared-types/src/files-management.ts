@@ -64,7 +64,7 @@ export interface FileManagementService {
   /**
    * File system management interface
    */
-    fileSystem: FileSystem;
+  fileSystem: FileSystem;
 
   /**
    * Synchronization management interface

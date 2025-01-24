@@ -53,7 +53,7 @@ export interface SyncTarget {
    * Initialize target with file system
    * @throws {Error} if initialization fails
    */
-    initialize(fileSystem: FileSystem): Promise<void>;
+  initialize(fileSystem: FileSystem): Promise<void>;
 
   /**
    * Prepare target for incoming changes and lock operations

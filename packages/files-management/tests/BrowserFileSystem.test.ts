@@ -1,68 +1,41 @@
 // Must be at the very top of the file
-vi.mock("fs", () => {
-  const mockDirent = {
-    isDirectory: () => false,
-    isFile: () => true,
-    isBlockDevice: () => false,
-    isCharacterDevice: () => false,
-    isSymbolicLink: () => false,
-    isFIFO: () => false,
-    isSocket: () => false
+vi.mock("@isomorphic-git/lightning-fs", () => {
+  const mockFs = {
+    promises: {
+      mkdir: vi.fn(),
+      readdir: vi.fn(),
+      stat: vi.fn(),
+      readFile: vi.fn(),
+      writeFile: vi.fn(),
+      rmdir: vi.fn(),
+      unlink: vi.fn()
+    }
   };
 
   return {
-    promises: {
-      mkdir: vi.fn().mockResolvedValue(undefined),
-      readdir: vi.fn().mockResolvedValue([]),
-      stat: vi.fn().mockResolvedValue({
-        isDirectory: () => false,
-        isFile: () => true,
-        mtimeMs: Date.now(),
-        size: 0,
-        mode: 0,
-        uid: 0,
-        gid: 0,
-        atime: new Date(),
-        mtime: new Date(),
-        ctime: new Date(),
-        birthtime: new Date(),
-        atimeMs: Date.now(),
-        ctimeMs: Date.now(),
-        birthtimeMs: Date.now(),
-        blocks: 0,
-        blksize: 0,
-        dev: 0,
-        ino: 0,
-        nlink: 0,
-        rdev: 0,
-        isBlockDevice: () => false,
-        isCharacterDevice: () => false,
-        isSymbolicLink: () => false,
-        isFIFO: () => false,
-        isSocket: () => false
-      }),
-      readFile: vi.fn().mockResolvedValue(""),
-      writeFile: vi.fn().mockResolvedValue(undefined),
-      rm: vi.fn().mockResolvedValue(undefined),
-      unlink: vi.fn().mockResolvedValue(undefined),
-      access: vi.fn().mockResolvedValue(undefined)
-    }
+    default: vi.fn(() => mockFs)
   };
 });
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import type {
-  FileSystem,
-  FileSystemItem,
-  FileSystemState
-} from "@piddie/shared-types";
+import type { FileSystem } from "@piddie/shared-types";
 import { FileSystemError } from "@piddie/shared-types";
-import { NodeFileSystem } from "../src/NodeFileSystem";
-import { promises as fs } from "fs";
-import type { Dirent, PathLike, Stats } from "fs";
+import { BrowserFileSystem } from "../src/BrowserFileSystem";
+import FS from "@isomorphic-git/lightning-fs";
+import type { Stats as LightningStats } from "@isomorphic-git/lightning-fs";
 
-// Get the mocked fs module with proper typing
-const fsMock = vi.mocked(fs, true);
+// Get the mocked fs instance
+const fsInstance = new FS("test");
+const mockFs = fsInstance.promises;
+
+// Create spies for each method
+const mkdirSpy = vi.spyOn(mockFs, "mkdir");
+const readdirSpy = vi.spyOn(mockFs, "readdir");
+const statSpy = vi.spyOn(mockFs, "stat");
+const readFileSpy = vi.spyOn(mockFs, "readFile");
+const writeFileSpy = vi.spyOn(mockFs, "writeFile");
+const rmdirSpy = vi.spyOn(mockFs, "rmdir");
+const unlinkSpy = vi.spyOn(mockFs, "unlink");
 
 const enoentError = Object.assign(new Error("ENOENT"), { code: "ENOENT" });
 
@@ -71,48 +44,37 @@ const ROOT_DIR = "./unit-test";
 // Create a helper for Stats objects
 const createStatsMock = (
   options: { isDirectory?: boolean; size?: number } = {}
-): Stats =>
-  ({
-    isDirectory: () => options.isDirectory ?? false,
-    isFile: () => !options.isDirectory,
-    mtimeMs: Date.now(),
-    size: options.size ?? 0,
-    mode: 0,
-    uid: 0,
-    gid: 0,
-    atime: new Date(),
-    mtime: new Date(),
-    ctime: new Date(),
-    birthtime: new Date(),
-    atimeMs: Date.now(),
-    ctimeMs: Date.now(),
-    birthtimeMs: Date.now(),
-    blocks: 0,
-    blksize: 0,
-    dev: 0,
-    ino: 0,
-    nlink: 0,
-    rdev: 0,
-    isBlockDevice: () => false,
-    isCharacterDevice: () => false,
-    isSymbolicLink: () => false,
-    isFIFO: () => false,
-    isSocket: () => false
-  }) as Stats;
+): LightningStats => ({
+  type: options.isDirectory ? "dir" : "file",
+  mode: 1,
+  size: options.size ?? 0,
+  ino: 0,
+  mtimeMs: Date.now(),
+  ctimeMs: Date.now(),
+  uid: 1,
+  gid: 1,
+  dev: 1,
+  isFile: () => !options.isDirectory,
+  isDirectory: () => options.isDirectory ?? false,
+  isSymbolicLink: () => false
+});
 
-describe("FileSystem", () => {
+describe("Broser FileSystem", () => {
   let fileSystem: FileSystem;
 
   beforeEach(() => {
     vi.resetAllMocks();
-    fileSystem = new NodeFileSystem(ROOT_DIR);
+    fileSystem = new BrowserFileSystem({
+      name: "test",
+      rootDir: ROOT_DIR
+    });
   });
 
   describe("initialization", () => {
     it("should initialize successfully", async () => {
       // Given a new file system
-      fsMock.access.mockResolvedValue(undefined);
-      fsMock.mkdir.mockResolvedValue(undefined);
+      statSpy.mockRejectedValueOnce(enoentError); // First stat fails (dir doesn't exist)
+      mkdirSpy.mockResolvedValue(undefined);
 
       // When initializing
       const initPromise = fileSystem.initialize();
@@ -131,8 +93,8 @@ describe("FileSystem", () => {
       it("should read existing file content", async () => {
         // Given a file exists
         const path = "/test.txt";
-        fsMock.access.mockResolvedValue(undefined);
-        fsMock.readFile.mockResolvedValue("test content");
+        statSpy.mockResolvedValue(createStatsMock());
+        readFileSpy.mockResolvedValue("test content");
 
         // When reading the file
         const content = await fileSystem.readFile(path);
@@ -144,8 +106,8 @@ describe("FileSystem", () => {
       it("should throw NOT_FOUND for non-existent file", async () => {
         // Given a file does not exist
         const path = "/non-existent.txt";
-        fsMock.access.mockRejectedValue(enoentError);
-        fsMock.readFile.mockRejectedValue(enoentError);
+        statSpy.mockRejectedValue(enoentError);
+        readFileSpy.mockRejectedValue(enoentError);
 
         // When trying to read the file
         const readPromise = fileSystem.readFile(path);
@@ -164,9 +126,9 @@ describe("FileSystem", () => {
         // Given a path and content
         const path = "/test.txt";
         const content = "new content";
-        fsMock.access.mockResolvedValue(undefined);
-        fsMock.writeFile.mockResolvedValue(undefined);
-        fsMock.readFile.mockResolvedValue(content);
+        statSpy.mockResolvedValue(createStatsMock());
+        writeFileSpy.mockResolvedValue(undefined);
+        readFileSpy.mockResolvedValue(content);
 
         // When writing to the file
         await fileSystem.writeFile(path, content);
@@ -198,37 +160,15 @@ describe("FileSystem", () => {
       it("should list directory contents", async () => {
         // Given a directory with contents
         const path = "/test-dir";
-        fsMock.access.mockResolvedValue(undefined);
+        statSpy.mockResolvedValue(createStatsMock({ isDirectory: true }));
 
-        // Mock directory entries with proper Dirent objects
-        const mockDirents = [
-          {
-            name: "file1.txt",
-            isDirectory: () => false,
-            isFile: () => true,
-            isBlockDevice: () => false,
-            isCharacterDevice: () => false,
-            isSymbolicLink: () => false,
-            isFIFO: () => false,
-            isSocket: () => false
-          },
-          {
-            name: "file2.txt",
-            isDirectory: () => false,
-            isFile: () => true,
-            isBlockDevice: () => false,
-            isCharacterDevice: () => false,
-            isSymbolicLink: () => false,
-            isFIFO: () => false,
-            isSocket: () => false
-          }
-        ] as Dirent[];
-        fsMock.readdir.mockResolvedValue(mockDirents);
+        // Mock directory entries
+        readdirSpy.mockResolvedValue(["file1.txt", "file2.txt"]);
 
-        fsMock.stat.mockImplementation((filePath: PathLike) =>
+        statSpy.mockImplementation((filePath: string) =>
           Promise.resolve(
             createStatsMock({
-              size: filePath.toString().includes("file1") ? 100 : 200
+              size: filePath.includes("file1") ? 100 : 200
             })
           )
         );
@@ -255,8 +195,8 @@ describe("FileSystem", () => {
       it("should throw NOT_FOUND when listing non-existent directory", async () => {
         // Given a directory does not exist
         const path = "/non-existent-dir";
-        fsMock.access.mockRejectedValue(enoentError);
-        fsMock.readdir.mockRejectedValue(enoentError);
+        statSpy.mockRejectedValue(enoentError);
+        readdirSpy.mockRejectedValue(enoentError);
 
         // When trying to list directory
         const listPromise = fileSystem.listDirectory(path);
@@ -275,13 +215,12 @@ describe("FileSystem", () => {
         // Given a file exists
         const path = "/meta-test.txt";
         const lastModified = Date.now();
-        fsMock.access.mockResolvedValue(undefined);
-        fsMock.stat.mockResolvedValue({
-          isDirectory: () => false,
-          isFile: () => true,
-          mtimeMs: lastModified,
-          size: 12
-        } as any);
+        statSpy.mockResolvedValue(
+          createStatsMock({
+            size: 12,
+            isDirectory: false
+          })
+        );
 
         // When getting metadata
         const meta = await fileSystem.getMetadata(path);
@@ -299,12 +238,11 @@ describe("FileSystem", () => {
         // Given a directory exists
         const path = "/test-dir";
         const lastModified = Date.now();
-        fsMock.access.mockResolvedValue(undefined);
-        fsMock.stat.mockResolvedValue({
-          isDirectory: () => true,
-          isFile: () => false,
-          mtimeMs: lastModified
-        } as any);
+        statSpy.mockResolvedValue(
+          createStatsMock({
+            isDirectory: true
+          })
+        );
 
         // When getting metadata
         const meta = await fileSystem.getMetadata(path);

@@ -7,23 +7,88 @@
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
-  <component name="ProjectColorInfo"><![CDATA[{
-  "associatedIndex": 3
-}]]></component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;mrsimpson&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/mrsimpson/piddie.git&quot;,
+    &quot;accountId&quot;: &quot;ce5c41c6-595d-4353-8e8e-f9a2d409a148&quot;
+  }
+}</component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 3
+}</component>
   <component name="ProjectId" id="2s1HSrIVvhOL5pIEBxacEUeVxM0" />
   <component name="ProjectViewState">
     <option name="autoscrollFromSource" value="true" />
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "nodejs_package_manager_path": "pnpm",
-    "settings.editor.selected.configurable": "software.aws.toolkits.jetbrains.settings.DynamicResourcesConfigurable",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;Vitest.Broser FileSystem.file operations.directory operations.should list directory contents.executor&quot;: &quot;Debug&quot;,
+    &quot;Vitest.FileSystem.file operations.directory operations.should list directory contents.executor&quot;: &quot;Debug&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;pnpm&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;software.aws.toolkits.jetbrains.settings.DynamicResourcesConfigurable&quot;,
+    &quot;ts.external.directory.path&quot;: &quot;/Users/oliverjaegle/projects/privat/piddie/node_modules/typescript/lib&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
+  <component name="RunManager" selected="Vitest.FileSystem.file operations.directory operations.should list directory contents">
+    <configuration name="Broser FileSystem.file operations.directory operations.should list directory contents" type="JavaScriptTestRunnerVitest" temporary="true" nameIsGenerated="true">
+      <node-interpreter value="project" />
+      <vitest-package value="$PROJECT_DIR$/node_modules/vitest" />
+      <working-dir value="$PROJECT_DIR$/packages/files-management" />
+      <vitest-options value="--run" />
+      <envs />
+      <scope-kind value="TEST" />
+      <test-file value="$PROJECT_DIR$/packages/files-management/tests/BrowserFileSystem.test.ts" />
+      <test-names>
+        <test-name value="Broser FileSystem" />
+        <test-name value="file operations" />
+        <test-name value="directory operations" />
+        <test-name value="should list directory contents" />
+      </test-names>
+      <method v="2" />
+    </configuration>
+    <configuration name="FileSystem.file operations.directory operations.should list directory contents" type="JavaScriptTestRunnerVitest" temporary="true" nameIsGenerated="true">
+      <node-interpreter value="project" />
+      <vitest-package value="$PROJECT_DIR$/node_modules/vitest" />
+      <working-dir value="$PROJECT_DIR$/packages/files-management" />
+      <vitest-options value="--run" />
+      <envs />
+      <scope-kind value="TEST" />
+      <test-file value="$PROJECT_DIR$/packages/files-management/tests/LocalFileSystem.test.ts" />
+      <test-names>
+        <test-name value="FileSystem" />
+        <test-name value="file operations" />
+        <test-name value="directory operations" />
+        <test-name value="should list directory contents" />
+      </test-names>
+      <method v="2" />
+    </configuration>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Vitest.FileSystem.file operations.directory operations.should list directory contents" />
+        <item itemvalue="Vitest.Broser FileSystem.file operations.directory operations.should list directory contents" />
+      </list>
+    </recent_temporary>
+  </component>
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
@@ -41,7 +106,28 @@
       <option name="presentableId" value="Default" />
       <updated>1737616163954</updated>
       <workItem from="1737616165834" duration="4000" />
+      <workItem from="1737730135845" duration="482000" />
+      <workItem from="1737730824614" duration="2000" />
     </task>
     <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" type="javascript">
+          <url>file://$PROJECT_DIR$/packages/files-management/tests/BrowserFileSystem.test.ts</url>
+          <line>159</line>
+          <option name="timeStamp" value="1" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="javascript">
+          <url>file://$PROJECT_DIR$/packages/files-management/tests/LocalFileSystem.test.ts</url>
+          <line>228</line>
+          <option name="timeStamp" value="2" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
   </component>
 </project>
