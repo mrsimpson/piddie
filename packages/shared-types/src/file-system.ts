@@ -40,7 +40,7 @@ export interface FileSystemState {
 /**
  * Interface for file system operations
  */
-export interface FileSystemManager {
+export interface FileSystem {
   /**
    * Initialize the file system
    */

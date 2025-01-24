@@ -1,4 +1,4 @@
-import type { FileSystemManager, LockState } from "./file-system";
+import type { FileSystem, LockState } from "./file-system";
 
 /**
  * Information about a file change (without content)
@@ -53,7 +53,7 @@ export interface SyncTarget {
    * Initialize target with file system
    * @throws {Error} if initialization fails
    */
-  initialize(fileSystem: FileSystemManager): Promise<void>;
+    initialize(fileSystem: FileSystem): Promise<void>;
 
   /**
    * Prepare target for incoming changes and lock operations

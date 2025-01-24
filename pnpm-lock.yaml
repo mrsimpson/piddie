@@ -90,14 +90,6 @@ importers:
         specifier: ^3.0.3
         version: 3.0.3(@types/node@22.10.7)(yaml@2.6.1)
 
-  packages/_example-1:
-    dependencies:
-      '@mme/typescript-example-2':
-        specifier: workspace:*
-        version: link:../_example-2
-
-  packages/_example-2: {}
-
   packages/files-management:
     dependencies:
       '@piddie/shared-types':

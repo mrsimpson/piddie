@@ -1,4 +1,4 @@
-import type { FileSystemManager } from "./file-system";
+import type { FileSystem } from "./file-system";
 import type { SyncManager } from "./files-sync-manager";
 import type { FileConflict } from "./files-sync-target";
 
@@ -64,7 +64,7 @@ export interface FileManagementService {
   /**
    * File system management interface
    */
-  fileSystem: FileSystemManager;
+    fileSystem: FileSystem;
 
   /**
    * Synchronization management interface
