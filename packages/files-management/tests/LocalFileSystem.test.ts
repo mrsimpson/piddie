@@ -1,15 +1,5 @@
 // Must be at the very top of the file
 vi.mock("fs", () => {
-  const mockDirent = {
-    isDirectory: () => false,
-    isFile: () => true,
-    isBlockDevice: () => false,
-    isCharacterDevice: () => false,
-    isSymbolicLink: () => false,
-    isFIFO: () => false,
-    isSocket: () => false
-  };
-
   return {
     promises: {
       mkdir: vi.fn().mockResolvedValue(undefined),
@@ -51,15 +41,10 @@ vi.mock("fs", () => {
 });
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import type {
-  FileSystem,
-  FileSystemItem,
-  FileSystemState
-} from "@piddie/shared-types";
-import { FileSystemError } from "@piddie/shared-types";
+import type { FileSystem } from "@piddie/shared-types";
 import { NodeFileSystem } from "../src/NodeFileSystem";
 import { promises as fs } from "fs";
-import type { Dirent, PathLike, Stats } from "fs";
+import type { BigIntStats, Dirent, PathLike, Stats } from "fs";
 
 // Get the mocked fs module with proper typing
 const fsMock = vi.mocked(fs, true);
@@ -281,7 +266,7 @@ describe("FileSystem", () => {
           isFile: () => true,
           mtimeMs: lastModified,
           size: 12
-        } as any);
+        } as unknown as BigIntStats);
 
         // When getting metadata
         const meta = await fileSystem.getMetadata(path);
@@ -304,7 +289,7 @@ describe("FileSystem", () => {
           isDirectory: () => true,
           isFile: () => false,
           mtimeMs: lastModified
-        } as any);
+        } as unknown as BigIntStats);
 
         // When getting metadata
         const meta = await fileSystem.getMetadata(path);

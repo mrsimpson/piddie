@@ -32,9 +32,9 @@ export class BrowserFileSystem extends FsPromisesAdapter {
       mkdir: (path: string, options?: { recursive?: boolean }) =>
         fs.promises.mkdir(path, { mode: 0o777, ...options } as MKDirOptions),
       stat: fs.promises.stat,
-      readFile: (path: string, _encoding: "utf8") =>
+      readFile: (path: string) =>
         fs.promises.readFile(path, { encoding: "utf8" }) as Promise<string>,
-      writeFile: (path: string, data: string, _encoding: "utf8") =>
+      writeFile: (path: string, data: string) =>
         fs.promises.writeFile(path, data, {
           mode: 0o666,
           encoding: "utf8"

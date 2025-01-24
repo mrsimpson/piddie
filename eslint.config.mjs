@@ -1,6 +1,11 @@
 import js from "@eslint/js";
 import { parser, configs } from "typescript-eslint";
 import prettier from "eslint-config-prettier";
+import { fileURLToPath } from "url";
+import { dirname, resolve } from "path";
+
+// Get __dirname equivalent for ES modules
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default [
   js.configs.recommended,
@@ -13,9 +18,9 @@ export default [
       parser,
       parserOptions: {
         project: [
-          "./tsconfig.json",
-          "./docs/.vitepress/tsconfig.json",
-          "./packages/*/tsconfig.json"
+          resolve(__dirname, "./tsconfig.json"),
+          resolve(__dirname, "./docs/.vitepress/tsconfig.json"),
+          resolve(__dirname, "./packages/*/tsconfig.json")
         ]
       }
     }

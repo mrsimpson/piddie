@@ -10,8 +10,8 @@ export class NodeFileSystem extends FsPromisesAdapter {
       mkdir: fs.mkdir,
       readdir: fs.readdir,
       stat: fs.stat,
-      readFile: (path, _encoding) => fs.readFile(path, "utf-8"),
-      writeFile: (path, data, _encoding) => fs.writeFile(path, data, "utf-8"),
+      readFile: (path) => fs.readFile(path, "utf-8"),
+      writeFile: (path, data) => fs.writeFile(path, data, "utf-8"),
       rm: fs.rm,
       unlink: fs.unlink,
       access: fs.access

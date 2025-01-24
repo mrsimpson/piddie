@@ -19,7 +19,6 @@ vi.mock("@isomorphic-git/lightning-fs", () => {
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { FileSystem } from "@piddie/shared-types";
-import { FileSystemError } from "@piddie/shared-types";
 import { BrowserFileSystem } from "../src/BrowserFileSystem";
 import FS from "@isomorphic-git/lightning-fs";
 import type { Stats as LightningStats } from "@isomorphic-git/lightning-fs";
@@ -34,8 +33,6 @@ const readdirSpy = vi.spyOn(mockFs, "readdir");
 const statSpy = vi.spyOn(mockFs, "stat");
 const readFileSpy = vi.spyOn(mockFs, "readFile");
 const writeFileSpy = vi.spyOn(mockFs, "writeFile");
-const rmdirSpy = vi.spyOn(mockFs, "rmdir");
-const unlinkSpy = vi.spyOn(mockFs, "unlink");
 
 const enoentError = Object.assign(new Error("ENOENT"), { code: "ENOENT" });
 
@@ -214,7 +211,6 @@ describe("Broser FileSystem", () => {
       it("should return file metadata", async () => {
         // Given a file exists
         const path = "/meta-test.txt";
-        const lastModified = Date.now();
         statSpy.mockResolvedValue(
           createStatsMock({
             size: 12,
@@ -237,7 +233,6 @@ describe("Broser FileSystem", () => {
       it("should return directory metadata", async () => {
         // Given a directory exists
         const path = "/test-dir";
-        const lastModified = Date.now();
         statSpy.mockResolvedValue(
           createStatsMock({
             isDirectory: true
