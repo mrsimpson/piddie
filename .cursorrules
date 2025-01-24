@@ -40,6 +40,7 @@ If you want to use additional libraries, frameworks, or tools, describe their un
 - Variables, functions, methods: camelCase
 - Files, directories: kebab-case
 - Constants, env variables: UPPERCASE
+- Files according to the artifact they expose. e. g. "MyClass.ts", "myFunction.ts"
 
 ### Functions
 
