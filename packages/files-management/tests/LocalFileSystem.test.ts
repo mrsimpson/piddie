@@ -1,22 +1,44 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi, type MockInstance } from "vitest";
 import type { FileSystem, FileSystemItem, FileSystemState } from "@piddie/shared-types";
 import { FileSystemError } from "@piddie/shared-types";
 import { LocalFileSystem } from "../src/LocalFileSystem";
+import { promises as fs } from 'fs';
+
+// First create base mock with only the methods we need
+const fsMock = {
+    mkdir: vi.fn(),
+    readdir: vi.fn(),
+    stat: vi.fn(),
+    readFile: vi.fn(),
+    writeFile: vi.fn(),
+    rm: vi.fn(),
+    unlink: vi.fn(),
+    access: vi.fn()
+} as const;
+
+const enoentError = Object.assign(new Error("ENOENT"), { code: "ENOENT" });
 
 const ROOT_DIR = "./unit-test";
 describe("FileSystem", () => {
-    let fs: FileSystem;
+    let localFileSystem: FileSystem;
 
     beforeEach(() => {
-        // Will implement factory later
-        fs = new LocalFileSystem({ rootDir: ROOT_DIR });
+        vi.resetAllMocks();
+
+        localFileSystem = new LocalFileSystem({
+            rootDir: ROOT_DIR,
+            fs: fsMock as unknown as typeof fs
+        });
     });
 
     describe("initialization", () => {
         it("should initialize successfully", async () => {
             // Given a new file system
+            fsMock.access.mockResolvedValue(undefined);
+            fsMock.mkdir.mockResolvedValue(undefined);
+
             // When initializing
-            const initPromise = fs.initialize();
+            const initPromise = localFileSystem.initialize();
 
             // Then it should complete without errors
             await expect(initPromise).resolves.toBeUndefined();
@@ -25,24 +47,32 @@ describe("FileSystem", () => {
 
     describe("file operations", () => {
         beforeEach(async () => {
-            await fs.initialize();
+            await localFileSystem.initialize();
         });
+
 
         describe("reading files", () => {
             it("should read existing file content", async () => {
-                // Given an existing file
-                await fs.writeFile("/test.txt", "test content");
+                // Given a file exists
+                const path = "/test.txt";
+                fsMock.access.mockResolvedValue(undefined);
+                fsMock.readFile.mockResolvedValue("test content");
 
                 // When reading the file
-                const content = await fs.readFile("/test.txt");
+                const content = await localFileSystem.readFile(path);
 
                 // Then it should return the content
                 expect(content).toBe("test content");
             });
 
             it("should throw NOT_FOUND for non-existent file", async () => {
-                // When trying to read non-existent file
-                const readPromise = fs.readFile("/non-existent.txt");
+                // Given a file does not exist
+                const path = "/non-existent.txt";
+                fsMock.access.mockRejectedValue(enoentError);
+                fsMock.readFile.mockRejectedValue(enoentError);
+
+                // When trying to read the file
+                const readPromise = localFileSystem.readFile(path);
 
                 // Then it should throw NOT_FOUND
                 await expect(readPromise).rejects.toThrow(
@@ -55,24 +85,29 @@ describe("FileSystem", () => {
 
         describe("writing files", () => {
             it("should write file content", async () => {
-                // Given a file path and content
-                const path = "/new-file.txt";
+                // Given a path and content
+                const path = "/test.txt";
                 const content = "new content";
+                fsMock.access.mockResolvedValue(undefined);
+                fsMock.writeFile.mockResolvedValue(undefined);
+                fsMock.readFile.mockResolvedValue(content);
 
-                // When writing the file
-                await fs.writeFile(path, content);
+                // When writing to the file
+                await localFileSystem.writeFile(path, content);
 
                 // Then the file should exist with correct content
-                expect(await fs.exists(path)).toBe(true);
-                expect(await fs.readFile(path)).toBe(content);
+                expect(await localFileSystem.exists(path)).toBe(true);
+                expect(await localFileSystem.readFile(path)).toBe(content);
             });
 
             it("should throw when writing to locked file system", async () => {
                 // Given a locked file system
-                await fs.lock(1000, "test lock");
+                const path = "/test.txt";
+                const content = "new content";
+                await localFileSystem.lock(1000, "test lock");
 
                 // When trying to write
-                const writePromise = fs.writeFile("/test.txt", "content");
+                const writePromise = localFileSystem.writeFile(path, content);
 
                 // Then it should throw LOCKED
                 await expect(writePromise).rejects.toThrow(
@@ -85,13 +120,34 @@ describe("FileSystem", () => {
 
         describe("directory operations", () => {
             it("should list directory contents", async () => {
-                // Given a directory with files
-                await fs.createDirectory("/test-dir");
-                await fs.writeFile("/test-dir/file1.txt", "content1");
-                await fs.writeFile("/test-dir/file2.txt", "content2");
+                // Given a directory with contents
+                const path = "/test-dir";
+                fsMock.access.mockResolvedValue(undefined);
 
-                // When listing directory
-                const contents = await fs.listDirectory("/test-dir");
+                // Mock directory entries with proper Dirent objects
+                const mockDirents = [
+                    {
+                        name: "file1.txt",
+                        isDirectory: () => false,
+                        isFile: () => true
+                    },
+                    {
+                        name: "file2.txt",
+                        isDirectory: () => false,
+                        isFile: () => true
+                    }
+                ];
+                fsMock.readdir.mockResolvedValue(mockDirents);
+
+                fsMock.stat.mockImplementation((filePath) => Promise.resolve({
+                    isDirectory: () => false,
+                    isFile: () => true,
+                    mtimeMs: Date.now(),
+                    size: filePath.includes("file1") ? 100 : 200
+                } as any));
+
+                // When listing directory contents
+                const contents = await localFileSystem.listDirectory(path);
 
                 // Then it should return correct items
                 expect(contents).toHaveLength(2);
@@ -110,8 +166,13 @@ describe("FileSystem", () => {
             });
 
             it("should throw NOT_FOUND when listing non-existent directory", async () => {
-                // When trying to list non-existent directory
-                const listPromise = fs.listDirectory("/non-existent");
+                // Given a directory does not exist
+                const path = "/non-existent-dir";
+                fsMock.access.mockRejectedValue(enoentError);
+                fsMock.readdir.mockRejectedValue(enoentError);
+
+                // When trying to list directory
+                const listPromise = localFileSystem.listDirectory(path);
 
                 // Then it should throw NOT_FOUND
                 await expect(listPromise).rejects.toThrow(
@@ -124,29 +185,42 @@ describe("FileSystem", () => {
 
         describe("metadata operations", () => {
             it("should return file metadata", async () => {
-                // Given an existing file
+                // Given a file exists
                 const path = "/meta-test.txt";
-                await fs.writeFile(path, "test content");
+                const lastModified = Date.now();
+                fsMock.access.mockResolvedValue(undefined);
+                fsMock.stat.mockResolvedValue({
+                    isDirectory: () => false,
+                    isFile: () => true,
+                    mtimeMs: lastModified,
+                    size: 12
+                } as any);
 
                 // When getting metadata
-                const meta = await fs.getMetadata(path);
+                const meta = await localFileSystem.getMetadata(path);
 
                 // Then it should return correct metadata
                 expect(meta).toEqual({
                     path,
                     type: "file",
-                    size: 12, // "test content" length
+                    size: 12,
                     lastModified: expect.any(Number)
                 });
             });
 
             it("should return directory metadata", async () => {
-                // Given an existing directory
+                // Given a directory exists
                 const path = "/test-dir";
-                await fs.createDirectory(path);
+                const lastModified = Date.now();
+                fsMock.access.mockResolvedValue(undefined);
+                fsMock.stat.mockResolvedValue({
+                    isDirectory: () => true,
+                    isFile: () => false,
+                    mtimeMs: lastModified
+                } as any);
 
                 // When getting metadata
-                const meta = await fs.getMetadata(path);
+                const meta = await localFileSystem.getMetadata(path);
 
                 // Then it should return correct metadata
                 expect(meta).toEqual({
@@ -160,24 +234,24 @@ describe("FileSystem", () => {
         describe("locking", () => {
             it("should respect lock timeout", async () => {
                 // Given a short lock
-                await fs.lock(100, "short lock");
+                await localFileSystem.lock(100, "short lock");
 
                 // When waiting for timeout
                 await new Promise(resolve => setTimeout(resolve, 150));
 
                 // Then system should be unlocked
-                const state = fs.getState();
+                const state = localFileSystem.getState();
                 expect(state.lockState.isLocked).toBe(false);
             });
 
             it("should prevent operations while locked", async () => {
                 // Given a locked system
-                await fs.lock(1000, "test lock");
+                await localFileSystem.lock(1000, "test lock");
 
                 // When attempting operations
-                const writePromise = fs.writeFile("/test.txt", "content");
-                const readPromise = fs.readFile("/existing.txt");
-                const deletePromise = fs.deleteItem("/some-file.txt");
+                const writePromise = localFileSystem.writeFile("/test.txt", "content");
+                const readPromise = localFileSystem.readFile("/existing.txt");
+                const deletePromise = localFileSystem.deleteItem("/some-file.txt");
 
                 // Then all operations should fail with LOCKED
                 await expect(writePromise).rejects.toThrow(

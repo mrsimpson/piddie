@@ -1,9 +1,10 @@
 import { FileSystem, FileSystemItem, FileSystemState, FileSystemError } from "@piddie/shared-types";
-import { promises as fs } from "fs";
+import type { promises as fsPromises } from 'fs';
 import path from "path";
 
 interface LocalFileSystemOptions {
     rootDir: string;  // The root directory for all operations
+    fs: typeof fsPromises;  // Add fs as required option
 }
 
 /**
@@ -37,15 +38,18 @@ export class LocalFileSystem implements FileSystem {
         pendingOperations: 0
     };
     private initialized = false;
+    private fs: typeof fsPromises;
 
-    constructor(private options: LocalFileSystemOptions) { }
+    constructor(private options: LocalFileSystemOptions) {
+        this.fs = options.fs;
+    }
 
     async initialize(): Promise<void> {
         if (this.initialized) return;
 
         try {
             // Ensure root directory exists
-            await fs.mkdir(this.options.rootDir, { recursive: true });
+            await this.fs.mkdir(this.options.rootDir, { recursive: true });
             this.initialized = true;
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : 'Unknown error';
@@ -101,11 +105,11 @@ export class LocalFileSystem implements FileSystem {
         const absolutePath = this.getAbsolutePath(dirPath);
 
         try {
-            const entries = await fs.readdir(absolutePath, { withFileTypes: true });
+            const entries = await this.fs.readdir(absolutePath, { withFileTypes: true });
             const items = await Promise.all(
                 entries.map(async (entry) => {
                     const itemPath = path.join(dirPath, entry.name);
-                    const stats = await fs.stat(this.getAbsolutePath(itemPath));
+                    const stats = await this.fs.stat(this.getAbsolutePath(itemPath));
 
                     const item: FileSystemItem = {
                         path: itemPath,
@@ -134,7 +138,7 @@ export class LocalFileSystem implements FileSystem {
         const absolutePath = this.getAbsolutePath(filePath);
 
         try {
-            const content = await fs.readFile(absolutePath, "utf-8");
+            const content = await this.fs.readFile(absolutePath, "utf-8");
             return content;
         } catch (error: unknown) {
             if (error instanceof Error && 'code' in error && error.code === "ENOENT") {
@@ -154,13 +158,13 @@ export class LocalFileSystem implements FileSystem {
         try {
             // Ensure parent directory exists
             const parentDir = path.dirname(absolutePath);
-            await fs.mkdir(parentDir, { recursive: true });
+            await this.fs.mkdir(parentDir, { recursive: true });
 
             await this.updateState({
                 type: "write",
                 path: filePath,
                 execute: async () => {
-                    await fs.writeFile(absolutePath, content, "utf-8");
+                    await this.fs.writeFile(absolutePath, content, "utf-8");
                 }
             });
         } catch (error: unknown) {
@@ -180,7 +184,7 @@ export class LocalFileSystem implements FileSystem {
                 type: "create_directory",
                 path: dirPath,
                 execute: async () => {
-                    await fs.mkdir(absolutePath, { recursive: true });
+                    await this.fs.mkdir(absolutePath, { recursive: true });
                 }
             });
         } catch (error: unknown) {
@@ -200,11 +204,11 @@ export class LocalFileSystem implements FileSystem {
                 type: "delete",
                 path: itemPath,
                 execute: async () => {
-                    const stats = await fs.stat(absolutePath);
+                    const stats = await this.fs.stat(absolutePath);
                     if (stats.isDirectory()) {
-                        await fs.rm(absolutePath, { recursive: true });
+                        await this.fs.rm(absolutePath, { recursive: true });
                     } else {
-                        await fs.unlink(absolutePath);
+                        await this.fs.unlink(absolutePath);
                     }
                 }
             });
@@ -222,7 +226,7 @@ export class LocalFileSystem implements FileSystem {
         this.checkLock();
 
         try {
-            await fs.access(this.getAbsolutePath(itemPath));
+            await this.fs.access(this.getAbsolutePath(itemPath));
             return true;
         } catch {
             return false;
@@ -236,7 +240,7 @@ export class LocalFileSystem implements FileSystem {
         const absolutePath = this.getAbsolutePath(itemPath);
 
         try {
-            const stats = await fs.stat(absolutePath);
+            const stats = await this.fs.stat(absolutePath);
             const item: FileSystemItem = {
                 path: itemPath,
                 type: stats.isDirectory() ? "directory" : "file",
