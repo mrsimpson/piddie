@@ -7,8 +7,6 @@ export type { FileSystemTree };
  * Represents a file or directory in the file system
  */
 export interface FileSystemItem {
-  id: string;
-  name: string;
   path: string;
   type: "file" | "directory";
   lastModified: number;
@@ -17,57 +15,100 @@ export interface FileSystemItem {
 }
 
 /**
- * Configuration options for file system operations
+ * Lock state of file system operations
  */
-export interface FileSystemConfig {
-  rootPath?: string;
-  maxFileSize?: number;
-  allowedFileTypes?: string[];
+export interface LockState {
+  isLocked: boolean;
+  lockedSince?: number;
+  lockTimeout?: number;
+  lockReason?: string;
+}
+
+/**
+ * File system state information
+ */
+export interface FileSystemState {
+  lockState: LockState;
+  pendingOperations: number;
+  lastOperation?: {
+    type: string;
+    path: string;
+    timestamp: number;
+  };
 }
 
 /**
  * Interface for file system operations
  */
 export interface FileSystemManager {
-  initialize(config?: FileSystemConfig): Promise<void>;
+  /**
+   * Initialize the file system
+   */
+  initialize(): Promise<void>;
+
+  /**
+   * List contents of a directory
+   */
   listDirectory(path: string): Promise<FileSystemItem[]>;
+
+  /**
+   * Read file content
+   */
   readFile(path: string): Promise<string>;
-  writeFile(
-    path: string,
-    content: string,
-    options?: {
-      overwrite?: boolean;
-      createParentDirs?: boolean;
-    }
-  ): Promise<void>;
-  createDirectory(
-    path: string,
-    options?: {
-      recursive?: boolean;
-    }
-  ): Promise<void>;
-  deleteItem(
-    path: string,
-    options?: {
-      recursive?: boolean;
-    }
-  ): Promise<void>;
-  renameItem(oldPath: string, newPath: string): Promise<void>;
+
+  /**
+   * Write file content
+   */
+  writeFile(path: string, content: string): Promise<void>;
+
+  /**
+   * Create directory
+   */
+  createDirectory(path: string): Promise<void>;
+
+  /**
+   * Delete file or directory
+   */
+  deleteItem(path: string): Promise<void>;
+
+  /**
+   * Check if path exists
+   */
   exists(path: string): Promise<boolean>;
+
+  /**
+   * Get metadata for a path
+   */
   getMetadata(path: string): Promise<FileSystemItem>;
+
+  /**
+   * Lock with timeout
+   */
+  lock(timeoutMs: number, reason: string): Promise<void>;
+
+  /**
+   * Force unlock
+   */
+  forceUnlock(): Promise<void>;
+
+  /**
+   * Get current state
+   */
+  getState(): FileSystemState;
 }
 
 /**
- * Error types for file system and sync operations
+ * Error types for file system operations
  */
 export class FileSystemError extends Error {
   constructor(
     message: string,
-    public code?:
-      | "FILE_NOT_FOUND"
+    public code:
+      | "NOT_FOUND"
       | "PERMISSION_DENIED"
-      | "SYNC_CONFLICT"
-      | "NETWORK_ERROR"
+      | "LOCKED"
+      | "ALREADY_EXISTS"
+      | "INVALID_OPERATION"
   ) {
     super(message);
     this.name = "FileSystemError";
