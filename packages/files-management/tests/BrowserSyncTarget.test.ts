@@ -1,50 +1,42 @@
-// Mock fs.promises.watch
-vi.mock("fs/promises", () => ({
-  watch: vi.fn()
-}));
-
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { MockInstance } from "vitest";
-import { NodeSyncTarget } from "../src/NodeSyncTarget";
-import { NodeFileSystem } from "../src/NodeFileSystem";
+import { BrowserSyncTarget } from "../src/BrowserSyncTarget";
+import { BrowserFileSystem } from "../src/BrowserFileSystem";
 import type { FileChange } from "@piddie/shared-types";
-import { watch } from "fs/promises";
 
-// Helper to create a mock watcher that emits specified events
-class MockFsWatcher
-  implements
-    AsyncIterable<{ eventType: "rename" | "change"; filename: string | null }>
-{
-  private events: Array<{
-    eventType: "rename" | "change";
-    filename: string | null;
-  }>;
+// Define mock fs methods
+const mockPromises = {
+  mkdir: vi.fn().mockResolvedValue(undefined),
+  stat: vi.fn().mockResolvedValue({
+    isDirectory: () => false,
+    isFile: () => true,
+    mtimeMs: Date.now()
+  }),
+  readFile: vi.fn().mockResolvedValue("test content"),
+  writeFile: vi.fn().mockResolvedValue(undefined),
+  unlink: vi.fn().mockResolvedValue(undefined),
+  readdir: vi.fn().mockResolvedValue([]),
+  rmdir: vi.fn().mockResolvedValue(undefined)
+};
 
-  constructor(
-    events: Array<{
-      eventType: "rename" | "change";
-      filename: string | null;
-    }> = []
-  ) {
-    this.events = events;
+vi.mock("@isomorphic-git/lightning-fs", () => {
+  class MockFS {
+    promises = mockPromises;
+    constructor() {}
   }
+  return { default: MockFS };
+});
 
-  async *[Symbol.asyncIterator]() {
-    for (const event of this.events) {
-      yield event;
-    }
-  }
+// Mock window.setInterval and window.clearInterval
+const mockSetInterval = vi.fn();
+const mockClearInterval = vi.fn();
+vi.stubGlobal("setInterval", mockSetInterval);
+vi.stubGlobal("clearInterval", mockClearInterval);
 
-  close() {
-    // Method required by FSWatcher interface
-  }
-}
-
-describe("NodeSyncTarget", () => {
+describe("BrowserSyncTarget", () => {
   const TEST_ROOT = "/test/root";
-  let target: NodeSyncTarget;
-  let fileSystem: NodeFileSystem;
-  let mockWatcher: MockFsWatcher;
+  let target: BrowserSyncTarget;
+  let fileSystem: BrowserFileSystem;
 
   // Spy on FileSystem methods
   let spies: {
@@ -60,18 +52,27 @@ describe("NodeSyncTarget", () => {
   beforeEach(() => {
     vi.resetAllMocks();
 
-    // Setup mock watcher with no events by default
-    mockWatcher = new MockFsWatcher();
-    (watch as unknown as MockInstance).mockImplementation(() =>
-      Promise.resolve(mockWatcher)
-    );
+    // Reset mock implementations
+    mockPromises.stat.mockResolvedValue({
+      isDirectory: () => false,
+      isFile: () => true,
+      mtimeMs: Date.now()
+    });
+    mockPromises.readFile.mockResolvedValue("test content");
+    mockPromises.readdir.mockResolvedValue([]);
 
-    fileSystem = new NodeFileSystem(TEST_ROOT);
-    target = new NodeSyncTarget("test-target", TEST_ROOT);
+    fileSystem = new BrowserFileSystem({ name: "test", rootDir: TEST_ROOT });
+    target = new BrowserSyncTarget("test-target");
 
     // Setup spies on FileSystem methods
     spies = {
-      initialize: vi.spyOn(fileSystem, "initialize"),
+      initialize: vi
+        .spyOn(fileSystem, "initialize")
+        .mockImplementation(async () => {
+          // Mock successful initialization by setting initialized flag
+          (fileSystem as any).initialized = true; // eslint-disable-line @typescript-eslint/no-explicit-any
+          return Promise.resolve();
+        }),
       readFile: vi.spyOn(fileSystem, "readFile"),
       writeFile: vi.spyOn(fileSystem, "writeFile"),
       deleteItem: vi.spyOn(fileSystem, "deleteItem"),
@@ -81,25 +82,28 @@ describe("NodeSyncTarget", () => {
     };
 
     // Setup default mock implementations
-    spies.initialize.mockResolvedValue(undefined);
     spies.readFile.mockResolvedValue("test content");
     spies.writeFile.mockResolvedValue(undefined);
     spies.deleteItem.mockResolvedValue(undefined);
     spies.exists.mockResolvedValue(false);
     spies.lock.mockResolvedValue(undefined);
     spies.forceUnlock.mockResolvedValue(undefined);
+
+    // Reset interval mocks
+    mockSetInterval.mockReturnValue(123); // Mock interval ID
+    mockClearInterval.mockReturnValue(undefined);
   });
 
   describe("Initialization", () => {
-    it("should initialize with NodeFileSystem", async () => {
+    it("should initialize with BrowserFileSystem", async () => {
       await target.initialize(fileSystem);
       expect(spies.initialize).toHaveBeenCalled();
     });
 
-    it("should reject non-NodeFileSystem instances", async () => {
+    it("should reject non-BrowserFileSystem instances", async () => {
       const invalidFs = {} as any; // eslint-disable-line @typescript-eslint/no-explicit-any
       await expect(target.initialize(invalidFs)).rejects.toThrow(
-        "NodeSyncTarget requires NodeFileSystem"
+        "BrowserSyncTarget requires BrowserFileSystem"
       );
     });
   });
@@ -110,12 +114,12 @@ describe("NodeSyncTarget", () => {
     });
 
     it("should lock filesystem during sync", async () => {
-      await target.notifyIncomingChanges(["test.txt"]);
+      await target.notifyIncomingChanges();
       expect(spies.lock).toHaveBeenCalledWith(30000, "Sync in progress");
     });
 
     it("should unlock filesystem after sync completion", async () => {
-      await target.notifyIncomingChanges(["test.txt"]);
+      await target.notifyIncomingChanges();
       await target.syncComplete();
       expect(spies.forceUnlock).toHaveBeenCalled();
     });
@@ -181,82 +185,120 @@ describe("NodeSyncTarget", () => {
 
   describe("File Watching", () => {
     beforeEach(async () => {
+      await fileSystem.initialize();
       await target.initialize(fileSystem);
     });
 
-    it("should setup file watching", async () => {
+    it("should setup file watching with interval", async () => {
       const callback = vi.fn();
       await target.watch(callback);
 
-      expect(watch).toHaveBeenCalledWith(TEST_ROOT, {
-        recursive: true,
-        signal: expect.any(AbortSignal)
+      expect(mockSetInterval).toHaveBeenCalledWith(expect.any(Function), 1000);
+    });
+
+    it("should cleanup interval on unwatch", async () => {
+      const callback = vi.fn();
+      await target.watch(callback);
+      const intervalId = mockSetInterval.mock.results[0].value;
+
+      await target.unwatch();
+      expect(mockClearInterval).toHaveBeenCalledWith(intervalId);
+    });
+
+    it("should detect modified files", async () => {
+      const callback = vi.fn();
+      await target.watch(callback);
+
+      // Get the interval callback
+      const intervalCallback = mockSetInterval.mock.calls[0][0];
+
+      // First, set up initial state with a file
+      const initialTimestamp = Date.now();
+      mockPromises.readdir.mockResolvedValue(["test.txt"]);
+      mockPromises.stat.mockResolvedValue({
+        isDirectory: () => false,
+        isFile: () => true,
+        mtimeMs: initialTimestamp
       });
-    });
 
-    it("should handle file creation events", async () => {
-      const callback = vi.fn();
-      const testFile = "test.txt";
+      // Let one interval pass to register the file
+      await intervalCallback();
 
-      // Setup watcher to emit a creation event
-      mockWatcher = new MockFsWatcher([
-        { eventType: "change", filename: testFile }
-      ]);
-      (watch as unknown as MockInstance).mockImplementation(() =>
-        Promise.resolve(mockWatcher)
-      );
+      // Now simulate a modification with a newer timestamp
+      mockPromises.stat.mockResolvedValue({
+        isDirectory: () => false,
+        isFile: () => true,
+        mtimeMs: initialTimestamp + 5000 // 5 seconds later
+      });
 
-      await target.watch(callback);
+      // Trigger another interval
+      await intervalCallback();
 
-      // Wait for the async iteration to complete
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      expect(spies.exists).toHaveBeenCalledWith(testFile);
-      expect(callback).toHaveBeenCalledWith([
+      // Should detect the modification
+      expect(callback).toHaveBeenLastCalledWith([
         expect.objectContaining({
-          path: testFile,
-          type: "create",
-          sourceTarget: "test-target"
-        })
-      ]);
-    });
-
-    it("should handle file modification events", async () => {
-      const callback = vi.fn();
-      const testFile = "test.txt";
-
-      spies.exists.mockResolvedValue(true);
-
-      // Setup watcher to emit a modification event
-      mockWatcher = new MockFsWatcher([
-        { eventType: "change", filename: testFile }
-      ]);
-      (watch as unknown as MockInstance).mockImplementation(() =>
-        Promise.resolve(mockWatcher)
-      );
-
-      await target.watch(callback);
-
-      // Wait for the async iteration to complete
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      expect(spies.exists).toHaveBeenCalledWith(testFile);
-      expect(callback).toHaveBeenCalledWith([
-        expect.objectContaining({
-          path: testFile,
+          path: "test.txt",
           type: "modify",
           sourceTarget: "test-target"
         })
       ]);
     });
 
-    it("should cleanup watchers on unwatch", async () => {
+    it("should detect new files", async () => {
       const callback = vi.fn();
       await target.watch(callback);
-      await target.unwatch();
 
-      const state = target.getState();
-      expect(state.pendingChanges).toBe(0);
+      // Get the interval callback
+      const intervalCallback = mockSetInterval.mock.calls[0][0];
+
+      // Mock a new file appearing
+      mockPromises.readdir.mockResolvedValue(["newfile.txt"]);
+      mockPromises.stat.mockResolvedValue({
+        isDirectory: () => false,
+        isFile: () => true,
+        mtimeMs: Date.now()
+      });
+
+      // Trigger the interval callback
+      await intervalCallback();
+
+      // Should detect the new file
+      expect(callback).toHaveBeenCalledWith([
+        expect.objectContaining({
+          path: "newfile.txt",
+          type: "create",
+          sourceTarget: "test-target"
+        })
+      ]);
+    });
+
+    it("should detect deleted files", async () => {
+      const callback = vi.fn();
+      await target.watch(callback);
+
+      // First, mock an existing file
+      mockPromises.readdir.mockResolvedValue(["test.txt"]);
+
+      // Get the interval callback
+      const intervalCallback = mockSetInterval.mock.calls[0][0];
+
+      // Let one interval pass to register the file
+      await intervalCallback();
+
+      // Now simulate file deletion by returning empty directory
+      mockPromises.readdir.mockResolvedValue([]);
+
+      // Trigger another interval
+      await intervalCallback();
+
+      // Should detect the deletion
+      expect(callback).toHaveBeenLastCalledWith([
+        expect.objectContaining({
+          path: "test.txt",
+          type: "delete",
+          sourceTarget: "test-target"
+        })
+      ]);
     });
   });
 
@@ -271,32 +313,10 @@ describe("NodeSyncTarget", () => {
       );
     });
 
-    it("should track pending changes", async () => {
-      await target.initialize(fileSystem);
-
-      const callback = vi.fn();
-
-      // Setup watcher to emit a change event
-      mockWatcher = new MockFsWatcher([
-        { eventType: "change", filename: "test.txt" }
-      ]);
-      (watch as unknown as MockInstance).mockImplementation(() =>
-        Promise.resolve(mockWatcher)
-      );
-
-      await target.watch(callback);
-
-      // Wait for the async iteration to complete
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      const state = target.getState();
-      expect(state.pendingChanges).toBeGreaterThan(0);
-    });
-
     it("should update status during sync operations", async () => {
       await target.initialize(fileSystem);
 
-      await target.notifyIncomingChanges(["test.txt"]);
+      await target.notifyIncomingChanges();
       expect(target.getState().status).toBe("notifying");
 
       await target.applyChanges([

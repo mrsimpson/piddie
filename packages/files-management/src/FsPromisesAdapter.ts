@@ -69,7 +69,7 @@ export class FsPromisesAdapter implements FileSystem {
     timeoutId: null,
     pendingOperations: 0
   };
-  private initialized = false;
+  protected initialized = false;
 
   constructor(private options: FsPromisesAdapterOptions) {}
 
