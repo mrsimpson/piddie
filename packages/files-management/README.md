@@ -24,20 +24,19 @@ graph TD
   - Coordinates synchronization between targets
   - Manages target registration and lifecycle
   - Tracks sync status and phase
-  - Handles conflict detection and resolution
+  - Manages primary/secondary target roles
+  - Handles sync failures and recovery
 
 ### 2. Sync Targets
 
 Each environment implements the SyncTarget interface:
 
 - **Browser Target**:
-
   - Manages browser-based filesystem
   - Handles file watching and change detection
   - Stores files in IndexedDB
 
 - **Local Target**:
-
   - Interfaces with local filesystem
   - Handles file watching
   - Manages file permissions
@@ -48,179 +47,232 @@ Each environment implements the SyncTarget interface:
 
 ## Synchronization Process
 
-### 1. Happy Path (No Conflicts)
+### Primary/Secondary Target Concept
+
+The sync system operates with a primary target that acts as the source of truth. All other targets are secondary and can be reinitialized from the primary if needed.
+
+```mermaid
+graph TD
+    PT[Primary Target] --> ST1[Secondary Target 1]
+    PT --> ST2[Secondary Target 2]
+    PT --> ST3[Secondary Target 3]
+```
+
+### Sync States
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle
+    Idle --> Collecting: Change Detected
+    Collecting --> Syncing: Start Sync
+    Syncing --> Idle: Success
+    Syncing --> PendingChanges: Primary Sync Failed
+    Syncing --> DirtyTarget: Secondary Sync Failed
+    PendingChanges --> Idle: Manual Resolution
+    DirtyTarget --> Reinitializing: Auto/Manual Trigger
+    Reinitializing --> Idle: Success
+```
+
+### Sync Flows
+
+#### 1. Primary Target Changes
 
 ```mermaid
 sequenceDiagram
-    participant Source as Source Target
-    participant Manager as Sync Manager
+    participant P as Primary Target
+    participant SM as Sync Manager
+    participant S as Secondary Targets
     participant Git as Git Operations
-    participant Other as Other Targets
 
-    Note over Source: File change detected
-    Source->>Manager: Report changes (FileChangeInfo[])
+    Note over P: File change detected
+    P->>SM: Report changes (FileChangeInfo[])
 
-    Note over Manager: Phase: collecting
-    Note over Manager: Wait for inactivity
+    Note over SM: Phase: collecting
+    Note over SM: Wait for inactivity
 
-    par Notify Targets
-        Manager->>Other: notifyIncomingChanges(paths)
-        Note over Other: Lock operations
+    par Lock Secondaries
+        SM->>S: notifyIncomingChanges(paths)
+        Note over S: Lock operations
     end
 
-    Note over Manager: Phase: notifying
+    Note over SM: Phase: syncing
+    SM->>P: getContents(paths)
+    P-->>SM: Return Map<path, content>
 
-    Manager->>Source: getContents(paths)
-    Source-->>Manager: Return Map<path, content>
-
-    Note over Manager: Phase: syncing
-    par Apply Changes
-        Manager->>Other: applyChanges(FileChange[])
-        Other-->>Manager: No conflicts
+    par Apply to Secondaries
+        SM->>S: applyChanges(FileChange[])
+        
+        alt Sync Success
+            S-->>SM: Success
+            SM->>Git: Create commit
+        else Sync Failure
+            S-->>SM: Failure
+            Note over S: Mark target dirty
+        end
     end
 
-    Note over Manager: Phase: committing
-    Manager->>Git: stageFiles(paths)
-    Manager->>Git: createCommit("sync: Update from [source]")
-
-    par Complete
-        Manager->>Other: syncComplete()
-        Note over Other: Resume if no pending changes
-    end
-
-    Note over Manager: Phase: idle
+    Note over SM: Phase: idle
+    SM->>S: syncComplete()
+    Note over S: Unlock if no pending changes
 ```
 
-### 2. Conflict Handling
+#### 2. Secondary Target Changes
 
 ```mermaid
 sequenceDiagram
-    participant Source as Source Target
-    participant Manager as Sync Manager
+    participant S as Secondary Target
+    participant SM as Sync Manager
+    participant P as Primary Target
     participant Git as Git Operations
-    participant Other as Other Targets
+    participant O as Other Secondaries
 
-    Note over Source,Other: ... Same until applyChanges()
+    Note over S: File change detected
+    S->>SM: Report changes (FileChangeInfo[])
 
-    par Apply Changes
-        Manager->>Other: applyChanges(FileChange[])
-        Other-->>Manager: Return FileConflict[]
+    Note over SM: Phase: collecting
+    Note over SM: Wait for inactivity
+
+    SM->>P: notifyIncomingChanges(paths)
+    Note over P: Lock operations
+
+    Note over SM: Phase: syncing
+    SM->>S: getContents(paths)
+    S-->>SM: Return Map<path, content>
+
+    SM->>P: applyChanges(FileChange[])
+
+    alt Primary Sync Success
+        P-->>SM: Success
+        SM->>Git: Create commit
+
+        par Propagate to Other Secondaries
+            SM->>O: notifyIncomingChanges(paths)
+            SM->>O: applyChanges(FileChange[])
+            
+            alt Secondary Sync Success
+                O-->>SM: Success
+            else Secondary Sync Failure
+                O-->>SM: Failure
+                Note over O: Mark target dirty
+            end
+        end
+
+    else Primary Sync Failure
+        P-->>SM: Failure
+        Note over SM: Store pending changes
+        Note over SM: Await manual resolution
     end
 
-    Note over Manager: Phase: committing
-    loop For each target with conflicts
-        Manager->>Git: createConflictBranch({targetId, timestamp})
-        Note over Git: Branch: conflict/<targetId>/<timestamp>
-        Manager->>Git: saveConflictVersions({branch, conflicts, message})
-        Note over Git: Commits both versions
-    end
-
-    Manager->>Git: switchToMain()
-    Manager->>Git: stageFiles(nonConflictPaths)
-    Manager->>Git: createCommit("sync: Update from [source]")
-
-    par Complete
-        Manager->>Other: syncComplete()
-        Note over Other: Resume if no pending changes
-    end
-
-    Note over Manager: Phase: idle
+    Note over SM: Phase: idle
+    SM->>P: syncComplete()
+    SM->>O: syncComplete()
+    Note over P,O: Unlock if no pending changes
 ```
 
-### 3. Changes During Sync
+### Recovery Process
+
+#### Recovery Scenarios
+
+1. **Secondary Target Failure**
+   - Secondary target marked as "dirty"
+   - Continues operating with other targets
+   - Requires reinitialization from primary
+
+2. **Primary Target Failure**
+   - Changes remain pending
+   - User can:
+     - Review pending changes
+     - Confirm primary sync (reinitialize secondaries)
+     - Reject pending sync
 
 ```mermaid
 sequenceDiagram
-    participant Source as Source Target
-    participant Manager as Sync Manager
-    participant Git as Git Operations
-    participant Other as Other Targets
+    participant U as User
+    participant SM as Sync Manager
+    participant P as Primary Target
+    participant S as Secondary Targets
 
-    Note over Source,Other: ... Sync in progress
+    alt Secondary Target Recovery
+        Note over S: Target is dirty
+        U->>SM: Trigger reinitialization
+        SM->>P: getContents(all paths)
+        P-->>SM: Return contents
+        SM->>S: reinitialize()
+        SM->>S: applyChanges(all files)
+        Note over S: Target clean
 
-    Note over Source: New change detected
-    Source->>Manager: Report changes (FileChangeInfo[])
+    else Primary Sync Resolution
+        Note over SM: Has pending changes
+        U->>SM: Request pending changes
+        SM-->>U: Show changes
 
-    Note over Manager: Continue current sync
-    Note over Manager: Track pending changes
-
-    Note over Other: Only unlock when syncComplete() returns true
+        alt User Confirms
+            U->>SM: confirmPrimarySync()
+            SM->>S: reinitialize()
+            Note over S: All secondaries reinitialized
+        else User Rejects
+            U->>SM: rejectPendingSync()
+            SM->>SM: Clear pending changes
+        end
+    end
 ```
 
-### State Management
+### Key Features
 
-The sync process is tracked through phases and target states:
+1. **Clear Source of Truth**
+   - Primary target maintains definitive state
+   - Secondary targets can be reinitialized
+   - Predictable sync flow
 
-```typescript
-type SyncPhase =
-  | "idle"
-  | "collecting" // waiting for inactivity
-  | "notifying" // notifying targets
-  | "syncing" // applying changes
-  | "committing" // git operations
-  | "error";
+2. **Deterministic Recovery**
+   - Simple recovery paths
+   - No complex partial states
+   - User control over data loss scenarios
 
-interface TargetState {
-  id: string;
-  type: "browser" | "local" | "container";
-  lockState: LockState;
-  pendingChanges: number;
-  lastSyncTime?: number;
-  status: "idle" | "collecting" | "notifying" | "syncing" | "error";
-  error?: string;
-}
-```
+3. **State Management**
+   - Clear target roles
+   - Explicit dirty state tracking
+   - Pending change management
 
-### Configuration
+### Sync Process
 
-The file management service can be configured through:
+```mermaid
+graph TD
+    subgraph "Change Detection"
+        CD1[Primary Changes] --> SP1[Sync to Secondaries]
+        CD2[Secondary Changes] --> SP2[Sync to Primary]
+    end
 
-```typescript
-interface FileManagementConfig {
-  paths?: {
-    include: string[]; // Paths to include
-    ignore: string[]; // Paths to ignore
-  };
-  sync?: {
-    inactivityDelay: number; // Wait time after last change
-    maxBatchSize: number; // Max changes per batch
-  };
-}
+    subgraph "Sync Process"
+        SP1 --> SS1{Sync Success?}
+        SP2 --> SS2{Primary Sync Success?}
+        
+        SS1 -->|Yes| Done1[Complete]
+        SS1 -->|No| MD[Mark Target Dirty]
+        
+        SS2 -->|Yes| SP1
+        SS2 -->|No| PC[Store Pending Changes]
+    end
+
+    subgraph "Recovery"
+        MD --> RI[Reinitialize]
+        PC --> MR{Manual Resolution}
+        MR -->|Confirm| RAS[Reinit All Secondaries]
+        MR -->|Reject| DC[Discard Changes]
+    end
 ```
 
 ### Error Handling
 
-Errors are handled through specific error classes:
+1. **Target States**
+   - Idle: Normal operation
+   - Dirty: Failed sync, needs reinitialization
+   - Pending: Failed primary sync, needs resolution
 
-```typescript
-// Sync errors
-class SyncError extends Error {
-  constructor(
-    message: string,
-    code:
-      | "INITIALIZATION_FAILED"
-      | "LOCK_FAILED"
-      | "CONTENT_RETRIEVAL_FAILED"
-      | "APPLY_FAILED"
-      | "WATCH_FAILED"
-  );
-}
-
-// Git errors
-class GitError extends Error {
-  constructor(
-    message: string,
-    code: "STAGE_FAILED" | "COMMIT_FAILED" | "BRANCH_FAILED" | "SWITCH_FAILED"
-  );
-}
-```
-
-## Error Handling
-
-- Targets can recover from failed operations
-- Sync Manager maintains system consistency
-- Locked state prevents data corruption
-- Clear completion signals
+2. **Recovery Actions**
+   - Automatic reinitialization of dirty targets
+   - Manual resolution of pending changes
+   - Clear error reporting and status tracking
 
 ## Git Operations
 
