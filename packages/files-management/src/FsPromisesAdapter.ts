@@ -127,7 +127,7 @@ export class FsPromisesAdapter implements FileSystem {
       if (
         error instanceof Error &&
         "code" in error &&
-        error.code === "ENOENT"
+        ["NOT_FOUND", "ENOENT"].includes(error.code as string)
       ) {
         throw new FileSystemError(`File not found: ${filePath}`, "NOT_FOUND");
       }
@@ -257,7 +257,7 @@ export class FsPromisesAdapter implements FileSystem {
       if (
         error instanceof Error &&
         "code" in error &&
-        error.code === "ENOENT"
+        ["NOT_FOUND", "ENOENT"].includes(error.code as string)
       ) {
         throw new FileSystemError(
           `Directory not found: ${dirPath}`,
