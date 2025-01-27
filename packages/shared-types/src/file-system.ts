@@ -10,8 +10,78 @@ export interface FileSystemItem {
   path: string;
   type: "file" | "directory";
   lastModified: number;
-  size?: number;
   content?: string;
+}
+
+/**
+ * Metadata about a file
+ */
+export interface FileMetadata {
+  /**
+   * Path relative to workspace root
+   */
+  path: string;
+
+  /**
+   * Hash of the file content
+   */
+  hash: string;
+
+  /**
+   * Size in bytes
+   */
+  size: number;
+
+  /**
+   * Last modification time
+   */
+  lastModified: number;
+}
+
+/**
+ * Information about a chunk of file content
+ */
+export interface FileChunk {
+  /**
+   * Content of this chunk
+   */
+  content: string;
+
+  /**
+   * Index of this chunk (0-based)
+   */
+  chunkIndex: number;
+
+  /**
+   * Total number of chunks for this file
+   */
+  totalChunks: number;
+
+  /**
+   * Hash of this chunk for verification
+   */
+  chunkHash: string;
+}
+
+/**
+ * Stream interface for reading file contents
+ */
+export interface FileContentStream {
+  /**
+   * File metadata
+   */
+  metadata: FileMetadata;
+
+  /**
+   * Read the next chunk of the file
+   * Returns null when all chunks have been read
+   */
+  readNextChunk(): Promise<FileChunk | null>;
+
+  /**
+   * Close the stream and free resources
+   */
+  close(): Promise<void>;
 }
 
 /**

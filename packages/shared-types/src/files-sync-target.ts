@@ -1,13 +1,18 @@
-import type { FileSystem, LockState } from "./file-system";
+import type { FileSystem, LockState, FileMetadata, FileContentStream } from "./file-system";
 
 /**
  * Information about a file change (without content)
  */
-export interface FileChangeInfo {
-  path: string;
+export interface FileChangeInfo extends FileMetadata {
+  /**
+   * Type of change
+   */
   type: "create" | "modify" | "delete";
+
+  /**
+   * ID of the target that originated the change
+   */
   sourceTarget: string;
-  timestamp: number;
 }
 
 /**
@@ -22,8 +27,6 @@ export interface FileChange extends FileChangeInfo {
  */
 export interface FileConflict {
   path: string;
-  incomingContent: string;
-  currentContent: string;
   sourceTarget: string;
   targetId: string;
   timestamp: number;
@@ -62,16 +65,23 @@ export interface SyncTarget {
   notifyIncomingChanges(paths: string[]): Promise<void>;
 
   /**
-   * Get content for specified paths from this target
-   * @throws {Error} if content cannot be retrieved
+   * Get metadata for specified paths from this target
+   * @throws {Error} if metadata cannot be retrieved
    */
-  getContents(paths: string[]): Promise<Map<string, string>>;
+  getMetadata(paths: string[]): Promise<FileMetadata[]>;
 
   /**
-   * Apply changes to this target
-   * @returns Conflicts if content differs from incoming changes
+   * Get content stream for a specific file
+   * @throws {Error} if file not found or cannot be read
    */
-  applyChanges(changes: FileChange[]): Promise<FileConflict[]>;
+  getFileContent(path: string): Promise<FileContentStream>;
+
+  /**
+   * Apply a single file change using streaming
+   * @returns Conflict if content differs from incoming changes
+   * @throws {Error} if stream operations fail
+   */
+  applyFileChange(metadata: FileMetadata, contentStream: FileContentStream): Promise<FileConflict | null>;
 
   /**
    * Called when sync is complete
@@ -92,17 +102,19 @@ export interface SyncTarget {
   getState(): TargetState;
 }
 
-export class SyncError extends Error {
+export class SyncOperationError extends Error {
   constructor(
     message: string,
     public code:
-      | "INITIALIZATION_FAILED"
-      | "LOCK_FAILED"
+      | "FILE_NOT_FOUND"
+      | "CONTENT_MISMATCH"
+      | "STREAM_ERROR"
+      | "METADATA_RETRIEVAL_FAILED"
       | "CONTENT_RETRIEVAL_FAILED"
       | "APPLY_FAILED"
       | "WATCH_FAILED"
   ) {
     super(message);
-    this.name = "SyncError";
+    this.name = "SyncOperationError";
   }
 }

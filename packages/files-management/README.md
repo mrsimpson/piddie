@@ -234,6 +234,150 @@ sequenceDiagram
    - Explicit dirty state tracking
    - Pending change management
 
+## Large File Handling
+
+The system uses a streaming approach to handle large files efficiently, separating metadata from content.
+
+### File Change Flow
+
+```mermaid
+sequenceDiagram
+    participant ST as Source Target
+    participant SM as Sync Manager
+    participant DT as Destination Target
+
+    Note over ST: File change detected
+    ST->>SM: Report metadata only
+    Note over SM: Collect changes
+
+    SM->>ST: Request content stream
+    
+    loop Streaming
+        ST->>SM: Stream chunk
+        SM->>DT: Forward chunk
+        Note over DT: Verify chunk hash
+    end
+
+    Note over DT: Verify complete file hash
+    DT-->>SM: Sync result
+```
+
+### Metadata and Streaming
+
+1. **Change Detection**
+   ```mermaid
+   graph TD
+       A[File Change] --> B[Extract Metadata]
+       B --> C[Calculate Hash]
+       B --> D[Determine Size]
+       C --> E[Report to Manager]
+       D --> E
+   ```
+
+2. **Content Transfer**
+   ```mermaid
+   graph TD
+       A[Request Content] --> B[Create Stream]
+       B --> C[Read Chunk]
+       C --> D{More Data?}
+       D -->|Yes| E[Send Chunk]
+       E --> C
+       D -->|No| F[Close Stream]
+   ```
+
+### Key Components
+
+1. **File Metadata**
+   - Path information
+   - File hash for verification
+   - File size for progress tracking
+   - Modification timestamp
+   - Change type (create/modify/delete)
+
+2. **Content Streaming**
+   - Chunk-based transfer
+   - Individual chunk hashes
+   - Progress tracking
+   - Resource management
+   - Memory efficient
+
+3. **Verification**
+   - Per-chunk hash verification
+   - Complete file hash validation
+   - Size verification
+   - Atomic operations
+
+### Implementation Details
+
+```mermaid
+sequenceDiagram
+    participant SM as Sync Manager
+    participant ST as Source Target
+    participant DT as Destination Target
+
+    Note over SM,DT: Change Detection
+    ST->>SM: FileMetadata[]
+    
+    Note over SM,DT: Content Transfer
+    SM->>ST: getFileContent(path)
+    activate ST
+    ST-->>SM: FileContentStream
+    
+    loop For each chunk
+        SM->>ST: readNextChunk()
+        ST-->>SM: FileChunk
+        SM->>DT: applyFileChange()
+        Note over DT: Verify chunk
+    end
+    
+    deactivate ST
+    
+    Note over DT: Verify complete file
+    DT-->>SM: Sync result
+```
+
+### Benefits
+
+1. **Memory Efficiency**
+   - Only metadata in memory
+   - Streaming content transfer
+   - Controlled resource usage
+
+2. **Progress Tracking**
+   - Chunk-level progress
+   - Size-based progress
+   - Time estimation
+
+3. **Data Integrity**
+   - Hash verification
+   - Atomic operations
+   - Error recovery
+
+4. **Resource Management**
+   - Controlled streaming
+   - Proper cleanup
+   - Error handling
+
+### Error Handling
+
+1. **Stream Failures**
+   ```mermaid
+   graph TD
+       A[Stream Error] --> B{Error Type}
+       B -->|Read| C[Source Error]
+       B -->|Write| D[Destination Error]
+       B -->|Transfer| E[Network Error]
+       C --> F[Cleanup & Retry]
+       D --> F
+       E --> F
+   ```
+
+2. **Recovery Strategies**
+   - Chunk retry
+   - Stream restart
+   - Partial file recovery
+   - Clean rollback
+
 ### Sync Process
 
 ```mermaid

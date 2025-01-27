@@ -1,4 +1,5 @@
-import type { FileChange, FileChangeInfo, SyncTarget, TargetState } from "./files-sync-target";
+import type { FileChangeInfo, SyncTarget, TargetState } from "./files-sync-target";
+import type { FileContentStream } from "./file-system";
 
 /**
  * Target role in the sync process
@@ -86,7 +87,7 @@ export interface SyncManager {
    * Register a new sync target
    * @param target The target to register
    * @param options Registration options including target role
-   * @throws {SyncError} with code:
+   * @throws {SyncManagerError} with code:
    *  - TARGET_ALREADY_EXISTS if target with same id already registered
    *  - PRIMARY_TARGET_EXISTS if trying to register primary when one exists
    */
@@ -119,10 +120,28 @@ export interface SyncManager {
   getPendingSync(): PendingSync | null;
 
   /**
-   * Get pending changes content
-   * @throws {Error} if no pending changes or source target not available
+   * Get content stream for a file
+   * @throws {SyncManagerError} if target not found or file not available
    */
-  getPendingChanges(): Promise<Map<string, string>>;
+  getFileContent(targetId: string, path: string): Promise<FileContentStream>;
+
+  /**
+   * Handle changes reported from a target
+   * Changes only include metadata, content must be streamed separately
+   */
+  handleTargetChanges(sourceId: string, changes: FileChangeInfo[]): Promise<void>;
+
+  /**
+   * Get pending changes metadata
+   * @throws {Error} if no pending changes
+   */
+  getPendingChanges(): Promise<FileChangeInfo[]>;
+
+  /**
+   * Get content stream for a pending change
+   * @throws {Error} if no such pending change or source not available
+   */
+  getPendingChangeContent(path: string): Promise<FileContentStream>;
 
   /**
    * Confirm pending sync to primary, will reinitialize all secondaries
@@ -143,11 +162,6 @@ export interface SyncManager {
   reinitializeTarget(targetId: string): Promise<void>;
 
   /**
-   * Handle changes reported from a target
-   */
-  handleTargetChanges(sourceId: string, changes: FileChangeInfo[]): Promise<void>;
-
-  /**
    * Initialize the sync manager
    */
   initialize(config: SyncManagerConfig): Promise<void>;
@@ -158,7 +172,7 @@ export interface SyncManager {
   dispose(): Promise<void>;
 }
 
-export class SyncError extends Error {
+export class SyncManagerError extends Error {
   constructor(
     message: string,
     public code:
@@ -172,6 +186,6 @@ export class SyncError extends Error {
       | "SYNC_IN_PROGRESS"
   ) {
     super(message);
-    this.name = "SyncError";
+    this.name = "SyncManagerError";
   }
 }
