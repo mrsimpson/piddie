@@ -1,16 +1,41 @@
-import type { FileSystem, LockState, FileMetadata, FileContentStream } from "./file-system";
+import type {
+  FileSystem,
+  LockState,
+  FileMetadata,
+  FileContentStream
+} from "./file-system";
 
 /**
- * Information about a file change (without content)
+ * Information about a file change
  */
-export interface FileChangeInfo extends FileMetadata {
+export interface FileChangeInfo {
+  /**
+   * Path relative to workspace root
+   */
+  path: string;
+
   /**
    * Type of change
    */
   type: "create" | "modify" | "delete";
 
   /**
-   * ID of the target that originated the change
+   * Hash of the file content
+   */
+  hash: string;
+
+  /**
+   * Size in bytes
+   */
+  size: number;
+
+  /**
+   * Last modification time
+   */
+  lastModified: number;
+
+  /**
+   * Source target that detected the change
    */
   sourceTarget: string;
 }
@@ -81,7 +106,10 @@ export interface SyncTarget {
    * @returns Conflict if content differs from incoming changes
    * @throws {Error} if stream operations fail
    */
-  applyFileChange(metadata: FileMetadata, contentStream: FileContentStream): Promise<FileConflict | null>;
+  applyFileChange(
+    metadata: FileMetadata,
+    contentStream: FileContentStream
+  ): Promise<FileConflict | null>;
 
   /**
    * Called when sync is complete
@@ -106,6 +134,7 @@ export class SyncOperationError extends Error {
   constructor(
     message: string,
     public code:
+      | "INITIALIZATION_FAILED"
       | "FILE_NOT_FOUND"
       | "CONTENT_MISMATCH"
       | "STREAM_ERROR"

@@ -1,4 +1,8 @@
-import type { FileChangeInfo, SyncTarget, TargetState } from "./files-sync-target";
+import type {
+  FileChangeInfo,
+  SyncTarget,
+  TargetState
+} from "./files-sync-target";
 import type { FileContentStream } from "./file-system";
 
 /**
@@ -50,10 +54,10 @@ export interface SyncManagerConfig {
  * Represents the current phase of synchronization
  */
 export type SyncPhase =
-  | "idle"      // No sync in progress
+  | "idle" // No sync in progress
   | "collecting" // Initial target collecting changes
-  | "syncing"   // Applying changes
-  | "error";    // Error state
+  | "syncing" // Applying changes
+  | "error"; // Error state
 
 /**
  * Represents the current status of synchronization
@@ -129,7 +133,10 @@ export interface SyncManager {
    * Handle changes reported from a target
    * Changes only include metadata, content must be streamed separately
    */
-  handleTargetChanges(sourceId: string, changes: FileChangeInfo[]): Promise<void>;
+  handleTargetChanges(
+    sourceId: string,
+    changes: FileChangeInfo[]
+  ): Promise<void>;
 
   /**
    * Get pending changes metadata

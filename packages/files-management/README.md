@@ -32,11 +32,13 @@ graph TD
 Each environment implements the SyncTarget interface:
 
 - **Browser Target**:
+
   - Manages browser-based filesystem
   - Handles file watching and change detection
   - Stores files in IndexedDB
 
 - **Local Target**:
+
   - Interfaces with local filesystem
   - Handles file watching
   - Manages file permissions
@@ -101,7 +103,7 @@ sequenceDiagram
 
     par Apply to Secondaries
         SM->>S: applyChanges(FileChange[])
-        
+
         alt Sync Success
             S-->>SM: Success
             SM->>Git: Create commit
@@ -148,7 +150,7 @@ sequenceDiagram
         par Propagate to Other Secondaries
             SM->>O: notifyIncomingChanges(paths)
             SM->>O: applyChanges(FileChange[])
-            
+
             alt Secondary Sync Success
                 O-->>SM: Success
             else Secondary Sync Failure
@@ -174,6 +176,7 @@ sequenceDiagram
 #### Recovery Scenarios
 
 1. **Secondary Target Failure**
+
    - Secondary target marked as "dirty"
    - Continues operating with other targets
    - Requires reinitialization from primary
@@ -220,11 +223,13 @@ sequenceDiagram
 ### Key Features
 
 1. **Clear Source of Truth**
+
    - Primary target maintains definitive state
    - Secondary targets can be reinitialized
    - Predictable sync flow
 
 2. **Deterministic Recovery**
+
    - Simple recovery paths
    - No complex partial states
    - User control over data loss scenarios
@@ -251,7 +256,7 @@ sequenceDiagram
     Note over SM: Collect changes
 
     SM->>ST: Request content stream
-    
+
     loop Streaming
         ST->>SM: Stream chunk
         SM->>DT: Forward chunk
@@ -265,6 +270,7 @@ sequenceDiagram
 ### Metadata and Streaming
 
 1. **Change Detection**
+
    ```mermaid
    graph TD
        A[File Change] --> B[Extract Metadata]
@@ -288,6 +294,7 @@ sequenceDiagram
 ### Key Components
 
 1. **File Metadata**
+
    - Path information
    - File hash for verification
    - File size for progress tracking
@@ -295,6 +302,7 @@ sequenceDiagram
    - Change type (create/modify/delete)
 
 2. **Content Streaming**
+
    - Chunk-based transfer
    - Individual chunk hashes
    - Progress tracking
@@ -317,21 +325,21 @@ sequenceDiagram
 
     Note over SM,DT: Change Detection
     ST->>SM: FileMetadata[]
-    
+
     Note over SM,DT: Content Transfer
     SM->>ST: getFileContent(path)
     activate ST
     ST-->>SM: FileContentStream
-    
+
     loop For each chunk
         SM->>ST: readNextChunk()
         ST-->>SM: FileChunk
         SM->>DT: applyFileChange()
         Note over DT: Verify chunk
     end
-    
+
     deactivate ST
-    
+
     Note over DT: Verify complete file
     DT-->>SM: Sync result
 ```
@@ -339,16 +347,19 @@ sequenceDiagram
 ### Benefits
 
 1. **Memory Efficiency**
+
    - Only metadata in memory
    - Streaming content transfer
    - Controlled resource usage
 
 2. **Progress Tracking**
+
    - Chunk-level progress
    - Size-based progress
    - Time estimation
 
 3. **Data Integrity**
+
    - Hash verification
    - Atomic operations
    - Error recovery
@@ -361,6 +372,7 @@ sequenceDiagram
 ### Error Handling
 
 1. **Stream Failures**
+
    ```mermaid
    graph TD
        A[Stream Error] --> B{Error Type}
@@ -390,10 +402,10 @@ graph TD
     subgraph "Sync Process"
         SP1 --> SS1{Sync Success?}
         SP2 --> SS2{Primary Sync Success?}
-        
+
         SS1 -->|Yes| Done1[Complete]
         SS1 -->|No| MD[Mark Target Dirty]
-        
+
         SS2 -->|Yes| SP1
         SS2 -->|No| PC[Store Pending Changes]
     end
@@ -409,6 +421,7 @@ graph TD
 ### Error Handling
 
 1. **Target States**
+
    - Idle: Normal operation
    - Dirty: Failed sync, needs reinitialization
    - Pending: Failed primary sync, needs resolution

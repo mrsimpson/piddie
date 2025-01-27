@@ -1,13 +1,15 @@
-import type {
+import {
   SyncTarget,
   FileSystem,
   FileChangeInfo,
   FileChange,
   FileConflict,
-  TargetState
+  TargetState,
+  FileMetadata,
+  FileContentStream,
+  SyncOperationError
 } from "@piddie/shared-types";
 import { BrowserFileSystem } from "./BrowserFileSystem";
-import { SyncError } from "@piddie/shared-types";
 
 declare global {
   interface Window {
@@ -40,7 +42,7 @@ export class BrowserSyncTarget implements SyncTarget {
 
   async initialize(fileSystem: FileSystem): Promise<void> {
     if (!(fileSystem instanceof BrowserFileSystem)) {
-      throw new SyncError(
+      throw new SyncOperationError(
         "BrowserSyncTarget requires BrowserFileSystem",
         "INITIALIZATION_FAILED"
       );
@@ -54,7 +56,7 @@ export class BrowserSyncTarget implements SyncTarget {
 
   async applyChanges(changes: FileChange[]): Promise<FileConflict[]> {
     if (!this.fileSystem) {
-      throw new SyncError(
+      throw new SyncOperationError(
         "FileSystem not initialized",
         "INITIALIZATION_FAILED"
       );
@@ -77,8 +79,6 @@ export class BrowserSyncTarget implements SyncTarget {
               if (existingContent !== change.content) {
                 conflicts.push({
                   path: change.path,
-                  incomingContent: change.content,
-                  currentContent: existingContent,
                   sourceTarget: change.sourceTarget,
                   targetId: this.id,
                   timestamp: Date.now()
@@ -97,7 +97,7 @@ export class BrowserSyncTarget implements SyncTarget {
         }
       } catch (error) {
         if (error instanceof Error) {
-          throw new SyncError(
+          throw new SyncOperationError(
             `Failed to apply change to ${change.path}: ${error.message}`,
             "APPLY_FAILED"
           );
@@ -111,7 +111,7 @@ export class BrowserSyncTarget implements SyncTarget {
 
   async getContents(paths: string[]): Promise<Map<string, string>> {
     if (!this.fileSystem) {
-      throw new SyncError(
+      throw new SyncOperationError(
         "FileSystem not initialized",
         "INITIALIZATION_FAILED"
       );
@@ -123,7 +123,7 @@ export class BrowserSyncTarget implements SyncTarget {
         const content = await this.fileSystem.readFile(path);
         contents.set(path, content);
       } catch (error) {
-        throw new SyncError(
+        throw new SyncOperationError(
           `Failed to read file ${path}: ${error}`,
           "CONTENT_RETRIEVAL_FAILED"
         );
@@ -134,7 +134,7 @@ export class BrowserSyncTarget implements SyncTarget {
 
   async notifyIncomingChanges(): Promise<void> {
     if (!this.fileSystem) {
-      throw new SyncError(
+      throw new SyncOperationError(
         "FileSystem not initialized",
         "INITIALIZATION_FAILED"
       );
@@ -146,7 +146,7 @@ export class BrowserSyncTarget implements SyncTarget {
 
   async syncComplete(): Promise<boolean> {
     if (!this.fileSystem) {
-      throw new SyncError(
+      throw new SyncOperationError(
         "FileSystem not initialized",
         "INITIALIZATION_FAILED"
       );
@@ -160,7 +160,7 @@ export class BrowserSyncTarget implements SyncTarget {
 
   async watch(callback: (changes: FileChangeInfo[]) => void): Promise<void> {
     if (!this.fileSystem) {
-      throw new SyncError(
+      throw new SyncOperationError(
         "FileSystem not initialized",
         "INITIALIZATION_FAILED"
       );
@@ -179,7 +179,7 @@ export class BrowserSyncTarget implements SyncTarget {
         }
       } catch (error) {
         if (error instanceof Error) {
-          throw new SyncError(
+          throw new SyncOperationError(
             `Failed to watch directory: ${error.message}`,
             "WATCH_FAILED"
           );
@@ -242,26 +242,44 @@ export class BrowserSyncTarget implements SyncTarget {
           const lastKnown = this.lastKnownFiles.get(entry.path);
           if (!lastKnown) {
             // New file
-            changes.push({
-              path: entry.path,
-              type: "create",
-              sourceTarget: this.id,
-              timestamp: currentTimestamp
-            });
+            try {
+              if (!this.fileSystem) continue;
+              const metadata = await this.fileSystem.getMetadata(entry.path);
+              changes.push({
+                path: entry.path,
+                type: "create",
+                sourceTarget: this.id,
+                lastModified: currentTimestamp,
+                hash: metadata.hash,
+                size: metadata.size
+              });
+            } catch {
+              // If we can't get metadata, skip this file
+              continue;
+            }
           } else if (lastKnown.mtimeMs < stats.lastModified) {
             // Modified file
-            changes.push({
-              path: entry.path,
-              type: "modify",
-              sourceTarget: this.id,
-              timestamp: currentTimestamp
-            });
+            try {
+              if (!this.fileSystem) continue;
+              const metadata = await this.fileSystem.getMetadata(entry.path);
+              changes.push({
+                path: entry.path,
+                type: "modify",
+                sourceTarget: this.id,
+                lastModified: currentTimestamp,
+                hash: metadata.hash,
+                size: metadata.size
+              });
+            } catch {
+              // If we can't get metadata, skip this file
+              continue;
+            }
           }
         }
       };
 
-      // Start processing from root directory
-      await processDirectory("");
+      // Start processing from root
+      await processDirectory("/");
 
       // Check for deleted files
       for (const [path] of this.lastKnownFiles) {
@@ -270,7 +288,9 @@ export class BrowserSyncTarget implements SyncTarget {
             path,
             type: "delete",
             sourceTarget: this.id,
-            timestamp: currentTimestamp
+            lastModified: currentTimestamp,
+            hash: "",
+            size: 0
           });
         }
       }
@@ -280,10 +300,129 @@ export class BrowserSyncTarget implements SyncTarget {
       this.lastWatchTimestamp = currentTimestamp;
 
       return changes;
-    } catch {
-      // If there's an error reading the directory, return no changes
-      // The error will be handled by the watch method
-      return [];
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new SyncOperationError(
+          `Failed to check for changes: ${error.message}`,
+          "WATCH_FAILED"
+        );
+      }
+      throw error;
+    }
+  }
+
+  async getMetadata(paths: string[]): Promise<FileMetadata[]> {
+    if (!this.fileSystem) {
+      throw new SyncOperationError(
+        "FileSystem not initialized",
+        "INITIALIZATION_FAILED"
+      );
+    }
+
+    const metadata: FileMetadata[] = [];
+    for (const path of paths) {
+      try {
+        const fileMetadata = await this.fileSystem.getMetadata(path);
+        metadata.push(fileMetadata);
+      } catch (error) {
+        throw new SyncOperationError(
+          `Failed to get metadata for ${path}: ${error}`,
+          "METADATA_RETRIEVAL_FAILED"
+        );
+      }
+    }
+    return metadata;
+  }
+
+  async getFileContent(path: string): Promise<FileContentStream> {
+    if (!this.fileSystem) {
+      throw new SyncOperationError(
+        "FileSystem not initialized",
+        "INITIALIZATION_FAILED"
+      );
+    }
+
+    try {
+      const fileMetadata = await this.fileSystem.getMetadata(path);
+      const content = await this.fileSystem.readFile(path);
+
+      // For now, we'll implement a simple single-chunk stream
+      // In a real implementation, we'd chunk the content based on size
+      let hasBeenRead = false;
+
+      return {
+        metadata: fileMetadata,
+        async readNextChunk() {
+          if (hasBeenRead) {
+            return null;
+          }
+          hasBeenRead = true;
+          return {
+            content,
+            chunkIndex: 0,
+            totalChunks: 1,
+            chunkHash: fileMetadata.hash
+          };
+        },
+        async close() {
+          // Nothing to clean up in this simple implementation
+        }
+      };
+    } catch (error) {
+      throw new SyncOperationError(
+        `Failed to get content stream for ${path}: ${error}`,
+        "CONTENT_RETRIEVAL_FAILED"
+      );
+    }
+  }
+
+  async applyFileChange(
+    metadata: FileMetadata,
+    contentStream: FileContentStream
+  ): Promise<FileConflict | null> {
+    if (!this.fileSystem) {
+      throw new SyncOperationError(
+        "FileSystem not initialized",
+        "INITIALIZATION_FAILED"
+      );
+    }
+
+    this.status = "syncing";
+
+    try {
+      // Check for existence and potential conflicts
+      const exists = await this.fileSystem.exists(metadata.path);
+      if (exists) {
+        const existingMetadata = await this.getMetadata([metadata.path]);
+        const existingFile = existingMetadata[0];
+        if (existingFile && existingFile.hash !== metadata.hash) {
+          return {
+            path: metadata.path,
+            sourceTarget: this.id,
+            targetId: this.id,
+            timestamp: Date.now()
+          };
+        }
+      }
+
+      // Read all chunks and concatenate
+      let fullContent = "";
+      while (true) {
+        const chunk = await contentStream.readNextChunk();
+        if (!chunk) {
+          break;
+        }
+        fullContent += chunk.content;
+      }
+
+      // Apply the change
+      await this.fileSystem.writeFile(metadata.path, fullContent);
+      return null;
+    } catch (error) {
+      throw new SyncOperationError(
+        `Failed to apply change to ${metadata.path}: ${error}`,
+        "APPLY_FAILED"
+      );
     }
   }
 }

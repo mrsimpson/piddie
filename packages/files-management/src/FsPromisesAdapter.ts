@@ -1,8 +1,9 @@
 import {
   FileSystem,
-  FileSystemItem,
   FileSystemState,
-  FileSystemError
+  FileSystemError,
+  FileMetadata,
+  FileSystemItem
 } from "@piddie/shared-types";
 import path from "path";
 
@@ -71,7 +72,7 @@ export class FsPromisesAdapter implements FileSystem {
   };
   protected initialized = false;
 
-  constructor(private options: FsPromisesAdapterOptions) {}
+  constructor(protected options: FsPromisesAdapterOptions) {}
 
   async initialize(): Promise<void> {
     if (this.initialized) return;
@@ -107,7 +108,7 @@ export class FsPromisesAdapter implements FileSystem {
     }
   }
 
-  private getAbsolutePath(relativePath: string): string {
+  protected getAbsolutePath(relativePath: string): string {
     // Normalize and resolve the path relative to root
     const normalizedPath = path.normalize(relativePath).replace(/^\//, "");
     return path.join(this.options.rootDir, normalizedPath);
@@ -268,7 +269,7 @@ export class FsPromisesAdapter implements FileSystem {
     }
   }
 
-  async getMetadata(itemPath: string): Promise<FileSystemItem> {
+  async getMetadata(itemPath: string): Promise<FileMetadata> {
     this.ensureInitialized();
     this.checkLock();
 
@@ -276,14 +277,40 @@ export class FsPromisesAdapter implements FileSystem {
 
     try {
       const stats = await this.options.fs.stat(absolutePath);
-      const item: FileSystemItem = {
+
+      if (stats.isDirectory()) {
+        throw new FileSystemError(
+          `Path is not a file: ${itemPath}`,
+          "INVALID_OPERATION"
+        );
+      }
+
+      // For files, include hash and size
+      let hash = "";
+      try {
+        const content = await this.options.fs.readFile(absolutePath, "utf-8");
+        hash = await this.calculateHash(content);
+      } catch (error) {
+        // If we can't read the file, still return metadata but with empty hash
+        console.warn(
+          `Could not read file content for hash: ${itemPath}`,
+          error
+        );
+      }
+
+      return {
         path: itemPath,
-        type: stats.isDirectory() ? "directory" : "file",
-        lastModified: stats.mtimeMs,
-        ...(stats.isFile() && { size: stats.size })
+        type: "file",
+        hash,
+        size: stats.size,
+        lastModified: stats.mtimeMs
       };
-      return item;
     } catch (error: unknown) {
+      // If it's already our error type, rethrow it
+      if (error instanceof FileSystemError) {
+        throw error;
+      }
+      // Convert filesystem errors to our error types
       if (
         error instanceof Error &&
         "code" in error &&
@@ -294,6 +321,22 @@ export class FsPromisesAdapter implements FileSystem {
       const message = error instanceof Error ? error.message : "Unknown error";
       throw new FileSystemError(message, "PERMISSION_DENIED");
     }
+  }
+
+  /**
+   * Calculate a hash for the given content
+   * This is a simple implementation - in production you'd want a more robust hashing algorithm
+   */
+  protected async calculateHash(content: string): Promise<string> {
+    // Simple hash function for demo purposes
+    // In production, use a proper crypto hash
+    let hash = 0;
+    for (let i = 0; i < content.length; i++) {
+      const char = content.charCodeAt(i);
+      hash = (hash << 5) - hash + char;
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    return hash.toString(16);
   }
 
   async lock(timeoutMs: number, reason: string): Promise<void> {

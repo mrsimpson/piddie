@@ -26,10 +26,18 @@ export default [
     }
   },
   {
+    // Config for test files - relax typing
+    files: ["**/*.test.ts", "**/*.spec.ts", "**/test/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off"
+    }
+  },
+  {
     // Config for JavaScript files - no TypeScript parsing
     files: ["**/*.{js,jsx}"],
     ...js.configs.recommended
   },
+
   {
     ignores: [
       "**/node_modules/**",

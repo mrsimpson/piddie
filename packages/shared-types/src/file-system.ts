@@ -23,6 +23,11 @@ export interface FileMetadata {
   path: string;
 
   /**
+   * Type of the file
+   */
+  type: "file";
+
+  /**
    * Hash of the file content
    */
   hash: string;
@@ -149,7 +154,7 @@ export interface FileSystem {
   /**
    * Get metadata for a path
    */
-  getMetadata(path: string): Promise<FileSystemItem>;
+  getMetadata(path: string): Promise<FileMetadata>;
 
   /**
    * Lock with timeout

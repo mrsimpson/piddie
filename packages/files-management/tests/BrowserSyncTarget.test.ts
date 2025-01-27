@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { MockInstance } from "vitest";
 import { BrowserSyncTarget } from "../src/BrowserSyncTarget";
 import { BrowserFileSystem } from "../src/BrowserFileSystem";
-import type { FileChange } from "@piddie/shared-types";
+import type { FileMetadata, FileContentStream } from "@piddie/shared-types";
 
 // Define mock fs methods
 const mockPromises = {
@@ -47,6 +47,7 @@ describe("BrowserSyncTarget", () => {
     exists: MockInstance;
     lock: MockInstance;
     forceUnlock: MockInstance;
+    getMetadata: MockInstance;
   };
 
   beforeEach(() => {
@@ -66,22 +67,21 @@ describe("BrowserSyncTarget", () => {
 
     // Setup spies on FileSystem methods
     spies = {
-      initialize: vi
-        .spyOn(fileSystem, "initialize")
-        .mockImplementation(async () => {
-          // Mock successful initialization by setting initialized flag
-          (fileSystem as any).initialized = true; // eslint-disable-line @typescript-eslint/no-explicit-any
-          return Promise.resolve();
-        }),
+      initialize: vi.spyOn(fileSystem, "initialize"),
       readFile: vi.spyOn(fileSystem, "readFile"),
       writeFile: vi.spyOn(fileSystem, "writeFile"),
       deleteItem: vi.spyOn(fileSystem, "deleteItem"),
       exists: vi.spyOn(fileSystem, "exists"),
       lock: vi.spyOn(fileSystem, "lock"),
-      forceUnlock: vi.spyOn(fileSystem, "forceUnlock")
+      forceUnlock: vi.spyOn(fileSystem, "forceUnlock"),
+      getMetadata: vi.spyOn(fileSystem, "getMetadata")
     };
 
     // Setup default mock implementations
+    spies.initialize.mockImplementation(async () => {
+      (fileSystem as any).initialized = true;
+      return Promise.resolve();
+    });
     spies.readFile.mockResolvedValue("test content");
     spies.writeFile.mockResolvedValue(undefined);
     spies.deleteItem.mockResolvedValue(undefined);
@@ -101,14 +101,14 @@ describe("BrowserSyncTarget", () => {
     });
 
     it("should reject non-BrowserFileSystem instances", async () => {
-      const invalidFs = {} as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+      const invalidFs = {} as any;
       await expect(target.initialize(invalidFs)).rejects.toThrow(
         "BrowserSyncTarget requires BrowserFileSystem"
       );
     });
   });
 
-  describe("File System Operations", () => {
+  describe("File Operations", () => {
     beforeEach(async () => {
       await target.initialize(fileSystem);
     });
@@ -124,68 +124,78 @@ describe("BrowserSyncTarget", () => {
       expect(spies.forceUnlock).toHaveBeenCalled();
     });
 
-    it("should read file contents", async () => {
+    it("should get file metadata", async () => {
       const paths = ["test1.txt", "test2.txt"];
-      await target.getContents(paths);
+      await target.getMetadata(paths);
 
       paths.forEach((path) => {
-        expect(spies.readFile).toHaveBeenCalledWith(path);
+        expect(spies.getMetadata).toHaveBeenCalledWith(path);
       });
     });
 
-    it("should write file contents", async () => {
-      const changes: FileChange[] = [
-        {
-          path: "test.txt",
-          type: "create",
-          content: "new content",
-          sourceTarget: "source",
-          timestamp: Date.now()
-        }
-      ];
-
-      await target.applyChanges(changes);
-      expect(spies.writeFile).toHaveBeenCalledWith("test.txt", "new content");
+    it("should get file content stream", async () => {
+      const stream = await target.getFileContent("test.txt");
+      expect(stream).toHaveProperty("metadata");
+      expect(stream).toHaveProperty("readNextChunk");
+      expect(stream).toHaveProperty("close");
     });
 
-    it("should delete files", async () => {
-      const changes: FileChange[] = [
-        {
-          path: "test.txt",
-          type: "delete",
-          content: "",
-          sourceTarget: "source",
-          timestamp: Date.now()
-        }
-      ];
+    it("should apply file change with streaming", async () => {
+      const metadata: FileMetadata = {
+        path: "test.txt",
+        type: "file",
+        hash: "testhash",
+        size: 123,
+        lastModified: Date.now()
+      };
 
-      await target.applyChanges(changes);
-      expect(spies.deleteItem).toHaveBeenCalledWith("test.txt");
+      const mockStream: FileContentStream = {
+        metadata,
+        readNextChunk: vi.fn().mockResolvedValue(null),
+        close: vi.fn().mockResolvedValue(undefined)
+      };
+
+      const conflict = await target.applyFileChange(metadata, mockStream);
+      expect(conflict).toBeNull();
     });
 
     it("should check file existence for conflicts", async () => {
       spies.exists.mockResolvedValue(true);
-      spies.readFile.mockResolvedValue("existing content");
+      spies.getMetadata.mockResolvedValue({
+        path: "test.txt",
+        hash: "existinghash", // Different hash than incoming
+        size: 100,
+        lastModified: Date.now() - 1000 // Older timestamp
+      });
 
-      const changes: FileChange[] = [
-        {
-          path: "test.txt",
-          type: "create",
-          content: "new content",
-          sourceTarget: "source",
-          timestamp: Date.now()
-        }
-      ];
+      const metadata: FileMetadata = {
+        path: "test.txt",
+        type: "file",
+        hash: "newhash",
+        size: 123,
+        lastModified: Date.now()
+      };
 
-      await target.applyChanges(changes);
+      const mockStream: FileContentStream = {
+        metadata,
+        readNextChunk: vi.fn().mockResolvedValue(null),
+        close: vi.fn().mockResolvedValue(undefined)
+      };
+
+      const conflict = await target.applyFileChange(metadata, mockStream);
+      expect(conflict).toEqual({
+        path: "test.txt",
+        sourceTarget: "test-target",
+        targetId: "test-target",
+        timestamp: expect.any(Number)
+      });
       expect(spies.exists).toHaveBeenCalledWith("test.txt");
-      expect(spies.readFile).toHaveBeenCalledWith("test.txt");
+      expect(spies.getMetadata).toHaveBeenCalledWith("test.txt");
     });
   });
 
   describe("File Watching", () => {
     beforeEach(async () => {
-      await fileSystem.initialize();
       await target.initialize(fileSystem);
     });
 
@@ -203,6 +213,34 @@ describe("BrowserSyncTarget", () => {
 
       await target.unwatch();
       expect(mockClearInterval).toHaveBeenCalledWith(intervalId);
+    });
+
+    it("should detect new files", async () => {
+      const callback = vi.fn();
+      await target.watch(callback);
+
+      // Get the interval callback
+      const intervalCallback = mockSetInterval.mock.calls[0][0];
+
+      // Mock a new file appearing
+      mockPromises.readdir.mockResolvedValue(["newfile.txt"]);
+      mockPromises.stat.mockResolvedValue({
+        isDirectory: () => false,
+        isFile: () => true,
+        mtimeMs: Date.now()
+      });
+
+      // Trigger the interval callback
+      await intervalCallback();
+
+      // Should detect the new file
+      expect(callback).toHaveBeenCalledWith([
+        expect.objectContaining({
+          path: "/newfile.txt",
+          type: "create",
+          sourceTarget: "test-target"
+        })
+      ]);
     });
 
     it("should detect modified files", async () => {
@@ -237,36 +275,8 @@ describe("BrowserSyncTarget", () => {
       // Should detect the modification
       expect(callback).toHaveBeenLastCalledWith([
         expect.objectContaining({
-          path: "test.txt",
+          path: "/test.txt",
           type: "modify",
-          sourceTarget: "test-target"
-        })
-      ]);
-    });
-
-    it("should detect new files", async () => {
-      const callback = vi.fn();
-      await target.watch(callback);
-
-      // Get the interval callback
-      const intervalCallback = mockSetInterval.mock.calls[0][0];
-
-      // Mock a new file appearing
-      mockPromises.readdir.mockResolvedValue(["newfile.txt"]);
-      mockPromises.stat.mockResolvedValue({
-        isDirectory: () => false,
-        isFile: () => true,
-        mtimeMs: Date.now()
-      });
-
-      // Trigger the interval callback
-      await intervalCallback();
-
-      // Should detect the new file
-      expect(callback).toHaveBeenCalledWith([
-        expect.objectContaining({
-          path: "newfile.txt",
-          type: "create",
           sourceTarget: "test-target"
         })
       ]);
@@ -294,7 +304,7 @@ describe("BrowserSyncTarget", () => {
       // Should detect the deletion
       expect(callback).toHaveBeenLastCalledWith([
         expect.objectContaining({
-          path: "test.txt",
+          path: "/test.txt",
           type: "delete",
           sourceTarget: "test-target"
         })
@@ -319,15 +329,21 @@ describe("BrowserSyncTarget", () => {
       await target.notifyIncomingChanges();
       expect(target.getState().status).toBe("notifying");
 
-      await target.applyChanges([
-        {
-          path: "test.txt",
-          type: "create",
-          content: "test",
-          sourceTarget: "source",
-          timestamp: Date.now()
-        }
-      ]);
+      const metadata: FileMetadata = {
+        path: "test.txt",
+        type: "file",
+        hash: "testhash",
+        size: 123,
+        lastModified: Date.now()
+      };
+
+      const mockStream: FileContentStream = {
+        metadata,
+        readNextChunk: vi.fn().mockResolvedValue(null),
+        close: vi.fn().mockResolvedValue(undefined)
+      };
+
+      await target.applyFileChange(metadata, mockStream);
       expect(target.getState().status).toBe("syncing");
 
       await target.syncComplete();

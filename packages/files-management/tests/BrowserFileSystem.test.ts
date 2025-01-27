@@ -1,4 +1,3 @@
-// Must be at the very top of the file
 vi.mock("@isomorphic-git/lightning-fs", () => {
   const mockFs = {
     promises: {
@@ -56,7 +55,7 @@ const createStatsMock = (
   isSymbolicLink: () => false
 });
 
-describe("Broser FileSystem", () => {
+describe("Browser FileSystem", () => {
   let fileSystem: FileSystem;
 
   beforeEach(() => {
@@ -217,6 +216,7 @@ describe("Broser FileSystem", () => {
             isDirectory: false
           })
         );
+        readFileSpy.mockResolvedValue("test content");
 
         // When getting metadata
         const meta = await fileSystem.getMetadata(path);
@@ -225,12 +225,13 @@ describe("Broser FileSystem", () => {
         expect(meta).toEqual({
           path,
           type: "file",
+          hash: expect.any(String),
           size: 12,
           lastModified: expect.any(Number)
         });
       });
 
-      it("should return directory metadata", async () => {
+      it("should throw INVALID_OPERATION for directories", async () => {
         // Given a directory exists
         const path = "/test-dir";
         statSpy.mockResolvedValue(
@@ -239,15 +240,13 @@ describe("Broser FileSystem", () => {
           })
         );
 
-        // When getting metadata
-        const meta = await fileSystem.getMetadata(path);
-
-        // Then it should return correct metadata
-        expect(meta).toEqual({
-          path,
-          type: "directory",
-          lastModified: expect.any(Number)
-        });
+        // When getting metadata, it should throw
+        await expect(fileSystem.getMetadata(path)).rejects.toThrow(
+          expect.objectContaining({
+            code: "INVALID_OPERATION",
+            message: "Path is not a file: /test-dir"
+          })
+        );
       });
     });
 

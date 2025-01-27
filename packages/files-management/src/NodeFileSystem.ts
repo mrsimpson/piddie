@@ -19,4 +19,12 @@ export class NodeFileSystem extends FsPromisesAdapter {
 
     super({ rootDir, fs: fsWrapper });
   }
+
+  /**
+   * Get the size of a file in bytes
+   */
+  async getSize(path: string): Promise<number> {
+    const stats = await this.options.fs.stat(this.getAbsolutePath(path));
+    return stats.size;
+  }
 }

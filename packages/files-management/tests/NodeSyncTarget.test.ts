@@ -7,7 +7,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { MockInstance } from "vitest";
 import { NodeSyncTarget } from "../src/NodeSyncTarget";
 import { NodeFileSystem } from "../src/NodeFileSystem";
-import type { FileChange } from "@piddie/shared-types";
+import type { FileMetadata, FileContentStream } from "@piddie/shared-types";
+import { SyncOperationError } from "@piddie/shared-types";
 import { watch } from "fs/promises";
 
 // Helper to create a mock watcher that emits specified events
@@ -55,6 +56,7 @@ describe("NodeSyncTarget", () => {
     exists: MockInstance;
     lock: MockInstance;
     forceUnlock: MockInstance;
+    getMetadata: MockInstance;
   };
 
   beforeEach(() => {
@@ -77,7 +79,8 @@ describe("NodeSyncTarget", () => {
       deleteItem: vi.spyOn(fileSystem, "deleteItem"),
       exists: vi.spyOn(fileSystem, "exists"),
       lock: vi.spyOn(fileSystem, "lock"),
-      forceUnlock: vi.spyOn(fileSystem, "forceUnlock")
+      forceUnlock: vi.spyOn(fileSystem, "forceUnlock"),
+      getMetadata: vi.spyOn(fileSystem, "getMetadata")
     };
 
     // Setup default mock implementations
@@ -88,6 +91,11 @@ describe("NodeSyncTarget", () => {
     spies.exists.mockResolvedValue(false);
     spies.lock.mockResolvedValue(undefined);
     spies.forceUnlock.mockResolvedValue(undefined);
+    spies.getMetadata.mockResolvedValue({
+      path: "test.txt",
+      type: "file",
+      lastModified: Date.now()
+    });
   });
 
   describe("Initialization", () => {
@@ -97,85 +105,101 @@ describe("NodeSyncTarget", () => {
     });
 
     it("should reject non-NodeFileSystem instances", async () => {
-      const invalidFs = {} as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+      const invalidFs = {} as any;
       await expect(target.initialize(invalidFs)).rejects.toThrow(
-        "NodeSyncTarget requires NodeFileSystem"
+        new SyncOperationError(
+          "NodeSyncTarget requires NodeFileSystem",
+          "INITIALIZATION_FAILED"
+        )
       );
     });
   });
 
-  describe("File System Operations", () => {
+  describe("File Operations", () => {
     beforeEach(async () => {
       await target.initialize(fileSystem);
     });
 
     it("should lock filesystem during sync", async () => {
+      spies.exists.mockResolvedValue(true);
       await target.notifyIncomingChanges(["test.txt"]);
       expect(spies.lock).toHaveBeenCalledWith(30000, "Sync in progress");
     });
 
     it("should unlock filesystem after sync completion", async () => {
+      spies.exists.mockResolvedValue(true);
       await target.notifyIncomingChanges(["test.txt"]);
       await target.syncComplete();
       expect(spies.forceUnlock).toHaveBeenCalled();
     });
 
-    it("should read file contents", async () => {
+    it("should get file metadata", async () => {
       const paths = ["test1.txt", "test2.txt"];
-      await target.getContents(paths);
+      await target.getMetadata(paths);
 
       paths.forEach((path) => {
-        expect(spies.readFile).toHaveBeenCalledWith(path);
+        expect(spies.getMetadata).toHaveBeenCalledWith(path);
       });
     });
 
-    it("should write file contents", async () => {
-      const changes: FileChange[] = [
-        {
-          path: "test.txt",
-          type: "create",
-          content: "new content",
-          sourceTarget: "source",
-          timestamp: Date.now()
-        }
-      ];
-
-      await target.applyChanges(changes);
-      expect(spies.writeFile).toHaveBeenCalledWith("test.txt", "new content");
+    it("should get file content stream", async () => {
+      const stream = await target.getFileContent("test.txt");
+      expect(stream).toHaveProperty("metadata");
+      expect(stream).toHaveProperty("readNextChunk");
+      expect(stream).toHaveProperty("close");
     });
 
-    it("should delete files", async () => {
-      const changes: FileChange[] = [
-        {
-          path: "test.txt",
-          type: "delete",
-          content: "",
-          sourceTarget: "source",
-          timestamp: Date.now()
-        }
-      ];
+    it("should apply file change with streaming", async () => {
+      const metadata: FileMetadata = {
+        path: "test.txt",
+        type: "file",
+        hash: "testhash",
+        size: 123,
+        lastModified: Date.now()
+      };
 
-      await target.applyChanges(changes);
-      expect(spies.deleteItem).toHaveBeenCalledWith("test.txt");
+      const mockStream: FileContentStream = {
+        metadata,
+        readNextChunk: vi.fn().mockResolvedValue(null),
+        close: vi.fn().mockResolvedValue(undefined)
+      };
+
+      const conflict = await target.applyFileChange(metadata, mockStream);
+      expect(conflict).toBeNull();
     });
 
     it("should check file existence for conflicts", async () => {
       spies.exists.mockResolvedValue(true);
-      spies.readFile.mockResolvedValue("existing content");
+      spies.getMetadata.mockResolvedValue({
+        path: "test.txt",
+        hash: "existinghash", // Different hash than incoming
+        size: 100,
+        lastModified: Date.now() - 1000 // Older timestamp
+      });
 
-      const changes: FileChange[] = [
-        {
-          path: "test.txt",
-          type: "create",
-          content: "new content",
-          sourceTarget: "source",
-          timestamp: Date.now()
-        }
-      ];
+      const metadata: FileMetadata = {
+        path: "test.txt",
+        type: "file",
+        hash: "newhash",
+        size: 123,
+        lastModified: Date.now()
+      };
 
-      await target.applyChanges(changes);
+      const mockStream: FileContentStream = {
+        metadata,
+        readNextChunk: vi.fn().mockResolvedValue(null),
+        close: vi.fn().mockResolvedValue(undefined)
+      };
+
+      const conflict = await target.applyFileChange(metadata, mockStream);
+      expect(conflict).toEqual({
+        path: "test.txt",
+        sourceTarget: "test-target",
+        targetId: "test-target",
+        timestamp: expect.any(Number)
+      });
       expect(spies.exists).toHaveBeenCalledWith("test.txt");
-      expect(spies.readFile).toHaveBeenCalledWith("test.txt");
+      expect(spies.getMetadata).toHaveBeenCalledWith("test.txt");
     });
   });
 
@@ -250,6 +274,32 @@ describe("NodeSyncTarget", () => {
       ]);
     });
 
+    it("should handle file deletion events", async () => {
+      const callback = vi.fn();
+      const testFile = "test.txt";
+
+      // Setup watcher to emit a deletion event
+      mockWatcher = new MockFsWatcher([
+        { eventType: "rename", filename: testFile }
+      ]);
+      (watch as unknown as MockInstance).mockImplementation(() =>
+        Promise.resolve(mockWatcher)
+      );
+
+      await target.watch(callback);
+
+      // Wait for the async iteration to complete
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(callback).toHaveBeenCalledWith([
+        expect.objectContaining({
+          path: testFile,
+          type: "delete",
+          sourceTarget: "test-target"
+        })
+      ]);
+    });
+
     it("should cleanup watchers on unwatch", async () => {
       const callback = vi.fn();
       await target.watch(callback);
@@ -271,43 +321,28 @@ describe("NodeSyncTarget", () => {
       );
     });
 
-    it("should track pending changes", async () => {
-      await target.initialize(fileSystem);
-
-      const callback = vi.fn();
-
-      // Setup watcher to emit a change event
-      mockWatcher = new MockFsWatcher([
-        { eventType: "change", filename: "test.txt" }
-      ]);
-      (watch as unknown as MockInstance).mockImplementation(() =>
-        Promise.resolve(mockWatcher)
-      );
-
-      await target.watch(callback);
-
-      // Wait for the async iteration to complete
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      const state = target.getState();
-      expect(state.pendingChanges).toBeGreaterThan(0);
-    });
-
     it("should update status during sync operations", async () => {
-      await target.initialize(fileSystem);
+      spies.exists.mockResolvedValue(true);
 
+      await target.initialize(fileSystem);
       await target.notifyIncomingChanges(["test.txt"]);
       expect(target.getState().status).toBe("notifying");
 
-      await target.applyChanges([
-        {
-          path: "test.txt",
-          type: "create",
-          content: "test",
-          sourceTarget: "source",
-          timestamp: Date.now()
-        }
-      ]);
+      const metadata: FileMetadata = {
+        path: "test.txt",
+        type: "file",
+        hash: "testhash",
+        size: 123,
+        lastModified: Date.now()
+      };
+
+      const mockStream: FileContentStream = {
+        metadata,
+        readNextChunk: vi.fn().mockResolvedValue(null),
+        close: vi.fn().mockResolvedValue(undefined)
+      };
+
+      await target.applyFileChange(metadata, mockStream);
       expect(target.getState().status).toBe("syncing");
 
       await target.syncComplete();

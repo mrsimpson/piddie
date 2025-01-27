@@ -5,10 +5,12 @@ import type {
   FileChangeInfo,
   FileChange,
   FileConflict,
-  TargetState
+  TargetState,
+  FileMetadata,
+  FileContentStream
 } from "@piddie/shared-types";
 import { NodeFileSystem } from "./NodeFileSystem";
-import { SyncError } from "@piddie/shared-types";
+import { SyncOperationError } from "@piddie/shared-types";
 
 /**
  * Node.js implementation of the SyncTarget interface
@@ -28,7 +30,7 @@ export class NodeSyncTarget implements SyncTarget {
 
   async initialize(fileSystem: FileSystem): Promise<void> {
     if (!(fileSystem instanceof NodeFileSystem)) {
-      throw new SyncError(
+      throw new SyncOperationError(
         "NodeSyncTarget requires NodeFileSystem",
         "INITIALIZATION_FAILED"
       );
@@ -37,9 +39,9 @@ export class NodeSyncTarget implements SyncTarget {
     await this.fileSystem.initialize();
   }
 
-  async notifyIncomingChanges(): Promise<void> {
+  async notifyIncomingChanges(paths: string[]): Promise<void> {
     if (!this.fileSystem) {
-      throw new SyncError(
+      throw new SyncOperationError(
         "FileSystem not initialized",
         "INITIALIZATION_FAILED"
       );
@@ -48,11 +50,143 @@ export class NodeSyncTarget implements SyncTarget {
     // Lock the file system during sync
     await this.fileSystem.lock(30000, "Sync in progress");
     this.status = "notifying";
+
+    // Verify all paths exist
+    for (const path of paths) {
+      if (!(await this.fileSystem.exists(path))) {
+        throw new SyncOperationError(
+          `Path not found: ${path}`,
+          "FILE_NOT_FOUND"
+        );
+      }
+    }
+  }
+
+  async getMetadata(paths: string[]): Promise<FileMetadata[]> {
+    if (!this.fileSystem) {
+      throw new SyncOperationError(
+        "FileSystem not initialized",
+        "INITIALIZATION_FAILED"
+      );
+    }
+
+    const metadata: FileMetadata[] = [];
+    for (const path of paths) {
+      try {
+        const fileMetadata = await this.fileSystem.getMetadata(path);
+        // Convert FileSystemItem to FileMetadata
+        metadata.push({
+          path: fileMetadata.path,
+          type: "file",
+          hash: await this.fileSystem.getMetadata(path).then((m) => m.hash),
+          size: await this.fileSystem.getMetadata(path).then((m) => m.size),
+          lastModified: fileMetadata.lastModified
+        });
+      } catch (error) {
+        throw new SyncOperationError(
+          `Failed to get metadata for ${path}: ${error}`,
+          "METADATA_RETRIEVAL_FAILED"
+        );
+      }
+    }
+    return metadata;
+  }
+
+  async getFileContent(path: string): Promise<FileContentStream> {
+    if (!this.fileSystem) {
+      throw new SyncOperationError(
+        "FileSystem not initialized",
+        "INITIALIZATION_FAILED"
+      );
+    }
+
+    try {
+      const fileMetadata = await this.fileSystem.getMetadata(path);
+      const content = await this.fileSystem.readFile(path);
+
+      // For now, we'll implement a simple single-chunk stream
+      // In a real implementation, we'd chunk the content based on size
+      let hasBeenRead = false;
+
+      return {
+        metadata: fileMetadata,
+        async readNextChunk() {
+          if (hasBeenRead) {
+            return null;
+          }
+          hasBeenRead = true;
+          return {
+            content,
+            chunkIndex: 0,
+            totalChunks: 1,
+            chunkHash: fileMetadata.hash
+          };
+        },
+        async close() {
+          // Nothing to clean up in this simple implementation
+        }
+      };
+    } catch (error) {
+      throw new SyncOperationError(
+        `Failed to get content stream for ${path}: ${error}`,
+        "CONTENT_RETRIEVAL_FAILED"
+      );
+    }
+  }
+
+  async applyFileChange(
+    metadata: FileMetadata,
+    contentStream: FileContentStream
+  ): Promise<FileConflict | null> {
+    if (!this.fileSystem) {
+      throw new SyncOperationError(
+        "FileSystem not initialized",
+        "INITIALIZATION_FAILED"
+      );
+    }
+
+    this.status = "syncing";
+
+    try {
+      // Check for existence and potential conflicts
+      const exists = await this.fileSystem.exists(metadata.path);
+      if (exists) {
+        const existingMetadata = await this.getMetadata([metadata.path]);
+        const existingFile = existingMetadata[0];
+        if (existingFile && existingFile.hash !== metadata.hash) {
+          return {
+            path: metadata.path,
+            sourceTarget: this.id,
+            targetId: this.id,
+            timestamp: Date.now()
+          };
+        }
+      }
+
+      // Read all chunks and concatenate
+      let fullContent = "";
+      while (true) {
+        const chunk = await contentStream.readNextChunk();
+        if (!chunk) {
+          break;
+        }
+        fullContent += chunk.content;
+      }
+
+      // Apply the change
+      await this.fileSystem.writeFile(metadata.path, fullContent);
+      return null;
+    } catch (error) {
+      throw new SyncOperationError(
+        `Failed to apply change to ${metadata.path}: ${error}`,
+        "APPLY_FAILED"
+      );
+    }
   }
 
   async getContents(paths: string[]): Promise<Map<string, string>> {
     if (!this.fileSystem) {
-      throw new SyncError(
+      throw new SyncOperationError(
         "FileSystem not initialized",
         "INITIALIZATION_FAILED"
       );
@@ -65,7 +199,7 @@ export class NodeSyncTarget implements SyncTarget {
         const content = await this.fileSystem.readFile(path);
         contents.set(path, content);
       } catch (error) {
-        throw new SyncError(
+        throw new SyncOperationError(
           `Failed to read file ${path}: ${error}`,
           "CONTENT_RETRIEVAL_FAILED"
         );
@@ -77,7 +211,7 @@ export class NodeSyncTarget implements SyncTarget {
 
   async applyChanges(changes: FileChange[]): Promise<FileConflict[]> {
     if (!this.fileSystem) {
-      throw new SyncError(
+      throw new SyncOperationError(
         "FileSystem not initialized",
         "INITIALIZATION_FAILED"
       );
@@ -100,8 +234,6 @@ export class NodeSyncTarget implements SyncTarget {
               if (existingContent !== change.content) {
                 conflicts.push({
                   path: change.path,
-                  incomingContent: change.content,
-                  currentContent: existingContent,
                   sourceTarget: change.sourceTarget,
                   targetId: this.id,
                   timestamp: Date.now()
@@ -121,7 +253,7 @@ export class NodeSyncTarget implements SyncTarget {
       } catch (error) {
         // Handle other errors that might occur during file operations
         if (error instanceof Error) {
-          throw new SyncError(
+          throw new SyncOperationError(
             `Failed to apply change to ${change.path}: ${error.message}`,
             "APPLY_FAILED"
           );
@@ -135,7 +267,7 @@ export class NodeSyncTarget implements SyncTarget {
 
   async syncComplete(): Promise<boolean> {
     if (!this.fileSystem) {
-      throw new SyncError(
+      throw new SyncOperationError(
         "FileSystem not initialized",
         "INITIALIZATION_FAILED"
       );
@@ -150,7 +282,7 @@ export class NodeSyncTarget implements SyncTarget {
 
   async watch(callback: (changes: FileChangeInfo[]) => void): Promise<void> {
     if (!this.fileSystem) {
-      throw new SyncError(
+      throw new SyncOperationError(
         "FileSystem not initialized",
         "INITIALIZATION_FAILED"
       );
@@ -171,16 +303,42 @@ export class NodeSyncTarget implements SyncTarget {
           const filePath = event.filename; // Use the filename directly since it's already relative to the watched directory
           const exists = await this.fileSystem.exists(filePath);
 
-          const change: FileChangeInfo = {
-            path: filePath,
-            // Node's fs.watch doesn't reliably distinguish between create/modify
-            // We'll need to check if file exists to determine the type
-            type: exists ? "modify" : "create",
-            sourceTarget: this.id,
-            timestamp: Date.now()
-          };
-
-          this.pendingChanges.push(change);
+          if (exists) {
+            // Get metadata for the changed file
+            const metadata = await this.fileSystem.getMetadata(filePath);
+            const change: FileChangeInfo = {
+              path: filePath,
+              type: event.eventType === "rename" ? "delete" : "modify",
+              sourceTarget: this.id,
+              lastModified: metadata.lastModified,
+              hash: metadata.hash,
+              size: metadata.size
+            };
+            this.pendingChanges.push(change);
+          } else if (event.eventType === "rename") {
+            // File was deleted - use empty hash and size 0
+            const change: FileChangeInfo = {
+              path: filePath,
+              type: "delete",
+              sourceTarget: this.id,
+              lastModified: Date.now(),
+              hash: "",
+              size: 0
+            };
+            this.pendingChanges.push(change);
+          } else {
+            // New file created
+            const metadata = await this.fileSystem.getMetadata(filePath);
+            const change: FileChangeInfo = {
+              path: filePath,
+              type: "create",
+              sourceTarget: this.id,
+              lastModified: metadata.lastModified,
+              hash: metadata.hash,
+              size: metadata.size
+            };
+            this.pendingChanges.push(change);
+          }
         }
       }
       // Call the callback once with all changes
@@ -192,7 +350,7 @@ export class NodeSyncTarget implements SyncTarget {
         // Normal abort during unwatch, ignore
         return;
       }
-      throw new SyncError(
+      throw new SyncOperationError(
         `Failed to watch directory: ${error}`,
         "WATCH_FAILED"
       );
