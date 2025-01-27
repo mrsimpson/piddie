@@ -69,7 +69,7 @@ export interface FileChunk {
 }
 
 /**
- * Stream interface for reading file contents
+ * Stream interface for reading file contents using Web Streams API
  */
 export interface FileContentStream {
   /**
@@ -78,10 +78,10 @@ export interface FileContentStream {
   metadata: FileMetadata;
 
   /**
-   * Read the next chunk of the file
-   * Returns null when all chunks have been read
+   * Get a Web Streams reader for the file content
+   * Returns chunks of file content
    */
-  readNextChunk(): Promise<FileChunk | null>;
+  getReader(): ReadableStreamDefaultReader<FileChunk>;
 
   /**
    * Close the stream and free resources

@@ -7,9 +7,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { MockInstance } from "vitest";
 import { NodeSyncTarget } from "../src/NodeSyncTarget";
 import { NodeFileSystem } from "../src/NodeFileSystem";
-import type { FileMetadata, FileContentStream } from "@piddie/shared-types";
+import type {
+  FileMetadata,
+  FileContentStream,
+  FileChunk
+} from "@piddie/shared-types";
 import { SyncOperationError } from "@piddie/shared-types";
 import { watch } from "fs/promises";
+import { ReadableStream } from "node:stream/web";
 
 // Helper to create a mock watcher that emits specified events
 class MockFsWatcher
@@ -145,7 +150,7 @@ describe("NodeSyncTarget", () => {
     it("should get file content stream", async () => {
       const stream = await target.getFileContent("test.txt");
       expect(stream).toHaveProperty("metadata");
-      expect(stream).toHaveProperty("readNextChunk");
+      expect(stream).toHaveProperty("getReader");
       expect(stream).toHaveProperty("close");
     });
 
@@ -158,20 +163,39 @@ describe("NodeSyncTarget", () => {
         lastModified: Date.now()
       };
 
+      // Create a mock stream using actual ReadableStream
       const mockStream: FileContentStream = {
         metadata,
-        readNextChunk: vi.fn().mockResolvedValue(null),
+        getReader: () => {
+          const stream = new ReadableStream({
+            start(controller) {
+              controller.enqueue({
+                content: "test content",
+                chunkIndex: 0,
+                totalChunks: 1,
+                chunkHash: "testhash"
+              });
+              controller.close();
+            }
+          });
+          return stream.getReader();
+        },
         close: vi.fn().mockResolvedValue(undefined)
       };
 
+      spies.exists.mockResolvedValue(false);
+      spies.writeFile.mockResolvedValue(undefined);
+
       const conflict = await target.applyFileChange(metadata, mockStream);
       expect(conflict).toBeNull();
+      expect(spies.writeFile).toHaveBeenCalledWith("test.txt", "test content");
     });
 
     it("should check file existence for conflicts", async () => {
       spies.exists.mockResolvedValue(true);
       spies.getMetadata.mockResolvedValue({
         path: "test.txt",
+        type: "file",
         hash: "existinghash", // Different hash than incoming
         size: 100,
         lastModified: Date.now() - 1000 // Older timestamp
@@ -185,9 +209,10 @@ describe("NodeSyncTarget", () => {
         lastModified: Date.now()
       };
 
+      // Create an empty mock stream since we'll hit a conflict before reading
       const mockStream: FileContentStream = {
         metadata,
-        readNextChunk: vi.fn().mockResolvedValue(null),
+        getReader: () => new ReadableStream<FileChunk>().getReader(),
         close: vi.fn().mockResolvedValue(undefined)
       };
 
@@ -336,9 +361,23 @@ describe("NodeSyncTarget", () => {
         lastModified: Date.now()
       };
 
+      // Create a mock stream using actual ReadableStream
       const mockStream: FileContentStream = {
         metadata,
-        readNextChunk: vi.fn().mockResolvedValue(null),
+        getReader: () => {
+          const stream = new ReadableStream({
+            start(controller) {
+              controller.enqueue({
+                content: "test content",
+                chunkIndex: 0,
+                totalChunks: 1,
+                chunkHash: "testhash"
+              });
+              controller.close();
+            }
+          });
+          return stream.getReader();
+        },
         close: vi.fn().mockResolvedValue(undefined)
       };
 

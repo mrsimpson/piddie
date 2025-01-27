@@ -7,10 +7,13 @@ import type {
   FileConflict,
   TargetState,
   FileMetadata,
-  FileContentStream
+  FileContentStream,
+  FileChunk
 } from "@piddie/shared-types";
 import { NodeFileSystem } from "./NodeFileSystem";
 import { SyncOperationError } from "@piddie/shared-types";
+import { ReadableStream } from "node:stream/web";
+import { createHash } from "crypto";
 
 /**
  * Node.js implementation of the SyncTarget interface
@@ -92,6 +95,13 @@ export class NodeSyncTarget implements SyncTarget {
     return metadata;
   }
 
+  /**
+   * Calculate hash for a chunk of content
+   */
+  private calculateChunkHash(content: string): string {
+    return createHash("sha256").update(content).digest("hex");
+  }
+
   async getFileContent(path: string): Promise<FileContentStream> {
     if (!this.fileSystem) {
       throw new SyncOperationError(
@@ -102,28 +112,46 @@ export class NodeSyncTarget implements SyncTarget {
 
     try {
       const fileMetadata = await this.fileSystem.getMetadata(path);
-      const content = await this.fileSystem.readFile(path);
+      const CHUNK_SIZE = 64 * 1024; // 64KB chunks
+      let chunkIndex = 0;
+      const totalChunks = Math.ceil(fileMetadata.size / CHUNK_SIZE);
+      const fileSystem = this.fileSystem;
+      const calculateChunkHash = this.calculateChunkHash;
 
-      // For now, we'll implement a simple single-chunk stream
-      // In a real implementation, we'd chunk the content based on size
-      let hasBeenRead = false;
+      const stream = new ReadableStream<FileChunk>({
+        async start(controller) {
+          try {
+            // For now, we still read the entire file at once
+            // TODO: Implement proper chunking using fs.createReadStream
+            const content = await fileSystem.readFile(path);
+
+            // Split content into chunks
+            for (let i = 0; i < content.length; i += CHUNK_SIZE) {
+              const chunk = content.slice(i, i + CHUNK_SIZE);
+              controller.enqueue({
+                content: chunk,
+                chunkIndex: chunkIndex++,
+                totalChunks,
+                chunkHash: calculateChunkHash(chunk)
+              });
+            }
+            controller.close();
+          } catch (error) {
+            controller.error(
+              new SyncOperationError(
+                `Failed to read file ${path}: ${error}`,
+                "CONTENT_RETRIEVAL_FAILED"
+              )
+            );
+          }
+        }
+      });
 
       return {
         metadata: fileMetadata,
-        async readNextChunk() {
-          if (hasBeenRead) {
-            return null;
-          }
-          hasBeenRead = true;
-          return {
-            content,
-            chunkIndex: 0,
-            totalChunks: 1,
-            chunkHash: fileMetadata.hash
-          };
-        },
+        getReader: () => stream.getReader(),
         async close() {
-          // Nothing to clean up in this simple implementation
+          await stream.cancel();
         }
       };
     } catch (error) {
@@ -163,14 +191,18 @@ export class NodeSyncTarget implements SyncTarget {
         }
       }
 
-      // Read all chunks and concatenate
+      // Read all chunks using the Web Streams reader
+      const reader = contentStream.getReader();
       let fullContent = "";
-      while (true) {
-        const chunk = await contentStream.readNextChunk();
-        if (!chunk) {
-          break;
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          fullContent += value.content;
         }
-        fullContent += chunk.content;
+      } finally {
+        reader.releaseLock();
       }
 
       // Apply the change
