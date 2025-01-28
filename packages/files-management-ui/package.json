@@ -1,0 +1,31 @@
+{
+    "name": "@piddie/files-management-ui",
+    "version": "0.0.1",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "build": "node scripts/copy-assets.js && tsc --noEmit && vite build",
+        "dev": "node scripts/copy-assets.js && vite",
+        "preview": "vite preview",
+        "test": "vitest"
+    },
+    "dependencies": {
+        "@piddie/files-management": "workspace:*",
+        "@piddie/shared-types": "workspace:*",
+        "@shoelace-style/shoelace": "^2.19.1",
+        "vue": "^3.4.15"
+    },
+    "devDependencies": {
+        "@types/node": "^20.11.16",
+        "@types/wicg-file-system-access": "2023.10.5",
+        "@vitejs/plugin-vue": "^5.0.3",
+        "@vue/tsconfig": "^0.5.1",
+        "typescript": "^5.3.3",
+        "vite": "^5.0.12",
+        "vitest": "^1.2.2",
+        "vue-tsc": "^1.8.27",
+        "@vue/eslint-config-typescript": "^14.0.0",
+        "@vue/eslint-config-prettier": "^10.0.0",
+        "eslint-plugin-vue": "^9.0.0"
+    }
+}

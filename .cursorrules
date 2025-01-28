@@ -108,7 +108,7 @@ If you want to use additional libraries, frameworks, or tools, describe their un
 
 # Frontend / User Interface (UI)
 - Use Vue3 with composition syntax and `script setup` in single file components (SFC)
-- Use Shoelace webcomponents for UI elements
+- Use Shoelace webcomponents for UI elements. Check @Shoelace for how to use it
 - Use scoped styling of the vue components
 - Don't use any CSS framework
 - Minimal styling with global styles. Make use of CSS variables.

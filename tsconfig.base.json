@@ -20,7 +20,6 @@
     "noImplicitThis": true,
     "alwaysStrict": true,
     "resolveJsonModule": true,
-
     /* Experimental Options */
     "experimentalDecorators": true,
     "emitDecoratorMetadata": false
