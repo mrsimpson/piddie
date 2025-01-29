@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import type { SynchronizedFileSystem } from '../types/file-explorer'
 import { createSynchronizedFileSystem } from '../types/file-explorer'
 import {
@@ -15,69 +15,71 @@ import { handleUIError } from '../utils/error-handling'
 
 const COMPONENT_ID = 'DemoApp'
 const systems = ref<SynchronizedFileSystem[]>([])
-const dirHandle = ref<FileSystemDirectoryHandle | null>(null)
 
-async function initializeFileSystems() {
+async function initializeBrowserSystem() {
   try {
-    // Create file systems
+    // Create and initialize browser file system
     const browserFs = new BrowserFileSystem({
-      name: 'demo-browser-' + Date.now(), // Use unique name to avoid conflicts
+      name: 'demo-browser',
       rootDir: '/',
     })
-
-    if (!dirHandle.value) {
-      throw new Error('No directory handle available')
-    }
-
-    const nativeFs = new BrowserNativeFileSystem({ rootHandle: dirHandle.value })
-
-    // Initialize file systems
     await browserFs.initialize()
-    await nativeFs.initialize()
 
-    // Create sync targets
+    // Create browser sync target
     const browserTarget = new BrowserSyncTarget('browser')
-    const nativeTarget = new BrowserNativeSyncTarget('native')
 
-    // Create synchronized systems
-    const [browserSystem, nativeSystem] = await Promise.all([
-      createSynchronizedFileSystem({
-        id: 'browser',
-        title: 'Browser Storage',
-        fileSystem: browserFs,
-        syncTarget: browserTarget,
-      }),
-      createSynchronizedFileSystem({
-        id: 'native',
-        title: 'Local Files',
-        fileSystem: nativeFs,
-        syncTarget: nativeTarget,
-      }),
-    ])
+    // Create synchronized system
+    const browserSystem = await createSynchronizedFileSystem({
+      id: 'browser',
+      title: 'Browser Storage',
+      fileSystem: browserFs,
+      syncTarget: browserTarget,
+    })
 
-    // Initialize sync manager
-    const syncManager = new FileSyncManager()
-    syncManager.registerTarget(browserSystem.syncTarget, { role: 'primary' })
-    syncManager.registerTarget(nativeSystem.syncTarget, { role: 'secondary' })
-
-    // Store systems for the UI
-    systems.value = [browserSystem, nativeSystem]
+    systems.value = [browserSystem]
   } catch (err) {
-    handleUIError(err, 'Failed to initialize systems', COMPONENT_ID)
+    handleUIError(err, 'Failed to initialize browser system', COMPONENT_ID)
   }
 }
 
-async function handleSelectDirectory() {
+async function addNativeSystem() {
   try {
     // Request directory with readwrite permissions
-    dirHandle.value = await window.showDirectoryPicker({
+    const dirHandle = await window.showDirectoryPicker({
       mode: 'readwrite',
     })
-    await initializeFileSystems()
+
+    // Create and initialize native file system
+    const nativeFs = new BrowserNativeFileSystem({ rootHandle: dirHandle })
+    await nativeFs.initialize()
+
+    // Create native sync target
+    const nativeTarget = new BrowserNativeSyncTarget('native')
+
+    // Create synchronized system
+    const nativeSystem = await createSynchronizedFileSystem({
+      id: 'native',
+      title: 'Local Files',
+      fileSystem: nativeFs,
+      syncTarget: nativeTarget,
+    })
+
+    // Initialize sync manager if this is the second system
+    if (systems.value.length === 1) {
+      const syncManager = new FileSyncManager()
+      syncManager.registerTarget(systems.value[0].syncTarget, { role: 'primary' })
+      syncManager.registerTarget(nativeSystem.syncTarget, { role: 'secondary' })
+    }
+
+    // Add native system to the list
+    systems.value = [...systems.value, nativeSystem]
   } catch (err) {
-    handleUIError(err, 'Failed to get directory access', COMPONENT_ID)
+    handleUIError(err, 'Failed to initialize native system', COMPONENT_ID)
   }
 }
+
+// Initialize browser system on mount
+onMounted(initializeBrowserSystem)
 </script>
 
 <template>
@@ -87,18 +89,23 @@ async function handleSelectDirectory() {
     </header>
 
     <main>
-      <div v-if="!dirHandle" class="select-directory">
-        <sl-button variant="primary" @click="handleSelectDirectory">
-          <sl-icon slot="prefix" name="folder"></sl-icon>
-          Select Directory
-        </sl-button>
-        <p class="hint">Select a directory to start syncing files</p>
-      </div>
-      <div v-else-if="systems.length === 0" class="loading">
+      <div v-if="systems.length === 0" class="loading panel">
         <sl-spinner></sl-spinner>
         Initializing file systems...
       </div>
-      <FileExplorer v-else :systems="systems" />
+      <FileExplorer v-else :systems="systems" class="panel">
+        <template v-if="systems.length === 1" #after-explorer>
+          <div class="empty-panel">
+            <div class="empty-state">
+              <sl-button variant="primary" size="large" @click="addNativeSystem">
+                <sl-icon slot="prefix" name="folder"></sl-icon>
+                Add Local Directory
+              </sl-button>
+              <p class="hint">Add a local directory to enable file synchronization</p>
+            </div>
+          </div>
+        </template>
+      </FileExplorer>
     </main>
 
     <ErrorDisplay />
@@ -127,9 +134,25 @@ main {
   min-height: 0;
 }
 
-.error {
-  padding: var(--sl-spacing-large);
-  color: var(--sl-color-danger-600);
+.panel {
+  height: 100%;
+  border: 1px solid var(--sl-color-neutral-200);
+  border-radius: var(--sl-border-radius-medium);
+  background: var(--sl-color-neutral-0);
+}
+
+.empty-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sl-spacing-medium);
+  padding: var(--sl-spacing-2x-large);
   text-align: center;
 }
 
@@ -138,21 +161,12 @@ main {
   align-items: center;
   justify-content: center;
   gap: var(--sl-spacing-medium);
-  height: 100%;
   color: var(--sl-color-neutral-600);
-}
-
-.select-directory {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--sl-spacing-medium);
-  height: 100%;
 }
 
 .hint {
   color: var(--sl-color-neutral-600);
   font-size: var(--sl-font-size-small);
+  margin: 0;
 }
 </style>

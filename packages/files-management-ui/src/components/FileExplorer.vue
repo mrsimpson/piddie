@@ -16,6 +16,7 @@ const props = defineProps<{
       :sync-target="system.syncTarget"
       :title="system.title"
     />
+    <slot name="after-explorer"></slot>
   </div>
 </template>
 

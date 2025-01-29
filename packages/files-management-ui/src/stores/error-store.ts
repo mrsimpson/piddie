@@ -21,7 +21,6 @@ export function useErrorStore() {
     }
 
     errors.value.push(error)
-    console.error(`[${componentId || 'unknown'}] ${message}:`, details)
   }
 
   function removeError(id: string) {

@@ -18,6 +18,7 @@ const showNewFileDialog = ref(false)
 const showNewFolderDialog = ref(false)
 const newItemName = ref('')
 const selectedFile = ref<string | null>(null)
+const showDeleteConfirmDialog = ref(false)
 
 const sortedItems = computed(() => {
   return [...items.value].sort((a, b) => {
@@ -78,6 +79,9 @@ async function createNewFile() {
 
   try {
     error.value = null
+    if(await props.fileSystem.exists(newItemName.value)) {
+      handleUIError(`File already exists: ${newItemName.value}`, COMPONENT_ID)
+    }
     const filePath = `${currentPath.value}/${newItemName.value}`.replace(/\/+/g, '/')
     await props.fileSystem.writeFile(filePath, '')
     await loadDirectory(currentPath.value)
@@ -100,6 +104,20 @@ async function createNewFolder() {
     newItemName.value = ''
   } catch (err) {
     handleUIError(err, 'Failed to create folder', COMPONENT_ID)
+  }
+}
+
+async function deleteSelectedFile() {
+  if (!selectedFile.value) return
+
+  try {
+    error.value = null
+    await props.fileSystem.deleteItem(selectedFile.value)
+    await loadDirectory(currentPath.value)
+    selectedFile.value = null
+    showDeleteConfirmDialog.value = false
+  } catch (err) {
+    handleUIError(err, 'Failed to delete file', COMPONENT_ID)
   }
 }
 
@@ -133,6 +151,15 @@ loadDirectory('/')
         <sl-button size="small" @click="showNewFolderDialog = true">
           <sl-icon name="folder-plus"></sl-icon>
           New Folder
+        </sl-button>
+        <sl-button 
+          size="small" 
+          variant="danger"
+          :disabled="!selectedFile"
+          @click="showDeleteConfirmDialog = true"
+        >
+          <sl-icon name="trash"></sl-icon>
+          Delete
         </sl-button>
       </div>
     </header>
@@ -192,6 +219,20 @@ loadDirectory('/')
       <div slot="footer">
         <sl-button @click="showNewFolderDialog = false">Cancel</sl-button>
         <sl-button variant="primary" @click="createNewFolder">Create</sl-button>
+      </div>
+    </sl-dialog>
+
+    <!-- Delete Confirmation Dialog -->
+    <sl-dialog
+      label="Confirm Delete"
+      :open="showDeleteConfirmDialog"
+      @sl-hide="showDeleteConfirmDialog = false"
+    >
+      <p>Are you sure you want to delete "{{ selectedFile }}"?</p>
+      <p class="warning">This action cannot be undone.</p>
+      <div slot="footer">
+        <sl-button @click="showDeleteConfirmDialog = false">Cancel</sl-button>
+        <sl-button variant="danger" @click="deleteSelectedFile">Delete</sl-button>
       </div>
     </sl-dialog>
   </div>
@@ -286,5 +327,11 @@ sl-dialog::part(footer) {
   display: flex;
   gap: var(--sl-spacing-small);
   justify-content: flex-end;
+}
+
+.warning {
+  color: var(--sl-color-danger-600);
+  margin-top: var(--sl-spacing-small);
+  font-size: var(--sl-font-size-small);
 }
 </style>
