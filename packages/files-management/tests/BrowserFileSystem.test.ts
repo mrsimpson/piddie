@@ -155,18 +155,20 @@ describe("Browser FileSystem", () => {
       it("should list directory contents", async () => {
         // Given a directory with contents
         const path = "/test-dir";
-        statSpy.mockResolvedValue(createStatsMock({ isDirectory: true }));
+
+        // Mock stat implementation to return different results based on the path
+        statSpy.mockImplementation((filePath: string) => {
+          if (filePath.endsWith("/test-dir")) {
+            return Promise.resolve(createStatsMock({ isDirectory: true }));
+          }
+          return Promise.resolve(createStatsMock({
+            isDirectory: false,
+            size: filePath.includes("file1") ? 100 : 200
+          }));
+        });
 
         // Mock directory entries
         readdirSpy.mockResolvedValue(["file1.txt", "file2.txt"]);
-
-        statSpy.mockImplementation((filePath: string) =>
-          Promise.resolve(
-            createStatsMock({
-              size: filePath.includes("file1") ? 100 : 200
-            })
-          )
-        );
 
         // When listing directory contents
         const contents = await fileSystem.listDirectory(path);
@@ -177,11 +179,13 @@ describe("Browser FileSystem", () => {
           expect.arrayContaining([
             expect.objectContaining({
               path: "/test-dir/file1.txt",
-              type: "file"
+              type: "file",
+              size: 100
             }),
             expect.objectContaining({
               path: "/test-dir/file2.txt",
-              type: "file"
+              type: "file",
+              size: 200
             })
           ])
         );

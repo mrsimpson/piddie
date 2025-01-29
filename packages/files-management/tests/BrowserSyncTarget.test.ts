@@ -1,3 +1,21 @@
+vi.mock("@isomorphic-git/lightning-fs", () => {
+  const mockFs = {
+    promises: {
+      mkdir: vi.fn(),
+      readdir: vi.fn(),
+      stat: vi.fn(),
+      readFile: vi.fn(),
+      writeFile: vi.fn(),
+      rmdir: vi.fn(),
+      unlink: vi.fn()
+    }
+  };
+
+  return {
+    default: vi.fn(() => mockFs)
+  };
+});
+
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { MockInstance } from "vitest";
 import { BrowserSyncTarget } from "../src/BrowserSyncTarget";
@@ -8,29 +26,15 @@ import type {
   FileChunk
 } from "@piddie/shared-types";
 import { ReadableStream } from "node:stream/web";
+import FS from '@isomorphic-git/lightning-fs';
 
-// Define mock fs methods
-const mockPromises = {
-  mkdir: vi.fn().mockResolvedValue(undefined),
-  stat: vi.fn().mockResolvedValue({
-    isDirectory: () => false,
-    isFile: () => true,
-    mtimeMs: Date.now()
-  }),
-  readFile: vi.fn().mockResolvedValue("test content"),
-  writeFile: vi.fn().mockResolvedValue(undefined),
-  unlink: vi.fn().mockResolvedValue(undefined),
-  readdir: vi.fn().mockResolvedValue([]),
-  rmdir: vi.fn().mockResolvedValue(undefined)
-};
-
-vi.mock("@isomorphic-git/lightning-fs", () => {
-  class MockFS {
-    promises = mockPromises;
-    constructor() {}
-  }
-  return { default: MockFS };
-});
+// Get the mocked fs instance
+const fsInstance = new FS("test");
+const mockFs = fsInstance.promises;
+// Create spies for each method
+const readdirSpy = vi.spyOn(mockFs, "readdir");
+const statSpy = vi.spyOn(mockFs, "stat");
+const readFileSpy = vi.spyOn(mockFs, "readFile");
 
 // Mock window.setInterval and window.clearInterval
 const mockSetInterval = vi.fn();
@@ -59,13 +63,22 @@ describe("BrowserSyncTarget", () => {
     vi.resetAllMocks();
 
     // Reset mock implementations
-    mockPromises.stat.mockResolvedValue({
-      isDirectory: () => false,
-      isFile: () => true,
-      mtimeMs: Date.now()
+    statSpy.mockImplementation(async (path) => {
+      if (path === TEST_ROOT || path === "/") {
+        return Promise.resolve({
+          isDirectory: () => true,
+          isFile: () => false,
+          mtimeMs: Date.now()
+        } as unknown as FS.Stats);
+      }
+      return Promise.resolve({
+        isDirectory: () => false,
+        isFile: () => true,
+        mtimeMs: Date.now()
+      } as unknown as FS.Stats);
     });
-    mockPromises.readFile.mockResolvedValue("test content");
-    mockPromises.readdir.mockResolvedValue([]);
+    readFileSpy.mockResolvedValue("test content");
+    readdirSpy.mockResolvedValue([]);
 
     fileSystem = new BrowserFileSystem({ name: "test", rootDir: TEST_ROOT });
     target = new BrowserSyncTarget("test-target");
@@ -263,6 +276,27 @@ describe("BrowserSyncTarget", () => {
 
   describe("File Watching", () => {
     beforeEach(async () => {
+      // Update exists spy to return true for root directory
+      spies.exists.mockImplementation(async (path) => {
+        if (path === TEST_ROOT || path === "/") {
+          return true;
+        }
+        return false;
+      });
+
+      statSpy.mockImplementation(async (path) => {
+        if (path === TEST_ROOT) return Promise.resolve({
+          isDirectory: () => true,
+          isFile: () => false,
+          mtimeMs: Date.now()
+        } as unknown as FS.Stats);
+        return Promise.resolve({
+          isDirectory: () => false,
+          isFile: () => true,
+          mtimeMs: Date.now()
+        } as unknown as FS.Stats);
+      });
+
       await target.initialize(fileSystem);
     });
 
@@ -293,12 +327,7 @@ describe("BrowserSyncTarget", () => {
       }
 
       // Mock a new file appearing
-      mockPromises.readdir.mockResolvedValue(["newfile.txt"]);
-      mockPromises.stat.mockResolvedValue({
-        isDirectory: () => false,
-        isFile: () => true,
-        mtimeMs: Date.now()
-      });
+      readdirSpy.mockResolvedValue(["newfile.txt"]);
 
       // Trigger the interval callback
       await intervalCallback();
@@ -325,21 +354,25 @@ describe("BrowserSyncTarget", () => {
 
       // First, set up initial state with a file
       const initialTimestamp = Date.now();
-      mockPromises.readdir.mockResolvedValue(["test.txt"]);
-      mockPromises.stat.mockResolvedValue({
-        isDirectory: () => false,
-        isFile: () => true,
-        mtimeMs: initialTimestamp
-      });
+      readdirSpy.mockResolvedValue(["test.txt"]);
 
       // Let one interval pass to register the file
       await intervalCallback();
 
       // Now simulate a modification with a newer timestamp
-      mockPromises.stat.mockResolvedValue({
-        isDirectory: () => false,
-        isFile: () => true,
-        mtimeMs: initialTimestamp + 5000 // 5 seconds later
+      statSpy.mockImplementation(async (path) => {
+        if (path === TEST_ROOT || path === "/") {
+          return Promise.resolve({
+            isDirectory: () => true,
+            isFile: () => false,
+            mtimeMs: initialTimestamp + 5000 // 5 seconds later
+          } as unknown as FS.Stats);
+        }
+        return Promise.resolve({
+          isDirectory: () => false,
+          isFile: () => true,
+          mtimeMs: initialTimestamp + 5000 // 5 seconds later
+        } as unknown as FS.Stats);
       });
 
       // Trigger another interval
@@ -360,7 +393,7 @@ describe("BrowserSyncTarget", () => {
       await target.watch(callback);
 
       // First, mock an existing file
-      mockPromises.readdir.mockResolvedValue(["test.txt"]);
+      readdirSpy.mockResolvedValue(["test.txt"]);
 
       // Get the interval callback
       const intervalCallback = mockSetInterval.mock?.calls[0]?.[0];
@@ -372,7 +405,7 @@ describe("BrowserSyncTarget", () => {
       await intervalCallback();
 
       // Now simulate file deletion by returning empty directory
-      mockPromises.readdir.mockResolvedValue([]);
+      readdirSpy.mockResolvedValue([]);
 
       // Trigger another interval
       await intervalCallback();
