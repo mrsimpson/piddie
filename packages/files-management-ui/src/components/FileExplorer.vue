@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import type { SynchronizedFileSystem } from '../types/file-explorer';
-import FileSystemPanel from './FileSystemPanel.vue';
+import type { SynchronizedFileSystem } from '../types/file-explorer'
+import FileSystemPanel from './FileSystemPanel.vue'
 
 const props = defineProps<{
-  systems: SynchronizedFileSystem[];
-}>();
+  systems: SynchronizedFileSystem[]
+}>()
 </script>
 
 <template>
@@ -27,4 +27,4 @@ const props = defineProps<{
   height: 100%;
   padding: var(--sl-spacing-medium);
 }
-</style> 
+</style>

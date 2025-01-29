@@ -1,57 +1,32 @@
-import { defineConfig } from 'vite';
-import vue from '@vitejs/plugin-vue';
-import { resolve } from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, URL } from 'node:url'
 
-const __dirname = fileURLToPath(new URL('.', import.meta.url));
+import { defineConfig } from 'vite'
+import vue from '@vitejs/plugin-vue'
+import vueDevTools from 'vite-plugin-vue-devtools'
 
+// https://vite.dev/config/
 export default defineConfig({
-    plugins: [
-        vue({
-            template: {
-                compilerOptions: {
-                    // Treat all sl- tags as custom elements
-                    isCustomElement: (tag) => tag.startsWith('sl-')
-                }
-            },
-            script: {
-                defineModel: true,
-                propsDestructure: true
-            }
-        })
-    ],
-    build: {
-        target: 'esnext',
-        lib: {
-            entry: 'src/index.ts',
-            name: 'FilesManagementUI',
-            fileName: 'files-management-ui'
-        },
-        rollupOptions: {
-            external: [
-                'vue',
-                '@piddie/files-management',
-                '@piddie/shared-types',
-                '@shoelace-style/shoelace'
-            ],
-            output: {
-                globals: {
-                    vue: 'Vue',
-                    '@piddie/files-management': 'FilesManagement',
-                    '@piddie/shared-types': 'SharedTypes',
-                    '@shoelace-style/shoelace': 'Shoelace'
-                }
-            }
+  plugins: [
+    vue({
+      template: {
+        compilerOptions: {
+          // Tell Vue to ignore all components that start with 'sl-'
+          isCustomElement: tag => tag.startsWith('sl-')
         }
+      }
+    }),
+    vueDevTools(),
+  ],
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url))
     },
-    // Copy Shoelace assets to public directory
-    publicDir: resolve(__dirname, 'public'),
-    define: {
-        'process.env': {}
-    },
-    resolve: {
-        alias: {
-            'vue': 'vue/dist/vue.esm-bundler.js'
-        }
+  },
+  server: {
+    watch: {
+      usePolling: true,
+      interval: 100,
+      ignored: ['!**/node_modules/@piddie/**']
     }
-}); 
+  }
+})

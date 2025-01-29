@@ -1,25 +1,19 @@
 <script setup lang="ts">
-import type { FileSystem, SyncTarget } from '@piddie/shared-types';
-import FileSystemExplorer from './FileSystemExplorer.vue';
-import SyncTargetStatus from './SyncTargetStatus.vue';
+import type { FileSystem, SyncTarget } from '@piddie/shared-types'
+import FileSystemExplorer from './FileSystemExplorer.vue'
+import SyncTargetStatus from './SyncTargetStatus.vue'
 
 const props = defineProps<{
-  fileSystem: FileSystem;
-  syncTarget: SyncTarget;
-  title: string;
-}>();
+  fileSystem: FileSystem
+  syncTarget: SyncTarget
+  title: string
+}>()
 </script>
 
 <template>
   <div class="file-system-panel">
-    <FileSystemExplorer
-      :file-system="fileSystem"
-      :title="title"
-    />
-    <SyncTargetStatus
-      :target="syncTarget"
-      class="sync-status"
-    />
+    <FileSystemExplorer :file-system="fileSystem" :title="title" />
+    <SyncTargetStatus :target="syncTarget" class="sync-status" />
   </div>
 </template>
 
@@ -33,4 +27,4 @@ const props = defineProps<{
 .sync-status {
   margin-top: var(--sl-spacing-small);
 }
-</style> 
+</style>

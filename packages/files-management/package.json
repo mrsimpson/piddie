@@ -1,22 +1,26 @@
 {
   "name": "@piddie/files-management",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "private": true,
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "clean:build": "rimraf ./dist",
-    "dev": "nodemon",
+    "dev": "tsc -p tsconfig.build.json --watch",
     "lint": "eslint .",
     "lint:fix": "pnpm lint --fix",
     "format": "prettier --check .",
     "format:fix": "prettier --write .",
     "test": "vitest --run",
     "test:watch": "vitest",
-    "typecheck": "tsc"
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "@isomorphic-git/lightning-fs": "4.6.0",
     "@piddie/shared-types": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "~5.3.3"
   }
 }

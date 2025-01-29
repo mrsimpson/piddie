@@ -1,27 +1,27 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue';
-import type { SyncTarget, TargetState } from '@piddie/shared-types';
+import { ref, onMounted, onUnmounted } from 'vue'
+import type { SyncTarget, TargetState } from '@piddie/shared-types'
 
 const props = defineProps<{
-  target: SyncTarget;
-}>();
+  target: SyncTarget
+}>()
 
-const state = ref<TargetState>(props.target.getState());
-const updateInterval = ref<number>();
+const state = ref<TargetState>(props.target.getState())
+const updateInterval = ref<number>()
 
 function updateState() {
-  state.value = props.target.getState();
+  state.value = props.target.getState()
 }
 
 onMounted(() => {
-  updateInterval.value = window.setInterval(updateState, 1000);
-});
+  updateInterval.value = window.setInterval(updateState, 1000)
+})
 
 onUnmounted(() => {
   if (updateInterval.value) {
-    clearInterval(updateInterval.value);
+    clearInterval(updateInterval.value)
   }
-});
+})
 </script>
 
 <template>
@@ -73,4 +73,4 @@ onUnmounted(() => {
   font-size: var(--sl-font-size-small);
   color: var(--sl-color-warning-600);
 }
-</style> 
+</style>

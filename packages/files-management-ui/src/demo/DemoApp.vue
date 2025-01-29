@@ -1,29 +1,43 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
-import type { SynchronizedFileSystem } from '../types/file-explorer';
-import { createSynchronizedFileSystem } from '../types/file-explorer';
-import { FileSyncManager, BrowserFileSystem, BrowserNativeFileSystem, BrowserSyncTarget, BrowserNativeSyncTarget } from '@piddie/files-management';
-import FileExplorer from '../components/FileExplorer.vue';
+import { ref } from 'vue'
+import type { SynchronizedFileSystem } from '../types/file-explorer'
+import { createSynchronizedFileSystem } from '../types/file-explorer'
+import {
+  FileSyncManager,
+  BrowserFileSystem,
+  BrowserNativeFileSystem,
+  BrowserSyncTarget,
+  BrowserNativeSyncTarget,
+} from '@piddie/files-management'
+import FileExplorer from '../components/FileExplorer.vue'
+import ErrorDisplay from '../components/ErrorDisplay.vue'
+import { handleUIError } from '../utils/error-handling'
 
-const systems = ref<SynchronizedFileSystem[]>([]);
-const error = ref<string | null>(null);
+const COMPONENT_ID = 'DemoApp'
+const systems = ref<SynchronizedFileSystem[]>([])
+const dirHandle = ref<FileSystemDirectoryHandle | null>(null)
 
-onMounted(async () => {
+async function initializeFileSystems() {
   try {
     // Create file systems
-    const browserFs = new BrowserFileSystem({ name: 'demo-browser', rootDir: '/' });
-    
-    // Get native file system handle
-    const dirHandle = await window.showDirectoryPicker();
-    const nativeFs = new BrowserNativeFileSystem({ rootHandle: dirHandle });
+    const browserFs = new BrowserFileSystem({
+      name: 'demo-browser-' + Date.now(), // Use unique name to avoid conflicts
+      rootDir: '/',
+    })
+
+    if (!dirHandle.value) {
+      throw new Error('No directory handle available')
+    }
+
+    const nativeFs = new BrowserNativeFileSystem({ rootHandle: dirHandle.value })
 
     // Initialize file systems
-    await browserFs.initialize();
-    await nativeFs.initialize();
+    await browserFs.initialize()
+    await nativeFs.initialize()
 
     // Create sync targets
-    const browserTarget = new BrowserSyncTarget('browser');
-    const nativeTarget = new BrowserNativeSyncTarget('native');
+    const browserTarget = new BrowserSyncTarget('browser')
+    const nativeTarget = new BrowserNativeSyncTarget('native')
 
     // Create synchronized systems
     const [browserSystem, nativeSystem] = await Promise.all([
@@ -31,27 +45,39 @@ onMounted(async () => {
         id: 'browser',
         title: 'Browser Storage',
         fileSystem: browserFs,
-        syncTarget: browserTarget
+        syncTarget: browserTarget,
       }),
       createSynchronizedFileSystem({
         id: 'native',
         title: 'Local Files',
         fileSystem: nativeFs,
-        syncTarget: nativeTarget
-      })
-    ]);
+        syncTarget: nativeTarget,
+      }),
+    ])
 
     // Initialize sync manager
-    const syncManager = new FileSyncManager();
-    syncManager.registerTarget(browserSystem.syncTarget, { role: 'primary' });
-    syncManager.registerTarget(nativeSystem.syncTarget, { role: 'secondary' });
+    const syncManager = new FileSyncManager()
+    syncManager.registerTarget(browserSystem.syncTarget, { role: 'primary' })
+    syncManager.registerTarget(nativeSystem.syncTarget, { role: 'secondary' })
 
     // Store systems for the UI
-    systems.value = [browserSystem, nativeSystem];
+    systems.value = [browserSystem, nativeSystem]
   } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Failed to initialize systems';
+    handleUIError(err, 'Failed to initialize systems', COMPONENT_ID)
   }
-});
+}
+
+async function handleSelectDirectory() {
+  try {
+    // Request directory with readwrite permissions
+    dirHandle.value = await window.showDirectoryPicker({
+      mode: 'readwrite',
+    })
+    await initializeFileSystems()
+  } catch (err) {
+    handleUIError(err, 'Failed to get directory access', COMPONENT_ID)
+  }
+}
 </script>
 
 <template>
@@ -61,18 +87,21 @@ onMounted(async () => {
     </header>
 
     <main>
-      <div v-if="error" class="error">
-        {{ error }}
+      <div v-if="!dirHandle" class="select-directory">
+        <sl-button variant="primary" @click="handleSelectDirectory">
+          <sl-icon slot="prefix" name="folder"></sl-icon>
+          Select Directory
+        </sl-button>
+        <p class="hint">Select a directory to start syncing files</p>
       </div>
       <div v-else-if="systems.length === 0" class="loading">
         <sl-spinner></sl-spinner>
         Initializing file systems...
       </div>
-      <FileExplorer
-        v-else
-        :systems="systems"
-      />
+      <FileExplorer v-else :systems="systems" />
     </main>
+
+    <ErrorDisplay />
   </div>
 </template>
 
@@ -112,4 +141,18 @@ main {
   height: 100%;
   color: var(--sl-color-neutral-600);
 }
-</style> 
+
+.select-directory {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sl-spacing-medium);
+  height: 100%;
+}
+
+.hint {
+  color: var(--sl-color-neutral-600);
+  font-size: var(--sl-font-size-small);
+}
+</style>
