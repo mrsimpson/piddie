@@ -1,6 +1,35 @@
 import { FsPromisesAdapter, MinimalFsPromises } from "./FsPromisesAdapter";
 import { FileSystemError } from "@piddie/shared-types";
-import path from "path";
+
+/**
+ * Browser-compatible path utilities
+ */
+const browserPath = {
+  normalize(path: string): string {
+    // Remove leading and trailing slashes, collapse multiple slashes
+    return path.replace(/^\/+|\/+$/g, '').replace(/\/+/g, '/');
+  },
+
+  dirname(path: string): string {
+    const normalized = browserPath.normalize(path);
+    const lastSlash = normalized.lastIndexOf('/');
+    if (lastSlash === -1) return '/';
+    return normalized.slice(0, lastSlash) || '/';
+  },
+
+  basename(path: string): string {
+    const normalized = browserPath.normalize(path);
+    const lastSlash = normalized.lastIndexOf('/');
+    return lastSlash === -1 ? normalized : normalized.slice(lastSlash + 1);
+  },
+
+  join(...parts: string[]): string {
+    return '/' + parts
+      .map(part => browserPath.normalize(part))
+      .filter(Boolean)
+      .join('/');
+  }
+};
 
 // File System Access API types
 type PermissionState = "granted" | "denied" | "prompt";
@@ -57,8 +86,8 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
     // Create a wrapper that implements MinimalFsPromises using File System Access API
     const fsWrapper: MinimalFsPromises = {
       mkdir: async (dirPath: string) => {
-        const parentPath = path.dirname(dirPath);
-        const dirName = path.basename(dirPath);
+        const parentPath = this.getDirname(dirPath);
+        const dirName = this.getBasename(dirPath);
         const parentHandle = await this.getDirectoryHandle(parentPath);
         await parentHandle.getDirectoryHandle(dirName, { create: true });
       },
@@ -114,8 +143,8 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
         return await file.text();
       },
       writeFile: async (filePath: string, content: string) => {
-        const parentPath = path.dirname(filePath);
-        const fileName = path.basename(filePath);
+        const parentPath = this.getDirname(filePath);
+        const fileName = this.getBasename(filePath);
         const parentHandle = await this.getDirectoryHandle(parentPath);
         const fileHandle = await parentHandle.getFileHandle(fileName, {
           create: true
@@ -136,8 +165,8 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
         }
       },
       rm: async (itemPath: string, options?: { recursive?: boolean }) => {
-        const parentPath = path.dirname(itemPath);
-        const itemName = path.basename(itemPath);
+        const parentPath = this.getDirname(itemPath);
+        const itemName = this.getBasename(itemPath);
         const parentHandle = await this.getDirectoryHandle(parentPath);
         await parentHandle.removeEntry(itemName, options);
         this.handleCache.delete(itemPath);
@@ -162,6 +191,8 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
    * Initialize the file system and verify permissions
    */
   override async initialize(): Promise<void> {
+    if (this.initialized) return;
+
     // First verify we have the necessary permissions
     const permissionState = await this.rootHandle.queryPermission({
       mode: "readwrite"
@@ -195,7 +226,7 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
    */
   private async getHandle(itemPath: string): Promise<FileSystemHandle> {
     // Normalize path
-    const normalizedPath = path.normalize(itemPath).replace(/^\//, "");
+    const normalizedPath = this.normalizePath(itemPath);
     if (!normalizedPath) return this.rootHandle;
 
     // Check cache first
@@ -204,7 +235,7 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
     }
 
     // Split path into components and filter out empty segments
-    const components = normalizedPath.split(path.sep).filter(Boolean);
+    const components = normalizedPath.split('/').filter(Boolean);
     let currentHandle: FileSystemDirectoryHandle = this.rootHandle;
 
     // Traverse path
@@ -213,10 +244,7 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
       if (!component) continue; // Skip empty components
 
       const isLast = i === components.length - 1;
-      const fullPath = components
-        .slice(0, i + 1)
-        .filter(Boolean)
-        .join(path.sep);
+      const fullPath = this.joinPaths(...components.slice(0, i + 1));
 
       try {
         if (isLast) {
@@ -264,5 +292,41 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
     const hashBuffer = await crypto.subtle.digest("SHA-256", data);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  /**
+   * Normalize a path according to the browser file system rules
+   */
+  protected override normalizePath(path: string): string {
+    return path.replace(/^\/+|\/+$/g, '').replace(/\/+/g, '/');
+  }
+
+  /**
+   * Get the directory name from a path
+   */
+  protected override getDirname(path: string): string {
+    const normalized = this.normalizePath(path);
+    const lastSlash = normalized.lastIndexOf('/');
+    if (lastSlash === -1) return '/';
+    return normalized.slice(0, lastSlash) || '/';
+  }
+
+  /**
+   * Get the base name from a path
+   */
+  protected override getBasename(path: string): string {
+    const normalized = this.normalizePath(path);
+    const lastSlash = normalized.lastIndexOf('/');
+    return lastSlash === -1 ? normalized : normalized.slice(lastSlash + 1);
+  }
+
+  /**
+   * Join path segments according to browser file system rules
+   */
+  protected override joinPaths(...paths: string[]): string {
+    return '/' + paths
+      .map(part => this.normalizePath(part))
+      .filter(Boolean)
+      .join('/');
   }
 }

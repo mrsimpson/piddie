@@ -69,8 +69,7 @@ describe("Browser FileSystem", () => {
   describe("initialization", () => {
     it("should initialize successfully", async () => {
       // Given a new file system
-      statSpy.mockRejectedValueOnce(enoentError); // First stat fails (dir doesn't exist)
-      mkdirSpy.mockResolvedValue(undefined);
+      statSpy.mockResolvedValue(createStatsMock({ isDirectory: true }));
 
       // When initializing
       const initPromise = fileSystem.initialize();

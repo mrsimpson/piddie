@@ -6,6 +6,36 @@ import type {
 } from "@isomorphic-git/lightning-fs";
 
 /**
+ * Browser-compatible path utilities
+ */
+const browserPath = {
+  normalize(path: string): string {
+    // Remove leading and trailing slashes, collapse multiple slashes
+    return path.replace(/^\/+|\/+$/g, '').replace(/\/+/g, '/');
+  },
+
+  dirname(path: string): string {
+    const normalized = browserPath.normalize(path);
+    const lastSlash = normalized.lastIndexOf('/');
+    if (lastSlash === -1) return '/';
+    return normalized.slice(0, lastSlash) || '/';
+  },
+
+  basename(path: string): string {
+    const normalized = browserPath.normalize(path);
+    const lastSlash = normalized.lastIndexOf('/');
+    return lastSlash === -1 ? normalized : normalized.slice(lastSlash + 1);
+  },
+
+  join(...parts: string[]): string {
+    return '/' + parts
+      .map(part => browserPath.normalize(part))
+      .filter(Boolean)
+      .join('/');
+  }
+};
+
+/**
  * Browser implementation of the FileSystem interface using LightningFS.
  * This implementation uses LightningFS for browser-based file system operations.
  */
@@ -85,5 +115,42 @@ export class BrowserFileSystem extends FsPromisesAdapter {
       rootDir: options.rootDir,
       fs: fsWrapper
     });
+  }
+
+
+  /**
+   * Normalize a path according to the browser file system rules
+   */
+  protected override normalizePath(path: string): string {
+    return path.replace(/^\/+|\/+$/g, '').replace(/\/+/g, '/');
+  }
+
+  /**
+   * Get the directory name from a path
+   */
+  protected override getDirname(path: string): string {
+    const normalized = this.normalizePath(path);
+    const lastSlash = normalized.lastIndexOf('/');
+    if (lastSlash === -1) return '/';
+    return normalized.slice(0, lastSlash) || '/';
+  }
+
+  /**
+   * Get the base name from a path
+   */
+  protected override getBasename(path: string): string {
+    const normalized = this.normalizePath(path);
+    const lastSlash = normalized.lastIndexOf('/');
+    return lastSlash === -1 ? normalized : normalized.slice(lastSlash + 1);
+  }
+
+  /**
+   * Join path segments according to browser file system rules
+   */
+  protected override joinPaths(...paths: string[]): string {
+    return '/' + paths
+      .map(part => this.normalizePath(part))
+      .filter(Boolean)
+      .join('/');
   }
 }

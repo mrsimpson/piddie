@@ -8,7 +8,6 @@ import type {
   FileChangeInfo
 } from "@piddie/shared-types";
 import { BrowserNativeFileSystem } from "./BrowserNativeFileSystem";
-import { ReadableStream } from "node:stream/web";
 
 declare const globalThis: {
   setInterval(callback: () => void, ms: number): number;

@@ -11,7 +11,6 @@ import type {
   FileChunk
 } from "@piddie/shared-types";
 import { BrowserFileSystem } from "./BrowserFileSystem";
-import { ReadableStream } from "node:stream/web";
 
 declare global {
   interface Window {

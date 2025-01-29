@@ -72,14 +72,58 @@ export class FsPromisesAdapter implements FileSystem {
   };
   protected initialized = false;
 
-  constructor(protected options: FsPromisesAdapterOptions) {}
+  constructor(protected options: FsPromisesAdapterOptions) { }
+
+  /**
+   * Normalize a path according to the file system's rules
+   * Can be overridden by implementations that can't use Node's path module
+   */
+  protected normalizePath(filePath: string): string {
+    return path.normalize(filePath).replace(/^\//, "");
+  }
+
+  /**
+   * Get the directory name from a path
+   * Can be overridden by implementations that can't use Node's path module
+   */
+  protected getDirname(filePath: string): string {
+    return path.dirname(filePath);
+  }
+
+  /**
+   * Get the base name from a path
+   * Can be overridden by implementations that can't use Node's path module
+   */
+  protected getBasename(filePath: string): string {
+    return path.basename(filePath);
+  }
+
+  /**
+   * Join path segments according to the file system's rules
+   * Can be overridden by implementations that can't use Node's path module
+   */
+  protected joinPaths(...paths: string[]): string {
+    return path.join(...paths);
+  }
+
+  /**
+   * Get the absolute path for a relative path
+   */
+  protected getAbsolutePath(relativePath: string): string {
+    const normalizedPath = this.normalizePath(relativePath);
+    return this.joinPaths(this.options.rootDir, normalizedPath);
+  }
 
   async initialize(): Promise<void> {
     if (this.initialized) return;
 
     try {
-      // Ensure root directory exists
-      await this.options.fs.mkdir(this.options.rootDir, { recursive: true });
+      // Verify we can access the root directory
+      if (this.options.fs.access) {
+        await this.options.fs.access(this.options.rootDir);
+      } else {
+        await this.options.fs.stat(this.options.rootDir);
+      }
       this.initialized = true;
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Unknown error";
@@ -106,12 +150,6 @@ export class FsPromisesAdapter implements FileSystem {
         "LOCKED"
       );
     }
-  }
-
-  protected getAbsolutePath(relativePath: string): string {
-    // Normalize and resolve the path relative to root
-    const normalizedPath = path.normalize(relativePath).replace(/^\//, "");
-    return path.join(this.options.rootDir, normalizedPath);
   }
 
   async readFile(filePath: string): Promise<string> {
@@ -141,14 +179,23 @@ export class FsPromisesAdapter implements FileSystem {
     this.checkLock();
 
     const absolutePath = this.getAbsolutePath(filePath);
+    const parentDir = this.getDirname(absolutePath);
 
     try {
-      // Ensure parent directory exists
-      const parentDir = path.dirname(absolutePath);
-      await this.options.fs.mkdir(parentDir, { recursive: true });
+      // Check if parent directory exists
+      const parentExists = await this.exists(parentDir);
+      if (!parentExists) {
+        throw new FileSystemError(
+          `Parent directory does not exist: ${parentDir}`,
+          "NOT_FOUND"
+        );
+      }
 
       await this.options.fs.writeFile(absolutePath, content, "utf-8");
     } catch (error: unknown) {
+      if (error instanceof FileSystemError) {
+        throw error;
+      }
       const message = error instanceof Error ? error.message : "Unknown error";
       throw new FileSystemError(message, "PERMISSION_DENIED");
     }
@@ -159,10 +206,11 @@ export class FsPromisesAdapter implements FileSystem {
     this.checkLock();
 
     try {
+      const absolutePath = this.getAbsolutePath(itemPath);
       if (this.options.fs.access) {
-        await this.options.fs.access(this.getAbsolutePath(itemPath));
+        await this.options.fs.access(absolutePath);
       } else {
-        await this.options.fs.stat(this.getAbsolutePath(itemPath));
+        await this.options.fs.stat(absolutePath);
       }
       return true;
     } catch {
@@ -177,6 +225,12 @@ export class FsPromisesAdapter implements FileSystem {
     const absolutePath = this.getAbsolutePath(itemPath);
 
     try {
+      // First check if item exists
+      const exists = await this.exists(absolutePath);
+      if (!exists) {
+        throw new FileSystemError(`Path not found: ${itemPath}`, "NOT_FOUND");
+      }
+
       const stats = await this.options.fs.stat(absolutePath);
       if (stats.isDirectory()) {
         if (this.options.fs.rm) {
@@ -188,7 +242,7 @@ export class FsPromisesAdapter implements FileSystem {
           });
           await Promise.all(
             entries.map((entry) => {
-              const fullPath = path.join(absolutePath, entry.name);
+              const fullPath = this.joinPaths(absolutePath, entry.name);
               return entry.isDirectory()
                 ? this.deleteItem(fullPath)
                 : this.options.fs.unlink(fullPath);
@@ -199,12 +253,8 @@ export class FsPromisesAdapter implements FileSystem {
         await this.options.fs.unlink(absolutePath);
       }
     } catch (error: unknown) {
-      if (
-        error instanceof Error &&
-        "code" in error &&
-        error.code === "ENOENT"
-      ) {
-        throw new FileSystemError(`Path not found: ${itemPath}`, "NOT_FOUND");
+      if (error instanceof FileSystemError) {
+        throw error;
       }
       const message = error instanceof Error ? error.message : "Unknown error";
       throw new FileSystemError(message, "PERMISSION_DENIED");
@@ -232,12 +282,30 @@ export class FsPromisesAdapter implements FileSystem {
     const absolutePath = this.getAbsolutePath(dirPath);
 
     try {
+      // First check if directory exists
+      const exists = await this.exists(absolutePath);
+      if (!exists) {
+        throw new FileSystemError(
+          `Directory not found: ${dirPath}`,
+          "NOT_FOUND"
+        );
+      }
+
+      // Then check if it's actually a directory
+      const stats = await this.options.fs.stat(absolutePath);
+      if (!stats.isDirectory()) {
+        throw new FileSystemError(
+          `Path is not a directory: ${dirPath}`,
+          "INVALID_OPERATION"
+        );
+      }
+
       const entries = await this.options.fs.readdir(absolutePath, {
         withFileTypes: true
       });
       const items = await Promise.all(
         entries.map(async (entry) => {
-          const itemPath = path.join(dirPath, entry.name);
+          const itemPath = this.joinPaths(dirPath, entry.name);
           const stats = await this.options.fs.stat(
             this.getAbsolutePath(itemPath)
           );
@@ -254,15 +322,8 @@ export class FsPromisesAdapter implements FileSystem {
 
       return items;
     } catch (error: unknown) {
-      if (
-        error instanceof Error &&
-        "code" in error &&
-        ["NOT_FOUND", "ENOENT"].includes(error.code as string)
-      ) {
-        throw new FileSystemError(
-          `Directory not found: ${dirPath}`,
-          "NOT_FOUND"
-        );
+      if (error instanceof FileSystemError) {
+        throw error;
       }
       const message = error instanceof Error ? error.message : "Unknown error";
       throw new FileSystemError(message, "PERMISSION_DENIED");
