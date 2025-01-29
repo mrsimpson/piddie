@@ -21,13 +21,27 @@ export interface TargetRegistrationOptions {
 }
 
 /**
- * Represents the state of a pending sync operation that failed to apply to primary
+ * Represents a pending sync operation for a specific target
  */
-export interface PendingSync {
-  sourceTargetId: string;
+export interface PendingSyncForTarget {
   changes: FileChangeInfo[];
   timestamp: number;
-  failedPrimarySync: boolean;
+  failedSync: boolean;
+}
+
+/**
+ * Represents the state of pending sync operations
+ */
+export interface PendingSync {
+  /**
+   * Source target that originated the changes
+   */
+  sourceTargetId: string;
+
+  /**
+   * Map of target IDs to their pending changes
+   */
+  pendingByTarget: Map<string, PendingSyncForTarget>;
 }
 
 /**

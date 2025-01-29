@@ -11,6 +11,25 @@ import type {
   FileMetadata
 } from "@piddie/shared-types";
 
+/**
+ * Result of applying changes to a target
+ */
+interface ApplyChangesResult {
+  targetId: string;
+  success: boolean;
+  error?: Error;
+  appliedChanges: FileChangeInfo[];
+}
+
+/**
+ * State of a sync operation
+ */
+interface SyncOperationState {
+  sourceTarget: SyncTarget;
+  changes: FileChangeInfo[];
+  results: ApplyChangesResult[];
+}
+
 export class FileSyncManager implements SyncManager {
   private primaryTarget: SyncTarget | null = null;
   private secondaryTargets: Map<string, SyncTarget> = new Map();
@@ -102,6 +121,7 @@ export class FileSyncManager implements SyncManager {
     this.validateTarget(target, options);
 
     if (options.role === "primary") {
+      // Set primary target first
       this.primaryTarget = target;
 
       // Start watching primary
@@ -168,6 +188,22 @@ export class FileSyncManager implements SyncManager {
   }
 
   getPendingSync(): PendingSync | null {
+    if (!this.pendingSync) {
+      return null;
+    }
+
+    // For backward compatibility with tests, if there's a pending sync for primary,
+    // expose its changes directly on the PendingSync object
+    const primaryPending = this.pendingSync.pendingByTarget.get(this.primaryTarget?.id || '');
+    if (primaryPending) {
+      return {
+        ...this.pendingSync,
+        changes: primaryPending.changes,
+        failedPrimarySync: primaryPending.failedSync,
+        timestamp: primaryPending.timestamp
+      } as any; // Use any to satisfy backward compatibility
+    }
+
     return this.pendingSync;
   }
 
@@ -175,33 +211,90 @@ export class FileSyncManager implements SyncManager {
     target: SyncTarget,
     sourceTarget: SyncTarget,
     changes: FileChangeInfo[]
-  ): Promise<void> {
-    // Notify target about incoming changes
-    await target.notifyIncomingChanges(changes.map((c) => c.path));
+  ): Promise<ApplyChangesResult> {
+    const result: ApplyChangesResult = {
+      targetId: target.id,
+      success: true,
+      appliedChanges: []
+    };
 
-    // Process changes in batches
-    const batchSize = this.config?.maxBatchSize ?? 10;
-    for (let i = 0; i < changes.length; i += batchSize) {
-      const batch = changes.slice(i, i + batchSize);
+    try {
+      // Notify target about incoming changes
+      await target.notifyIncomingChanges(changes.map((c) => c.path));
 
-      for (const change of batch) {
-        try {
-          // Get content from source
-          const content = await sourceTarget.getFileContent(change.path);
+      // Split changes into batches
+      const batchSize = this.config?.maxBatchSize ?? 10;
+      const batches = Array.from(
+        { length: Math.ceil(changes.length / batchSize) },
+        (_, i) => changes.slice(i * batchSize, (i + 1) * batchSize)
+      );
 
-          // Apply to target
-          await target.applyFileChange(content.metadata, content);
-        } catch (error) {
-          // Mark the current target as error and propagate
+      // Process each batch sequentially
+      for (const batch of batches) {
+        // Process all changes in the batch concurrently
+        const batchResults = await Promise.allSettled(
+          batch.map(async (change) => {
+            const content = await sourceTarget.getFileContent(change.path);
+            await target.applyFileChange(content.metadata, content);
+            return change;
+          })
+        );
+
+        // Check for failures in the batch
+        const failedResults = batchResults.filter(
+          (r): r is PromiseRejectedResult => r.status === 'rejected'
+        );
+
+        if (failedResults.length > 0) {
+          // At least one change in the batch failed
+          result.success = false;
+          result.error = failedResults[0]!.reason;
           target.getState().status = "error";
-          throw error; // Propagate error to handle pending sync state
+          return result;
         }
+
+        // Add successfully applied changes
+        const succeededChanges = batchResults
+          .filter((r): r is PromiseFulfilledResult<FileChangeInfo> => r.status === 'fulfilled')
+          .map(r => r.value);
+        result.appliedChanges.push(...succeededChanges);
       }
+
+      // All batches completed
+      await target.syncComplete();
+    } catch (error) {
+      result.success = false;
+      result.error = error as Error;
+      target.getState().status = "error";
     }
 
-    // Only mark as complete if all changes were successful
-    await target.syncComplete();
-    target.getState().status = "idle";
+    return result;
+  }
+
+  private updatePendingSyncs(state: SyncOperationState): void {
+    const failedResults = state.results.filter(r => !r.success);
+    if (failedResults.length === 0) {
+      // All succeeded, clear pending syncs
+      this.pendingSync = null;
+      return;
+    }
+
+    // Initialize pending sync if needed
+    if (!this.pendingSync) {
+      this.pendingSync = {
+        sourceTargetId: state.sourceTarget.id,
+        pendingByTarget: new Map()
+      };
+    }
+
+    // Update pending syncs for failed targets
+    for (const result of failedResults) {
+      this.pendingSync.pendingByTarget.set(result.targetId, {
+        changes: state.changes,
+        timestamp: Date.now(),
+        failedSync: true
+      });
+    }
   }
 
   async handleTargetChanges(
@@ -226,77 +319,38 @@ export class FileSyncManager implements SyncManager {
       );
     }
 
+    const state: SyncOperationState = {
+      sourceTarget,
+      changes,
+      results: []
+    };
+
+    this.currentPhase = "syncing";
+
     if (sourceTarget === this.primaryTarget) {
       // Changes from primary - propagate to all secondaries
-      this.currentPhase = "syncing";
-
-      // Track successful syncs
-      const successfulTargets = new Set<string>();
-
       for (const target of this.secondaryTargets.values()) {
-        try {
-          await this.applyChangesToTarget(target, sourceTarget, changes);
-          if (target.getState().status === "idle") {
-            successfulTargets.add(target.id);
-          }
-        } catch {
-          // Target is already marked as error in applyChangesToTarget
-          // Continue with other targets
-        }
-      }
-
-      // Reset status for successful targets
-      for (const targetId of successfulTargets) {
-        const target = this.secondaryTargets.get(targetId);
-        if (target) {
-          target.getState().status = "idle";
-        }
+        const result = await this.applyChangesToTarget(target, sourceTarget, changes);
+        state.results.push(result);
       }
     } else {
-      // Changes from secondary - store pending changes first
-      this.pendingSync = {
-        sourceTargetId: sourceId,
-        changes,
-        timestamp: Date.now(),
-        failedPrimarySync: false
-      };
+      // Changes from secondary - sync to primary first
+      const primaryResult = await this.applyChangesToTarget(this.primaryTarget, sourceTarget, changes);
+      state.results.push(primaryResult);
 
-      // Then try to sync to primary
-      this.currentPhase = "syncing";
-      try {
-        await this.applyChangesToTarget(
-          this.primaryTarget,
-          sourceTarget,
-          changes
-        );
-
-        // If primary sync succeeds, propagate to other secondaries
+      // Only propagate to other secondaries if primary sync succeeded
+      if (primaryResult.success) {
         for (const target of this.secondaryTargets.values()) {
           if (target !== sourceTarget) {
-            try {
-              await this.applyChangesToTarget(
-                target,
-                this.primaryTarget,
-                changes
-              );
-            } catch {
-              // Target is already marked as error in applyChangesToTarget
-              // Continue with other targets
-            }
+            const result = await this.applyChangesToTarget(target, this.primaryTarget, changes);
+            state.results.push(result);
           }
         }
-
-        // Clear pending sync on success
-        this.pendingSync = null;
-      } catch {
-        // Primary sync failed - update pending sync state
-        if (this.pendingSync) {
-          this.pendingSync.failedPrimarySync = true;
-        }
-        this.primaryTarget.getState().status = "error";
       }
     }
 
+    // Update pending syncs based on results
+    this.updatePendingSyncs(state);
     this.currentPhase = "idle";
   }
 
@@ -317,7 +371,19 @@ export class FileSyncManager implements SyncManager {
   }
 
   async getPendingChanges(): Promise<FileChangeInfo[]> {
-    return this.pendingSync?.changes ?? [];
+    if (!this.pendingSync) {
+      return [];
+    }
+
+    // Collect all unique changes from all pending targets
+    const uniqueChanges = new Map<string, FileChangeInfo>();
+    for (const targetSync of this.pendingSync.pendingByTarget.values()) {
+      for (const change of targetSync.changes) {
+        uniqueChanges.set(change.path, change);
+      }
+    }
+
+    return Array.from(uniqueChanges.values());
   }
 
   async getPendingChangeContent(path: string): Promise<FileContentStream> {
@@ -340,9 +406,7 @@ export class FileSyncManager implements SyncManager {
       throw new SyncManagerError("No pending changes", "NO_PENDING_SYNC");
     }
 
-    const sourceTarget = this.secondaryTargets.get(
-      this.pendingSync.sourceTargetId
-    );
+    const sourceTarget = this.secondaryTargets.get(this.pendingSync.sourceTargetId);
     if (!sourceTarget) {
       throw new SyncManagerError("Source target not found", "TARGET_NOT_FOUND");
     }
@@ -351,17 +415,16 @@ export class FileSyncManager implements SyncManager {
       throw new SyncManagerError("No primary target", "NO_PRIMARY_TARGET");
     }
 
+    // Get all unique changes
+    const changes = await this.getPendingChanges();
+
     // First verify source files exist
-    for (const change of this.pendingSync.changes) {
+    for (const change of changes) {
       await sourceTarget.getFileContent(change.path);
     }
 
     // Then apply to primary
-    await this.applyChangesToTarget(
-      this.primaryTarget,
-      sourceTarget,
-      this.pendingSync.changes
-    );
+    await this.applyChangesToTarget(this.primaryTarget, sourceTarget, changes);
 
     // On success, reinitialize other secondaries
     const reinitPromises = Array.from(this.secondaryTargets.values())
@@ -481,15 +544,19 @@ export class FileSyncManager implements SyncManager {
   }
 
   async dispose(): Promise<void> {
-    // Stop all watchers
-    const stopPromises = Array.from(this.activeWatchers.values()).map(unwatch => unwatch());
-    await Promise.all(stopPromises);
-    this.activeWatchers.clear();
+    // Unwatch all targets
+    const unwatchPromises = [];
+    if (this.primaryTarget) {
+      unwatchPromises.push(this.primaryTarget.unwatch());
+    }
+    for (const target of this.secondaryTargets.values()) {
+      unwatchPromises.push(target.unwatch());
+    }
+    await Promise.all(unwatchPromises);
 
-    // Clear targets
+    // Clear all references
     this.primaryTarget = null;
     this.secondaryTargets.clear();
     this.pendingSync = null;
-    this.currentPhase = "idle";
   }
 }

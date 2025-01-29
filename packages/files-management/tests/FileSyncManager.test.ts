@@ -121,7 +121,10 @@ class MockSyncTarget implements SyncTarget {
   }
 
   async syncComplete(): Promise<boolean> {
-    this.state.status = "idle";
+    // remain in error state if sync failed even after it's completed
+    if (this.state.status !== "error") {
+      this.state.status = "idle";
+    }
     return true;
   }
 
@@ -198,7 +201,7 @@ describe("FileSyncManager", () => {
       primaryTarget.getState().status = "idle";
 
       // When registering a primary target
-      manager.registerTarget(primaryTarget, { role: "primary" });
+      await manager.registerTarget(primaryTarget, { role: "primary" });
 
       // Then it should be accessible as primary
       expect(manager.getPrimaryTarget()).toBe(primaryTarget);
@@ -212,9 +215,9 @@ describe("FileSyncManager", () => {
       secondaryTarget2.getState().status = "idle";
 
       // When registering targets
-      manager.registerTarget(primaryTarget, { role: "primary" });
-      manager.registerTarget(secondaryTarget1, { role: "secondary" });
-      manager.registerTarget(secondaryTarget2, { role: "secondary" });
+      await manager.registerTarget(primaryTarget, { role: "primary" });
+      await manager.registerTarget(secondaryTarget1, { role: "secondary" });
+      await manager.registerTarget(secondaryTarget2, { role: "secondary" });
 
       // Then they should be accessible
       expect(manager.getPrimaryTarget()).toBe(primaryTarget);
@@ -224,77 +227,89 @@ describe("FileSyncManager", () => {
       expect(secondaries).toContain(secondaryTarget2);
     });
 
-    it("should reject uninitialized primary target", () => {
+    it("should reject uninitialized primary target", async () => {
       // Given an uninitialized primary target
       primaryTarget.getState().status = "error";
 
       // When trying to register
       // Then it should throw
-      expect(() =>
-        manager.registerTarget(primaryTarget, { role: "primary" })
-      ).toThrow(
+      await expect(
+        () => manager.registerTarget(primaryTarget, { role: "primary" })
+      ).rejects.toThrow(
         new SyncManagerError(
-          "Target primary is not initialized",
+          `Target ${primaryTarget.id} is not initialized`,
           "SOURCE_NOT_AVAILABLE"
         )
       );
     });
 
-    it("should reject uninitialized secondary target", () => {
+    it("should reject uninitialized secondary target", async () => {
       // Given an initialized primary and uninitialized secondary
       primaryTarget.getState().status = "idle";
       secondaryTarget1.getState().status = "error";
 
       // When registering primary and trying to register secondary
-      manager.registerTarget(primaryTarget, { role: "primary" });
+      await manager.registerTarget(primaryTarget, { role: "primary" });
 
       // Then it should throw
-      expect(() =>
-        manager.registerTarget(secondaryTarget1, { role: "secondary" })
-      ).toThrow(
+      await expect(
+        () => manager.registerTarget(secondaryTarget1, { role: "secondary" })
+      ).rejects.toThrow(
         new SyncManagerError(
-          "Target secondary1 is not initialized",
+          `Target ${secondaryTarget1.id} is not initialized`,
           "SOURCE_NOT_AVAILABLE"
         )
       );
     });
 
-    it("should throw error when registering second primary target", () => {
+    it("should throw error when registering second primary target", async () => {
       // Given an existing initialized primary target
       primaryTarget.getState().status = "idle";
       secondaryTarget1.getState().status = "idle";
-      manager.registerTarget(primaryTarget, { role: "primary" });
+      await manager.registerTarget(primaryTarget, { role: "primary" });
 
       // When trying to register another primary
       // Then it should throw
-      expect(() =>
-        manager.registerTarget(secondaryTarget1, { role: "primary" })
-      ).toThrow("Primary target already exists");
+      await expect(
+        () => manager.registerTarget(secondaryTarget1, { role: "primary" })
+      ).rejects.toThrow(
+        new SyncManagerError(
+          "Primary target already exists",
+          "PRIMARY_TARGET_EXISTS"
+        )
+      );
     });
 
-    it("should throw error when registering duplicate target id", () => {
+    it("should throw error when registering duplicate target id", async () => {
       // Given a target with ID 'test'
       const target1 = new MockSyncTarget("test", "local");
       const target2 = new MockSyncTarget("test", "browser");
       target1.getState().status = "idle";
       target2.getState().status = "idle";
-      manager.registerTarget(target1, { role: "primary" });
+      await manager.registerTarget(target1, { role: "primary" });
 
       // When trying to register another target with same ID
       // Then it should throw
-      expect(() =>
-        manager.registerTarget(target2, { role: "secondary" })
-      ).toThrow("Target with ID test already exists");
+      await expect(
+        () => manager.registerTarget(target2, { role: "secondary" })
+      ).rejects.toThrow(
+        new SyncManagerError(
+          `Target with ID ${target2.id} already exists`,
+          "TARGET_ALREADY_EXISTS"
+        )
+      );
     });
 
-    it("should throw error when registering target with invalid role", () => {
+    it("should throw error when registering target with invalid role", async () => {
       // Given an initialized target
       primaryTarget.getState().status = "idle";
 
       // When trying to register with invalid role
-      expect(() =>
+      await expect(() =>
         manager.registerTarget(primaryTarget, { role: "invalid" as any })
-      ).toThrow("Invalid target role");
+      ).rejects.toThrow(
+        new SyncManagerError("Invalid target role", "TARGET_NOT_FOUND")
+      );
     });
   });
 
@@ -410,8 +425,9 @@ describe("FileSyncManager", () => {
         const pendingSync = manager.getPendingSync();
         expect(pendingSync).not.toBeNull();
         expect(pendingSync?.sourceTargetId).toBe(secondaryTarget1.id);
-        expect(pendingSync?.changes).toEqual([change]);
-        expect(pendingSync?.failedPrimarySync).toBe(true);
+        expect(pendingSync?.pendingByTarget.get(primaryTarget.id)).toBeDefined();
+        expect(pendingSync?.pendingByTarget.get(primaryTarget.id)?.changes).toEqual([change]);
+        expect(pendingSync?.pendingByTarget.get(primaryTarget.id)?.failedSync).toBe(true);
 
         // And other secondary should not receive changes
         await expect(
@@ -581,14 +597,14 @@ describe("FileSyncManager", () => {
       manager.registerTarget(secondaryTarget2, { role: "secondary" });
 
       // When unregistering a secondary
-      manager.unregisterTarget(secondaryTarget1.id);
+      await manager.unregisterTarget(secondaryTarget1.id);
 
       // Then it should be removed
       expect(manager.getSecondaryTargets()).toHaveLength(1);
       expect(manager.getSecondaryTargets()[0]).toBe(secondaryTarget2);
 
       // When unregistering primary
-      manager.unregisterTarget(primaryTarget.id);
+      await manager.unregisterTarget(primaryTarget.id);
 
       // Then it should be removed
       expect(() => manager.getPrimaryTarget()).toThrow();
