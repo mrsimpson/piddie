@@ -2,7 +2,8 @@ import type {
   FileSystem,
   LockState,
   FileMetadata,
-  FileContentStream
+  FileContentStream,
+  FileSystemItem
 } from "./file-system";
 
 /**
@@ -100,6 +101,12 @@ export interface SyncTarget {
    * @throws {Error} if file not found or cannot be read
    */
   getFileContent(path: string): Promise<FileContentStream>;
+
+  /**
+   * List contents of a directory
+   * @throws {Error} if directory cannot be listed
+   */
+  listDirectory(path: string): Promise<FileSystemItem[]>;
 
   /**
    * Apply a single file change using streaming

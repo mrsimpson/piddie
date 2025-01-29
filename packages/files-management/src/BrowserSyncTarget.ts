@@ -8,7 +8,7 @@ import type {
   TargetState,
   FileMetadata,
   FileContentStream,
-  FileChunk
+  FileSystemItem
 } from "@piddie/shared-types";
 import { BrowserFileSystem } from "./BrowserFileSystem";
 
@@ -39,6 +39,15 @@ export class BrowserSyncTarget implements SyncTarget {
 
   constructor(id: string) {
     this.id = id;
+  }
+  getFileSystem(): FileSystem {
+    if (!this.fileSystem) {
+      throw new SyncOperationError(
+        "Target not initialized",
+        "INITIALIZATION_FAILED"
+      );
+    }
+    return this.fileSystem;
   }
 
   async initialize(fileSystem: FileSystem): Promise<void> {
@@ -334,18 +343,6 @@ export class BrowserSyncTarget implements SyncTarget {
     }
     return metadata;
   }
-
-  /**
-   * Calculate hash for a chunk of content using Web Crypto API
-   */
-  private async calculateChunkHash(content: string): Promise<string> {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(content);
-    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-  }
-
   async getFileContent(path: string): Promise<FileContentStream> {
     if (!this.fileSystem) {
       throw new SyncOperationError(
@@ -355,50 +352,50 @@ export class BrowserSyncTarget implements SyncTarget {
     }
 
     try {
-      const fileMetadata = await this.fileSystem.getMetadata(path);
-      const CHUNK_SIZE = 64 * 1024; // 64KB chunks
-      let chunkIndex = 0;
-      const totalChunks = Math.ceil(fileMetadata.size / CHUNK_SIZE);
-      const fileSystem = this.fileSystem;
-      const calculateChunkHash = this.calculateChunkHash.bind(this);
-
-      const stream = new ReadableStream<FileChunk>({
-        async start(controller) {
-          try {
-            const content = await fileSystem.readFile(path);
-
-            // Split content into chunks
-            for (let i = 0; i < content.length; i += CHUNK_SIZE) {
-              const chunk = content.slice(i, i + CHUNK_SIZE);
-              controller.enqueue({
-                content: chunk,
-                chunkIndex: chunkIndex++,
-                totalChunks,
-                chunkHash: await calculateChunkHash(chunk)
-              });
-            }
-            controller.close();
-          } catch (error) {
-            controller.error(
-              new SyncOperationError(
-                `Failed to read file ${path}: ${error}`,
-                "CONTENT_RETRIEVAL_FAILED"
-              )
-            );
-          }
-        }
-      });
+      const metadata = await this.fileSystem.getMetadata(path);
+      const content = await this.fileSystem.readFile(path);
 
       return {
-        metadata: fileMetadata,
-        getReader: () => stream.getReader(),
-        async close() {
-          await stream.cancel();
+        metadata,
+        getReader: () => {
+          const stream = new ReadableStream({
+            start(controller) {
+              controller.enqueue({
+                content,
+                chunkIndex: 0,
+                totalChunks: 1,
+                chunkHash: metadata.hash
+              });
+              controller.close();
+            }
+          });
+          return stream.getReader();
+        },
+        close: async () => {
+          /* No cleanup needed */
         }
       };
     } catch (error) {
       throw new SyncOperationError(
-        `Failed to get content stream for ${path}: ${error}`,
+        `Failed to get file content: ${error}`,
+        "CONTENT_RETRIEVAL_FAILED"
+      );
+    }
+  }
+
+  async listDirectory(path: string): Promise<FileSystemItem[]> {
+    if (!this.fileSystem) {
+      throw new SyncOperationError(
+        "FileSystem not initialized",
+        "INITIALIZATION_FAILED"
+      );
+    }
+
+    try {
+      return await this.fileSystem.listDirectory(path);
+    } catch (error) {
+      throw new SyncOperationError(
+        `Failed to list directory: ${error}`,
         "CONTENT_RETRIEVAL_FAILED"
       );
     }

@@ -17,9 +17,10 @@ export class FileSyncManager implements SyncManager {
   private config?: SyncManagerConfig;
   private currentPhase: SyncStatus["phase"] = "idle";
   private pendingSync: PendingSync | null = null;
+  private activeWatchers: Map<string, () => Promise<void>> = new Map();
 
-  registerTarget(target: SyncTarget, options: TargetRegistrationOptions): void {
-    // Validate role
+  private validateTarget(target: SyncTarget, options: TargetRegistrationOptions): void {
+    // Synchronous validations first
     if (options.role !== "primary" && options.role !== "secondary") {
       throw new SyncManagerError("Invalid target role", "TARGET_NOT_FOUND");
     }
@@ -43,27 +44,96 @@ export class FileSyncManager implements SyncManager {
       );
     }
 
-    // Handle primary target registration
-    if (options.role === "primary") {
-      if (this.primaryTarget) {
-        throw new SyncManagerError(
-          "Primary target already exists",
-          "PRIMARY_TARGET_EXISTS"
-        );
-      }
-      this.primaryTarget = target;
-    } else {
-      // Register secondary target
-      this.secondaryTargets.set(target.id, target);
+    // Check for primary target existence
+    if (options.role === "primary" && this.primaryTarget) {
+      throw new SyncManagerError(
+        "Primary target already exists",
+        "PRIMARY_TARGET_EXISTS"
+      );
     }
   }
 
-  unregisterTarget(targetId: string): void {
-    if (this.primaryTarget?.id === targetId) {
-      this.primaryTarget = null;
+  private async startWatching(target: SyncTarget): Promise<void> {
+    // Don't start watching if already watching
+    if (this.activeWatchers.has(target.id)) {
       return;
     }
-    this.secondaryTargets.delete(targetId);
+
+    // Start watching the target
+    await target.watch((changes) => this.handleTargetChanges(target.id, changes));
+
+    // Store unwatch function
+    this.activeWatchers.set(target.id, () => target.unwatch());
+  }
+
+  private async stopWatching(targetId: string): Promise<void> {
+    const unwatch = this.activeWatchers.get(targetId);
+    if (unwatch) {
+      await unwatch();
+      this.activeWatchers.delete(targetId);
+    }
+  }
+
+  private async syncFromPrimaryToTarget(target: SyncTarget): Promise<void> {
+    if (!this.primaryTarget) return;
+
+    // Get all paths from primary
+    const allPaths = await this.getAllPaths(this.primaryTarget);
+
+    // Get metadata for all paths
+    const allFiles = await this.primaryTarget.getMetadata(allPaths);
+
+    // Create change info for each file
+    const changes: FileChangeInfo[] = allFiles.map(file => ({
+      path: file.path,
+      type: "modify",
+      hash: file.hash,
+      size: file.size,
+      lastModified: file.lastModified,
+      sourceTarget: this.primaryTarget!.id
+    }));
+
+    // Apply changes to target
+    await this.applyChangesToTarget(target, this.primaryTarget, changes);
+  }
+
+  async registerTarget(target: SyncTarget, options: TargetRegistrationOptions): Promise<void> {
+    // Run synchronous validations first
+    this.validateTarget(target, options);
+
+    if (options.role === "primary") {
+      this.primaryTarget = target;
+
+      // Start watching primary
+      await this.startWatching(target);
+
+      // Sync primary contents to all existing secondaries
+      for (const secondary of this.secondaryTargets.values()) {
+        await this.syncFromPrimaryToTarget(secondary);
+      }
+    } else {
+      // Register secondary target
+      this.secondaryTargets.set(target.id, target);
+
+      // If primary exists, sync its contents to the new secondary
+      if (this.primaryTarget) {
+        await this.syncFromPrimaryToTarget(target);
+      }
+
+      // Start watching secondary
+      await this.startWatching(target);
+    }
+  }
+
+  async unregisterTarget(targetId: string): Promise<void> {
+    // Stop watching first
+    await this.stopWatching(targetId);
+
+    if (this.primaryTarget?.id === targetId) {
+      this.primaryTarget = null;
+    } else {
+      this.secondaryTargets.delete(targetId);
+    }
   }
 
   getPrimaryTarget(): SyncTarget {
@@ -311,15 +381,28 @@ export class FileSyncManager implements SyncManager {
     const result: string[] = [];
     const seenPaths = new Set<string>();
 
-    // Get metadata for root directory first
-    const rootFiles = await target.getMetadata(["."]);
-    for (const file of rootFiles) {
-      if (!seenPaths.has(file.path)) {
-        seenPaths.add(file.path);
-        result.push(file.path);
+    // Recursive function to process directories
+    const processDirectory = async (dirPath: string) => {
+      try {
+        const entries = await target.listDirectory(dirPath);
+        for (const entry of entries) {
+          if (!seenPaths.has(entry.path)) {
+            seenPaths.add(entry.path);
+            if (entry.type === "file") {
+              result.push(entry.path);
+            } else if (entry.type === "directory") {
+              await processDirectory(entry.path);
+            }
+          }
+        }
+      } catch (error) {
+        // Skip directories that can't be listed
+        console.warn(`Failed to list directory ${dirPath}:`, error);
       }
-    }
+    };
 
+    // Start from root
+    await processDirectory("/");
     return result;
   }
 
@@ -398,7 +481,12 @@ export class FileSyncManager implements SyncManager {
   }
 
   async dispose(): Promise<void> {
-    // Cleanup resources
+    // Stop all watchers
+    const stopPromises = Array.from(this.activeWatchers.values()).map(unwatch => unwatch());
+    await Promise.all(stopPromises);
+    this.activeWatchers.clear();
+
+    // Clear targets
     this.primaryTarget = null;
     this.secondaryTargets.clear();
     this.pendingSync = null;

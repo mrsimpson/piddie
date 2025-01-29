@@ -5,7 +5,8 @@ import type {
   FileMetadata,
   FileContentStream,
   FileConflict,
-  FileChangeInfo
+  FileChangeInfo,
+  FileSystemItem
 } from "@piddie/shared-types";
 import { BrowserNativeFileSystem } from "./BrowserNativeFileSystem";
 
@@ -108,6 +109,11 @@ export class BrowserNativeSyncTarget implements SyncTarget {
         /* No cleanup needed */
       }
     };
+  }
+
+  async listDirectory(path: string): Promise<FileSystemItem[]> {
+    if (!this.fileSystem) throw new Error("Not initialized");
+    return this.fileSystem.listDirectory(path);
   }
 
   async applyFileChange(

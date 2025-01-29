@@ -7,7 +7,9 @@ import {
   type TargetState,
   type SyncManagerConfig,
   type FileChunk,
-  SyncManagerError
+  SyncManagerError,
+  FileSystem,
+  FileSystemItem
 } from "@piddie/shared-types";
 import { ReadableStream, ReadableStreamDefaultReader } from "node:stream/web";
 import { FileSyncManager } from "../src/FileSyncManager";
@@ -60,6 +62,10 @@ class MockSyncTarget implements SyncTarget {
       pendingChanges: 0,
       status: "idle"
     };
+  }
+
+  async listDirectory(path: string): Promise<FileSystemItem[]> {
+    return [];
   }
 
   async initialize(): Promise<void> {

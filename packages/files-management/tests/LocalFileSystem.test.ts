@@ -209,13 +209,20 @@ describe("FileSystem", () => {
         ] as Dirent[];
         fsMock.readdir.mockResolvedValue(mockDirents);
 
-        fsMock.stat.mockImplementation((filePath: PathLike) =>
-          Promise.resolve(
+        fsMock.stat.mockImplementation((filePath: PathLike) => {
+          if (filePath.toString().endsWith(path)) {
+            return Promise.resolve(
+              createStatsMock({
+                isDirectory: true
+              })
+            );
+          }
+          return Promise.resolve(
             createStatsMock({
               size: filePath.toString().includes("file1") ? 100 : 200
             })
-          )
-        );
+          );
+        });
 
         // When listing directory contents
         const contents = await fileSystem.listDirectory(path);

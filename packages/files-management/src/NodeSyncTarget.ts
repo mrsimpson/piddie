@@ -8,12 +8,11 @@ import type {
   TargetState,
   FileMetadata,
   FileContentStream,
-  FileChunk
+  FileSystemItem
 } from "@piddie/shared-types";
 import { NodeFileSystem } from "./NodeFileSystem";
 import { SyncOperationError } from "@piddie/shared-types";
 import { ReadableStream } from "node:stream/web";
-import { createHash } from "crypto";
 
 /**
  * Node.js implementation of the SyncTarget interface
@@ -29,7 +28,16 @@ export class NodeSyncTarget implements SyncTarget {
   constructor(
     public readonly id: string,
     private rootDir: string
-  ) {}
+  ) { }
+  getFileSystem(): FileSystem {
+    if (!this.fileSystem) {
+      throw new SyncOperationError(
+        "Target not initialized",
+        "INITIALIZATION_FAILED"
+      );
+    }
+    return this.fileSystem;
+  }
 
   async initialize(fileSystem: FileSystem): Promise<void> {
     if (!(fileSystem instanceof NodeFileSystem)) {
@@ -95,13 +103,6 @@ export class NodeSyncTarget implements SyncTarget {
     return metadata;
   }
 
-  /**
-   * Calculate hash for a chunk of content
-   */
-  private calculateChunkHash(content: string): string {
-    return createHash("sha256").update(content).digest("hex");
-  }
-
   async getFileContent(path: string): Promise<FileContentStream> {
     if (!this.fileSystem) {
       throw new SyncOperationError(
@@ -111,52 +112,50 @@ export class NodeSyncTarget implements SyncTarget {
     }
 
     try {
-      const fileMetadata = await this.fileSystem.getMetadata(path);
-      const CHUNK_SIZE = 64 * 1024; // 64KB chunks
-      let chunkIndex = 0;
-      const totalChunks = Math.ceil(fileMetadata.size / CHUNK_SIZE);
-      const fileSystem = this.fileSystem;
-      const calculateChunkHash = this.calculateChunkHash;
-
-      const stream = new ReadableStream<FileChunk>({
-        async start(controller) {
-          try {
-            // For now, we still read the entire file at once
-            // TODO: Implement proper chunking using fs.createReadStream
-            const content = await fileSystem.readFile(path);
-
-            // Split content into chunks
-            for (let i = 0; i < content.length; i += CHUNK_SIZE) {
-              const chunk = content.slice(i, i + CHUNK_SIZE);
-              controller.enqueue({
-                content: chunk,
-                chunkIndex: chunkIndex++,
-                totalChunks,
-                chunkHash: calculateChunkHash(chunk)
-              });
-            }
-            controller.close();
-          } catch (error) {
-            controller.error(
-              new SyncOperationError(
-                `Failed to read file ${path}: ${error}`,
-                "CONTENT_RETRIEVAL_FAILED"
-              )
-            );
-          }
-        }
-      });
+      const metadata = await this.fileSystem.getMetadata(path);
+      const content = await this.fileSystem.readFile(path);
 
       return {
-        metadata: fileMetadata,
-        getReader: () => stream.getReader(),
-        async close() {
-          await stream.cancel();
+        metadata,
+        getReader: () => {
+          const stream = new ReadableStream({
+            start(controller) {
+              controller.enqueue({
+                content,
+                chunkIndex: 0,
+                totalChunks: 1,
+                chunkHash: metadata.hash
+              });
+              controller.close();
+            }
+          });
+          return stream.getReader();
+        },
+        close: async () => {
+          /* No cleanup needed */
         }
       };
     } catch (error) {
       throw new SyncOperationError(
-        `Failed to get content stream for ${path}: ${error}`,
+        `Failed to get file content: ${error}`,
+        "CONTENT_RETRIEVAL_FAILED"
+      );
+    }
+  }
+
+  async listDirectory(path: string): Promise<FileSystemItem[]> {
+    if (!this.fileSystem) {
+      throw new SyncOperationError(
+        "FileSystem not initialized",
+        "INITIALIZATION_FAILED"
+      );
+    }
+
+    try {
+      return await this.fileSystem.listDirectory(path);
+    } catch (error) {
+      throw new SyncOperationError(
+        `Failed to list directory: ${error}`,
         "CONTENT_RETRIEVAL_FAILED"
       );
     }
