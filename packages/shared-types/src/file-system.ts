@@ -90,6 +90,11 @@ export interface FileContentStream {
 }
 
 /**
+ * Lock mode for file system operations
+ */
+export type LockMode = "sync" | "external";
+
+/**
  * Lock state of file system operations
  */
 export interface LockState {
@@ -97,6 +102,7 @@ export interface LockState {
   lockedSince?: number;
   lockTimeout?: number;
   lockReason?: string;
+  lockMode?: LockMode;
 }
 
 /**
@@ -158,8 +164,11 @@ export interface FileSystem {
 
   /**
    * Lock with timeout
+   * @param timeoutMs Timeout in milliseconds
+   * @param reason Reason for locking
+   * @param mode Lock mode - 'sync' allows sync operations, 'external' blocks all writes
    */
-  lock(timeoutMs: number, reason: string): Promise<void>;
+  lock(timeoutMs: number, reason: string, mode?: LockMode): Promise<void>;
 
   /**
    * Force unlock

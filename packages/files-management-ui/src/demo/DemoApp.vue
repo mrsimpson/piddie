@@ -28,7 +28,7 @@ async function initializeBrowserSystem() {
 
     // Create and initialize browser sync target
     const browserTarget = new BrowserSyncTarget('browser')
-    await browserTarget.initialize(browserFs)
+    await browserTarget.initialize(browserFs, true)
 
     // Create synchronized system
     const browserSystem = await createSynchronizedFileSystem({
@@ -57,7 +57,7 @@ async function addNativeSystem() {
 
     // Create and initialize native sync target
     const nativeTarget = new BrowserNativeSyncTarget('native')
-    await nativeTarget.initialize(nativeFs)
+    await nativeTarget.initialize(nativeFs, false)
 
     // Create synchronized system
     const nativeSystem = await createSynchronizedFileSystem({
@@ -69,8 +69,43 @@ async function addNativeSystem() {
 
     // Initialize sync manager if this is the second system
     if (systems.value.length === 1) {
-      await syncManager.registerTarget(systems.value[0].syncTarget, { role: 'primary' })
-      await syncManager.registerTarget(nativeSystem.syncTarget, { role: 'secondary' })
+      try {
+        await syncManager.registerTarget(systems.value[0].syncTarget, { role: 'primary' })
+        await syncManager.registerTarget(nativeSystem.syncTarget, { role: 'secondary' })
+        
+        // Initialize sync manager
+        await syncManager.initialize({
+          maxBatchSize: 10,
+          inactivityDelay: 1000, // Wait 1 second for more changes
+          maxRetries: 3 // Try up to 3 times on failure
+        })
+
+        // Set up error monitoring
+        const monitorSync = () => {
+          const status = syncManager.getStatus()
+          const pendingSync = syncManager.getPendingSync()
+          
+          if (status.currentFailure) {
+            handleUIError(
+              status.currentFailure.error,
+              `Sync failed for target ${status.currentFailure.targetId}`,
+              COMPONENT_ID
+            )
+          }
+          
+          if (pendingSync) {
+            console.log('Pending sync:', {
+              sourceTarget: pendingSync.sourceTargetId,
+              pendingTargets: Array.from(pendingSync.pendingByTarget.keys())
+            })
+          }
+        }
+
+        // Check sync status every second
+        setInterval(monitorSync, 1000)
+      } catch (syncError) {
+        handleUIError(syncError, 'Failed to initialize sync', COMPONENT_ID)
+      }
     }
 
     // Add native system to the list

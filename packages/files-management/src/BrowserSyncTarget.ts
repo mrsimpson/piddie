@@ -31,12 +31,14 @@ export class BrowserSyncTarget implements SyncTarget {
   private watchTimeout: ReturnType<typeof setTimeout> | null = null;
   private isCheckingForChanges = false;
   private lockState: TargetState["lockState"] = { isLocked: false };
+  private isInitialSync = false;  // Changed: start as false
+  private isPrimaryTarget = true; // Added: track if this is primary target
   readonly type = "browser";
   readonly id: string;
   lastWatchTimestamp: number;
 
   // Track the last known state of files
-  private lastKnownFiles = new Map<string, { mtimeMs: number }>();
+  private lastKnownFiles = new Map<string, { lastModified: number }>();
 
   constructor(id: string) {
     this.id = id;
@@ -51,7 +53,7 @@ export class BrowserSyncTarget implements SyncTarget {
     return this.fileSystem;
   }
 
-  async initialize(fileSystem: FileSystem): Promise<void> {
+  async initialize(fileSystem: FileSystem, isPrimary: boolean): Promise<void> {
     if (!(fileSystem instanceof BrowserFileSystem)) {
       throw new SyncOperationError(
         "BrowserSyncTarget requires BrowserFileSystem",
@@ -62,7 +64,23 @@ export class BrowserSyncTarget implements SyncTarget {
     this.fileSystem = fileSystem;
     this.status = "idle";
     this.error = null;
+    this.isPrimaryTarget = isPrimary;
+    // Only set isInitialSync true for secondary targets
+    this.isInitialSync = !isPrimary;
     await this.fileSystem.initialize();
+
+    // Capture initial file state as baseline
+    const items = await this.fileSystem.listDirectory("/");
+    const currentFiles = new Map<string, { lastModified: number }>();
+
+    for (const item of items) {
+      if (item.type === "file") {
+        const stats = await this.fileSystem.getMetadata(item.path);
+        currentFiles.set(item.path, { lastModified: stats.lastModified });
+      }
+    }
+
+    this.lastKnownFiles = currentFiles;
   }
 
   async applyChanges(changes: FileChange[]): Promise<FileConflict[]> {
@@ -143,7 +161,7 @@ export class BrowserSyncTarget implements SyncTarget {
     return contents;
   }
 
-  async notifyIncomingChanges(): Promise<void> {
+  async notifyIncomingChanges(paths?: string[]): Promise<void> {
     if (!this.fileSystem) {
       throw new SyncOperationError(
         "FileSystem not initialized",
@@ -151,8 +169,22 @@ export class BrowserSyncTarget implements SyncTarget {
       );
     }
 
-    this.status = "notifying";
-    await this.fileSystem.lock(30000, "Sync in progress");
+    // Lock for sync operations, allowing sync writes but blocking external writes
+    await this.fileSystem.lock(30000, "Sync in progress", "sync");
+    this.status = "syncing";
+    this.lockState = this.fileSystem.getState().lockState;
+
+    // Clear all files if this is initial sync on secondary target
+    if (this.isInitialSync && !this.isPrimaryTarget) {
+      const items = await this.fileSystem.listDirectory("/");
+      for (const item of items) {
+        if (item.type === "file") {
+          await this.fileSystem.deleteItem(item.path);
+        }
+      }
+      // Clear the last known files state
+      this.lastKnownFiles.clear();
+    }
   }
 
   async syncComplete(): Promise<boolean> {
@@ -166,6 +198,24 @@ export class BrowserSyncTarget implements SyncTarget {
     await this.fileSystem.forceUnlock();
     this.status = "idle";
     this.pendingChanges = [];
+
+    // After initial sync, capture current state as baseline
+    if (this.isInitialSync) {
+      const items = await this.fileSystem.listDirectory("/");
+      const currentFiles = new Map<string, { lastModified: number }>();
+
+      for (const item of items) {
+        if (item.type === "file") {
+          const stats = await this.fileSystem.getMetadata(item.path);
+          currentFiles.set(item.path, { lastModified: stats.lastModified });
+        }
+      }
+
+      this.lastKnownFiles = currentFiles;
+    }
+
+    // Mark initial sync as complete
+    this.isInitialSync = false;
     return true;
   }
 
@@ -185,11 +235,16 @@ export class BrowserSyncTarget implements SyncTarget {
   }
 
   private scheduleNextCheck(): void {
-    if (this.watchCallback === null) return; // Don't schedule if watching was stopped
+    if (this.watchCallback === null) return;
 
     this.watchTimeout = globalThis.setTimeout(async () => {
       if (this.isCheckingForChanges) {
-        // If a check is already in progress, schedule the next one
+        this.scheduleNextCheck();
+        return;
+      }
+
+      // Skip change detection only for secondary targets during initial sync
+      if (this.isInitialSync && !this.isPrimaryTarget) {
         this.scheduleNextCheck();
         return;
       }
@@ -198,8 +253,10 @@ export class BrowserSyncTarget implements SyncTarget {
       try {
         const changes = await this.checkForChanges();
         if (changes.length > 0 && this.watchCallback) {
+          // First notify sync manager
+          await this.watchCallback(changes);
+          // Only add to pending changes if callback succeeds
           this.pendingChanges.push(...changes);
-          this.watchCallback(changes);
         }
       } catch (error) {
         if (error instanceof Error) {
@@ -245,99 +302,65 @@ export class BrowserSyncTarget implements SyncTarget {
 
   private async checkForChanges(): Promise<FileChangeInfo[]> {
     if (!this.fileSystem) {
-      return [];
+      throw new SyncOperationError(
+        "FileSystem not initialized",
+        "INITIALIZATION_FAILED"
+      );
     }
 
     const changes: FileChangeInfo[] = [];
-    const currentTimestamp = Date.now();
-    const currentFiles = new Map<string, { mtimeMs: number }>();
+    const currentFiles = new Map<string, { lastModified: number }>();
 
-    try {
-      // Recursive function to process directory contents
-      const processDirectory = async (dirPath: string) => {
-        const entries = await this.fileSystem!.listDirectory(dirPath);
+    // List all files in root directory
+    const items = await this.fileSystem.listDirectory("/");
+    for (const item of items) {
+      if (item.type === "file") {
+        const stats = await this.fileSystem.getMetadata(item.path);
+        currentFiles.set(item.path, { lastModified: stats.lastModified });
 
-        for (const entry of entries) {
-          if (entry.type === "directory") {
-            // Recursively process subdirectory
-            await processDirectory(entry.path);
-            continue;
-          }
-
-          // Process file
-          const stats = await this.fileSystem!.getMetadata(entry.path);
-          currentFiles.set(entry.path, { mtimeMs: stats.lastModified });
-
-          const lastKnown = this.lastKnownFiles.get(entry.path);
-          if (!lastKnown) {
-            // New file
-            try {
-              if (!this.fileSystem) continue;
-              const metadata = await this.fileSystem.getMetadata(entry.path);
-              changes.push({
-                path: entry.path,
-                type: "create",
-                sourceTarget: this.id,
-                lastModified: currentTimestamp,
-                hash: metadata.hash,
-                size: metadata.size
-              });
-            } catch {
-              // If we can't get metadata, skip this file
-              continue;
-            }
-          } else if (lastKnown.mtimeMs < stats.lastModified) {
-            // Modified file
-            try {
-              if (!this.fileSystem) continue;
-              const metadata = await this.fileSystem.getMetadata(entry.path);
-              changes.push({
-                path: entry.path,
-                type: "modify",
-                sourceTarget: this.id,
-                lastModified: currentTimestamp,
-                hash: metadata.hash,
-                size: metadata.size
-              });
-            } catch {
-              // If we can't get metadata, skip this file
-              continue;
-            }
-          }
-        }
-      };
-
-      // Start processing from root
-      await processDirectory("/");
-
-      // Check for deleted files
-      for (const [path] of this.lastKnownFiles) {
-        if (!currentFiles.has(path)) {
+        const lastKnown = this.lastKnownFiles.get(item.path);
+        if (!lastKnown) {
+          // New file
           changes.push({
-            path,
-            type: "delete",
-            sourceTarget: this.id,
-            lastModified: currentTimestamp,
-            hash: "",
-            size: 0
+            path: item.path,
+            type: "create",
+            hash: stats.hash,
+            size: stats.size,
+            lastModified: stats.lastModified,
+            sourceTarget: this.id
+          });
+        } else if (lastKnown.lastModified !== stats.lastModified) {
+          // Modified file
+          changes.push({
+            path: item.path,
+            type: "modify",
+            hash: stats.hash,
+            size: stats.size,
+            lastModified: stats.lastModified,
+            sourceTarget: this.id
           });
         }
       }
-
-      // Update last known state
-      this.lastKnownFiles = currentFiles;
-      this.lastWatchTimestamp = currentTimestamp;
-
-      return changes;
-    } catch (error) {
-      if (error instanceof Error) {
-        throw new SyncOperationError(
-          `Failed to check for changes: ${error.message}`,
-          "WATCH_FAILED"
-        );
-      }
-      throw error;
     }
+
+    // Check for deleted files
+    for (const [path] of this.lastKnownFiles) {
+      if (!currentFiles.has(path)) {
+        changes.push({
+          path,
+          type: "delete",
+          hash: "",
+          size: 0,
+          lastModified: Date.now(),
+          sourceTarget: this.id
+        });
+      }
+    }
+
+    // Update last known files
+    this.lastKnownFiles = currentFiles;
+
+    return changes;
   }
 
   async getMetadata(paths: string[]): Promise<FileMetadata[]> {
@@ -433,44 +456,39 @@ export class BrowserSyncTarget implements SyncTarget {
 
     this.status = "syncing";
 
-    try {
-      // Check for existence and potential conflicts
-      const exists = await this.fileSystem.exists(metadata.path);
-      if (exists) {
-        const existingMetadata = await this.getMetadata([metadata.path]);
-        const existingFile = existingMetadata[0];
-        if (existingFile && existingFile.hash !== metadata.hash) {
-          return {
-            path: metadata.path,
-            sourceTarget: this.id,
-            targetId: this.id,
-            timestamp: Date.now()
-          };
-        }
+    // Handle deletion
+    if (metadata.size === 0 && metadata.hash === "") {
+      if (await this.fileSystem.exists(metadata.path)) {
+        await this.fileSystem.deleteItem(metadata.path);
       }
-
-      // Read all chunks using the Web Streams reader
-      const reader = contentStream.getReader();
-      let fullContent = "";
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          fullContent += value.content;
-        }
-      } finally {
-        reader.releaseLock();
-      }
-
-      // Apply the change
-      await this.fileSystem.writeFile(metadata.path, fullContent);
       return null;
-    } catch (error) {
-      throw new SyncOperationError(
-        `Failed to apply change to ${metadata.path}: ${error}`,
-        "APPLY_FAILED"
-      );
     }
+
+    // Check for conflicts only if file exists and is newer
+    const exists = await this.fileSystem.exists(metadata.path);
+    if (exists) {
+      const existingMetadata = await this.fileSystem.getMetadata(metadata.path);
+      if (existingMetadata.lastModified > metadata.lastModified) {
+        return {
+          path: metadata.path,
+          sourceTarget: this.id,
+          targetId: this.id,
+          timestamp: Date.now()
+        };
+      }
+    }
+
+    // Read content from stream
+    const reader = contentStream.getReader();
+    let content = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      content += value.content;
+    }
+
+    // Write content
+    await this.fileSystem.writeFile(metadata.path, content);
+    return null;
   }
 }

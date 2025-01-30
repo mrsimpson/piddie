@@ -56,8 +56,6 @@ export async function createSynchronizedFileSystem(params: {
   title: string
   id: string
 }): Promise<SynchronizedFileSystem> {
-  // Initialize the sync target with its file system
-  await params.syncTarget.initialize(params.fileSystem)
 
   return {
     ...params,

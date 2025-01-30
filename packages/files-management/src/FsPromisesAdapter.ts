@@ -3,7 +3,8 @@ import {
   FileSystemState,
   FileSystemError,
   FileMetadata,
-  FileSystemItem
+  FileSystemItem,
+  LockMode
 } from "@piddie/shared-types";
 import path from "path";
 
@@ -55,6 +56,7 @@ interface InternalState {
     lockedSince?: number;
     lockTimeout?: number;
     lockReason?: string;
+    lockMode?: LockMode;
   };
   timeoutId: NodeJS.Timeout | null;
   pendingOperations: number;
@@ -144,11 +146,17 @@ export class FsPromisesAdapter implements FileSystem {
   }
 
   private checkLock(operation: 'read' | 'write' = 'write') {
-    if (this.state.lockState.isLocked && operation === 'write') {
-      throw new FileSystemError(
-        `File system is locked: ${this.state.lockState.lockReason}`,
-        "LOCKED"
-      );
+    if (this.state.lockState.isLocked) {
+      // Allow write operations during sync mode if they are part of the sync process
+      if (operation === 'write' && this.state.lockState.lockMode === 'sync') {
+        return; // Allow sync operations
+      }
+      if (operation === 'write') {
+        throw new FileSystemError(
+          `File system is locked: ${this.state.lockState.lockReason}`,
+          "LOCKED"
+        );
+      }
     }
   }
 
@@ -400,7 +408,7 @@ export class FsPromisesAdapter implements FileSystem {
     return hash.toString(16);
   }
 
-  async lock(timeoutMs: number, reason: string): Promise<void> {
+  async lock(timeoutMs: number, reason: string, mode: LockMode = 'external'): Promise<void> {
     this.ensureInitialized();
 
     if (this.state.lockState.isLocked) {
@@ -411,7 +419,8 @@ export class FsPromisesAdapter implements FileSystem {
       isLocked: true,
       lockedSince: Date.now(),
       lockTimeout: timeoutMs,
-      lockReason: reason
+      lockReason: reason,
+      lockMode: mode
     };
 
     this.state.timeoutId = setTimeout(() => {
@@ -444,6 +453,9 @@ export class FsPromisesAdapter implements FileSystem {
         }),
         ...(this.state.lockState.lockReason && {
           lockReason: this.state.lockState.lockReason
+        }),
+        ...(this.state.lockState.lockMode && {
+          lockMode: this.state.lockState.lockMode
         })
       },
       pendingOperations: this.state.pendingOperations

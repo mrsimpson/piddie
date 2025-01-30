@@ -82,7 +82,7 @@ export class FileManagementService implements IFileManagementService {
 
     // Initialize primary target with file system
     const primaryTarget = this._syncManager.getPrimaryTarget();
-    await primaryTarget.initialize(this._fileSystem);
+    await primaryTarget.initialize(this._fileSystem, true);
 
     // Initialize sync manager with config
     await this._syncManager.initialize({

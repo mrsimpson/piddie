@@ -9,6 +9,7 @@ import type {
   FileSystemItem
 } from "@piddie/shared-types";
 import { BrowserNativeFileSystem } from "./BrowserNativeFileSystem";
+import { SyncOperationError } from "@piddie/shared-types";
 
 declare const globalThis: {
   setTimeout(callback: () => void, ms: number): ReturnType<typeof setTimeout>;
@@ -25,6 +26,8 @@ export class BrowserNativeSyncTarget implements SyncTarget {
   private isCheckingForChanges = false;
   private watchCallback: ((changes: FileChangeInfo[]) => void) | null = null;
   private lastKnownFiles = new Map<string, { lastModified: number }>();
+  private isInitialSync = false;
+  private isPrimaryTarget = true;
 
   constructor(targetId: string) {
     this.id = targetId;
@@ -38,7 +41,7 @@ export class BrowserNativeSyncTarget implements SyncTarget {
     };
   }
 
-  async initialize(fileSystem: FileSystem): Promise<void> {
+  async initialize(fileSystem: FileSystem, isPrimary: boolean): Promise<void> {
     if (!(fileSystem instanceof BrowserNativeFileSystem)) {
       throw new Error(
         "BrowserNativeSyncTarget requires BrowserNativeFileSystem"
@@ -46,6 +49,8 @@ export class BrowserNativeSyncTarget implements SyncTarget {
     }
     this.fileSystem = fileSystem;
     await this.fileSystem.initialize();
+    this.isPrimaryTarget = isPrimary;
+    this.isInitialSync = !isPrimary;
     this.state = {
       id: this.id,
       type: this.type,
@@ -55,15 +60,18 @@ export class BrowserNativeSyncTarget implements SyncTarget {
     };
   }
 
-  async notifyIncomingChanges(): Promise<void> {
-    if (!this.fileSystem) throw new Error("Not initialized");
+  async notifyIncomingChanges(paths?: string[]): Promise<void> {
+    if (!this.fileSystem) {
+      throw new SyncOperationError(
+        "FileSystem not initialized",
+        "INITIALIZATION_FAILED"
+      );
+    }
 
-    // Lock the file system during sync
-    await this.fileSystem.lock(30000, "Sync in progress");
-    this.state = {
-      ...this.state,
-      status: "notifying"
-    };
+    // Lock for sync operations, allowing sync writes but blocking external writes
+    await this.fileSystem.lock(30000, "Sync in progress", "sync");
+    this.state.status = "syncing";
+    this.state.lockState = this.fileSystem.getState().lockState;
   }
 
   async syncComplete(): Promise<boolean> {
@@ -76,6 +84,24 @@ export class BrowserNativeSyncTarget implements SyncTarget {
       status: "idle",
       pendingChanges: 0
     };
+
+    // After initial sync, capture current state as baseline
+    if (this.isInitialSync) {
+      const items = await this.fileSystem.listDirectory("/");
+      const currentFiles = new Map<string, { lastModified: number }>();
+
+      for (const item of items) {
+        if (item.type === "file") {
+          const metadata = await this.fileSystem.getMetadata(item.path);
+          currentFiles.set(item.path, { lastModified: metadata.lastModified });
+        }
+      }
+
+      this.lastKnownFiles = currentFiles;
+    }
+
+    // Mark initial sync as complete
+    this.isInitialSync = false;
     return true;
   }
 
@@ -129,11 +155,20 @@ export class BrowserNativeSyncTarget implements SyncTarget {
       status: "syncing"
     };
 
-    // Check for conflicts
+    // Handle deletion
+    if (metadata.size === 0 && metadata.hash === "") {
+      // This is a deletion
+      if (await this.fileSystem.exists(metadata.path)) {
+        await this.fileSystem.deleteItem(metadata.path);
+      }
+      return null;
+    }
+
+    // Check for conflicts only if file exists and is newer
     const exists = await this.fileSystem.exists(metadata.path);
     if (exists) {
       const existingMetadata = await this.fileSystem.getMetadata(metadata.path);
-      if (existingMetadata.hash !== metadata.hash) {
+      if (existingMetadata.lastModified > metadata.lastModified) {
         return {
           path: metadata.path,
           sourceTarget: this.id,
@@ -165,11 +200,16 @@ export class BrowserNativeSyncTarget implements SyncTarget {
   }
 
   private scheduleNextCheck(): void {
-    if (this.watchCallback === null) return; // Don't schedule if watching was stopped
+    if (this.watchCallback === null) return;
 
     this.watchTimeout = globalThis.setTimeout(async () => {
       if (this.isCheckingForChanges) {
-        // If a check is already in progress, schedule the next one
+        this.scheduleNextCheck();
+        return;
+      }
+
+      // Skip change detection only for secondary targets during initial sync
+      if (this.isInitialSync && !this.isPrimaryTarget) {
         this.scheduleNextCheck();
         return;
       }
@@ -229,7 +269,13 @@ export class BrowserNativeSyncTarget implements SyncTarget {
 
         this.lastKnownFiles = currentFiles;
         if (changes.length > 0 && this.watchCallback) {
-          this.watchCallback(changes);
+          // First notify sync manager
+          await this.watchCallback(changes);
+          // Update state with pending changes
+          this.state = {
+            ...this.state,
+            pendingChanges: this.state.pendingChanges + changes.length
+          };
         }
       } catch (error) {
         console.error("Error watching for changes:", error);

@@ -1,4 +1,5 @@
 import { SyncManagerError } from "@piddie/shared-types";
+import { SyncOperationError } from "@piddie/shared-types";
 import type {
   SyncTarget,
   SyncManager,
@@ -8,7 +9,8 @@ import type {
   FileContentStream,
   SyncStatus,
   PendingSync,
-  FileMetadata
+  FileMetadata,
+  FileConflict
 } from "@piddie/shared-types";
 
 /**
@@ -93,6 +95,56 @@ export class FileSyncManager implements SyncManager {
     }
   }
 
+  private async applyChangeToTarget(
+    change: FileChangeInfo,
+    sourceTarget: SyncTarget,
+    target: SyncTarget
+  ): Promise<FileChangeInfo | FileConflict> {
+    try {
+      // For deletions, we don't need to get file content
+      if (change.type === "delete") {
+        const metadata: FileMetadata = {
+          path: change.path,
+          hash: "",
+          size: 0,
+          lastModified: change.lastModified,
+          type: "file"
+        };
+        const conflict = await target.applyFileChange(metadata, {
+          metadata,
+          getReader: () => {
+            const stream = new ReadableStream({
+              start(controller) {
+                controller.enqueue({
+                  content: "",
+                  chunkIndex: 0,
+                  totalChunks: 1,
+                  chunkHash: ""
+                });
+                controller.close();
+              }
+            });
+            return stream.getReader();
+          },
+          close: async () => { /* No cleanup needed */ }
+        });
+        if (conflict) return conflict;
+        return change;
+      }
+
+      // For creates and modifications, get the file content
+      const content = await sourceTarget.getFileContent(change.path);
+      const conflict = await target.applyFileChange(content.metadata, content);
+      if (conflict) return conflict;
+      return change;
+    } catch (error) {
+      throw new SyncOperationError(
+        `Failed to apply change to target ${target.id}: ${error}`,
+        "APPLY_FAILED"
+      );
+    }
+  }
+
   private async applyChangesToTarget(
     target: SyncTarget,
     sourceTarget: SyncTarget,
@@ -123,9 +175,12 @@ export class FileSyncManager implements SyncManager {
         // Process all changes in the batch concurrently
         const batchResults = await Promise.allSettled(
           batch.map(async (change) => {
-            const content = await sourceTarget.getFileContent(change.path);
-            await target.applyFileChange(content.metadata, content);
-            return change;
+            const result = await this.applyChangeToTarget(change, sourceTarget, target);
+            if ('targetId' in result) {
+              // This is a FileConflict
+              return result;
+            }
+            return result as FileChangeInfo;
           })
         );
 
@@ -200,6 +255,8 @@ export class FileSyncManager implements SyncManager {
 
     // Apply changes to target, bypassing lock
     await this.applyChangesToTarget(target, this.primaryTarget, changes, true);
+
+    target.syncComplete();
   }
 
   async registerTarget(target: SyncTarget, options: TargetRegistrationOptions): Promise<void> {
