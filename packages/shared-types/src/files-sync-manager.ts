@@ -98,6 +98,28 @@ export interface SyncFailure {
 }
 
 /**
+ * Possible states of the sync manager
+ */
+export type SyncManagerStateType =
+  | "uninitialized"
+  | "ready"
+  | "syncing"
+  | "conflict"
+  | "error";
+
+/**
+ * Valid state transitions for the sync manager
+ */
+export type SyncManagerStateTransition =
+  | { from: "uninitialized"; to: "ready"; via: "initialize" }
+  | { from: "ready"; to: "syncing"; via: "changesDetected" }
+  | { from: "syncing"; to: "ready"; via: "syncComplete" }
+  | { from: "syncing"; to: "conflict"; via: "conflictDetected" }
+  | { from: "conflict"; to: "ready"; via: "conflictResolved" }
+  | { from: "ready" | "syncing" | "conflict"; to: "error"; via: "error" }
+  | { from: "error"; to: "ready"; via: "recovery" };
+
+/**
  * Core sync manager interface
  */
 export interface SyncManager {
@@ -191,6 +213,23 @@ export interface SyncManager {
    * Dispose the sync manager, cleaning up resources
    */
   dispose(): Promise<void>;
+
+  /**
+   * Validate if a state transition is allowed
+   * @returns boolean indicating if the transition is valid
+   */
+  validateStateTransition(from: SyncManagerStateType, to: SyncManagerStateType, via: string): boolean;
+
+  /**
+   * Get current state type
+   */
+  getCurrentState(): SyncManagerStateType;
+
+  /**
+   * Transition to a new state
+   * @throws {SyncManagerError} if transition is invalid
+   */
+  transitionTo(newState: SyncManagerStateType, via: string): void;
 }
 
 export class SyncManagerError extends Error {

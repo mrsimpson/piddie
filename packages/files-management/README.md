@@ -49,6 +49,133 @@ Each environment implements the SyncTarget interface:
 
 ## Synchronization Process
 
+### Component Architecture and Interactions
+
+The synchronization system consists of three main components that work together hierarchically:
+
+1. **FileSyncManager** orchestrates the overall sync process
+   - Coordinates between targets
+   - Manages conflict resolution
+   - Tracks global sync state
+
+2. **SyncTarget** manages individual target synchronization
+   - Handles change detection
+   - Manages sync operations
+   - Controls target-specific state
+   - Manages filesystem locking during sync
+
+3. **FileSystem** provides low-level file operations
+   - Manages file access
+   - Controls write permissions
+   - Ensures data consistency
+
+```mermaid
+graph TD
+    subgraph "Component Hierarchy"
+        FSM[FileSyncManager] --> ST1[SyncTarget Primary]
+        FSM --> ST2[SyncTarget Secondary]
+        ST1 --> FS1[FileSystem]
+        ST2 --> FS2[FileSystem]
+    end
+```
+
+### State Machines
+
+Each component maintains its own state machine, coordinating through well-defined interfaces:
+
+#### 1. FileSystem States
+```mermaid
+stateDiagram-v2
+    [*] --> Uninitialized
+    Uninitialized --> Ready: initialize()
+    Ready --> Locked: lock()
+    
+    state Locked {
+        [*] --> ExternalLock
+        [*] --> SyncLock
+        ExternalLock: No writes allowed
+        SyncLock: Only sync operations
+    }
+    
+    Locked --> Ready: unlock()
+    Ready --> Error: on error
+    Error --> Ready: recovery
+```
+
+#### 2. SyncTarget States
+```mermaid
+stateDiagram-v2
+    [*] --> Uninitialized
+    Uninitialized --> Idle: initialize()
+    Idle --> Collecting: notifyIncomingChanges()
+    
+    state Collecting {
+        [*] --> Locked: acquire lock
+        Locked --> ReceivingChanges: lock acquired
+    }
+    
+    Collecting --> Syncing: all changes received
+    
+    state Syncing {
+        [*] --> Applying
+        Applying --> Verifying
+    }
+    
+    Syncing --> Idle: syncComplete()
+    Syncing --> Error: failure
+    Error --> Idle: recovery
+```
+
+#### 3. FileSyncManager States
+```mermaid
+stateDiagram-v2
+    [*] --> Uninitialized
+    Uninitialized --> Ready: initialize()
+    Ready --> Syncing: changes detected
+    
+    state Syncing {
+        [*] --> PrimaryToSecondary
+        [*] --> SecondaryToPrimary
+    }
+    
+    Syncing --> Conflict: conflict detected
+    Syncing --> Ready: success
+    Conflict --> Ready: resolution
+    Ready --> Error: on error
+    Error --> Ready: recovery
+```
+
+### Locking and State Transitions
+
+The sync process involves several state transitions coordinated between components:
+
+```mermaid
+sequenceDiagram
+    participant FSM as FileSyncManager
+    participant ST as SyncTarget
+    participant FS as FileSystem
+
+    FSM->>ST: notifyIncomingChanges(paths)
+    activate ST
+    Note over ST: State: Idle → Collecting
+    ST->>FS: lock(mode='sync')
+    Note over FS: State: Ready → Locked:SyncLock
+    ST-->>FSM: Ready for changes
+    
+    FSM->>ST: applyChanges(changes)
+    Note over ST: State: Collecting changes...
+    
+    Note over ST: All changes received
+    Note over ST: State: Collecting → Syncing
+    Note over ST: Apply changes...
+    
+    FSM->>ST: syncComplete()
+    ST->>FS: unlock()
+    Note over FS: State: Locked → Ready
+    Note over ST: State: Syncing → Idle
+    deactivate ST
+```
+
 ### Primary/Secondary Target Concept
 
 The sync system operates with a primary target that acts as the source of truth. All other targets are secondary and can be reinitialized from the primary if needed.
@@ -389,47 +516,6 @@ sequenceDiagram
    - Stream restart
    - Partial file recovery
    - Clean rollback
-
-### Sync Process
-
-```mermaid
-graph TD
-    subgraph "Change Detection"
-        CD1[Primary Changes] --> SP1[Sync to Secondaries]
-        CD2[Secondary Changes] --> SP2[Sync to Primary]
-    end
-
-    subgraph "Sync Process"
-        SP1 --> SS1{Sync Success?}
-        SP2 --> SS2{Primary Sync Success?}
-
-        SS1 -->|Yes| Done1[Complete]
-        SS1 -->|No| MD[Mark Target Dirty]
-
-        SS2 -->|Yes| SP1
-        SS2 -->|No| PC[Store Pending Changes]
-    end
-
-    subgraph "Recovery"
-        MD --> RI[Reinitialize]
-        PC --> MR{Manual Resolution}
-        MR -->|Confirm| RAS[Reinit All Secondaries]
-        MR -->|Reject| DC[Discard Changes]
-    end
-```
-
-### Error Handling
-
-1. **Target States**
-
-   - Idle: Normal operation
-   - Dirty: Failed sync, needs reinitialization
-   - Pending: Failed primary sync, needs resolution
-
-2. **Recovery Actions**
-   - Automatic reinitialization of dirty targets
-   - Manual resolution of pending changes
-   - Clear error reporting and status tracking
 
 ## Git Operations
 

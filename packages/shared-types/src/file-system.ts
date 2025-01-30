@@ -116,7 +116,27 @@ export interface FileSystemState {
     path: string;
     timestamp: number;
   };
+  currentState: FileSystemStateType;
 }
+
+/**
+ * Possible states of the file system
+ */
+export type FileSystemStateType =
+  | "uninitialized"
+  | "ready"
+  | "locked"
+  | "error";
+
+/**
+ * Valid state transitions for the file system
+ */
+export type FileSystemStateTransition =
+  | { from: "uninitialized"; to: "ready"; via: "initialize" }
+  | { from: "ready"; to: "locked"; via: "lock" }
+  | { from: "locked"; to: "ready"; via: "unlock" }
+  | { from: "ready" | "locked"; to: "error"; via: "error" }
+  | { from: "error"; to: "ready"; via: "recovery" };
 
 /**
  * Interface for file system operations
@@ -179,6 +199,23 @@ export interface FileSystem {
    * Get current state
    */
   getState(): FileSystemState;
+
+  /**
+   * Validate if a state transition is allowed
+   * @returns boolean indicating if the transition is valid
+   */
+  validateStateTransition(from: FileSystemStateType, to: FileSystemStateType, via: string): boolean;
+
+  /**
+   * Get current state type
+   */
+  getCurrentState(): FileSystemStateType;
+
+  /**
+   * Transition to a new state
+   * @throws {FileSystemError} if transition is invalid
+   */
+  transitionTo(newState: FileSystemStateType, via: string): void;
 }
 
 /**

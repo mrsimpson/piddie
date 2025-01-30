@@ -67,9 +67,30 @@ export interface TargetState {
   lockState: LockState;
   pendingChanges: number;
   lastSyncTime?: number;
-  status: "idle" | "collecting" | "notifying" | "syncing" | "error";
+  status: TargetStateType;
   error?: string;
 }
+
+/**
+ * Possible states of the sync target
+ */
+export type TargetStateType =
+  | "uninitialized"
+  | "idle"
+  | "collecting"
+  | "syncing"
+  | "error";
+
+/**
+ * Valid state transitions for the sync target
+ */
+export type TargetStateTransition =
+  | { from: "uninitialized"; to: "idle"; via: "initialize" }
+  | { from: "idle"; to: "collecting"; via: "notifyIncomingChanges" }
+  | { from: "collecting"; to: "syncing"; via: "allChangesReceived" }
+  | { from: "syncing"; to: "idle"; via: "syncComplete" }
+  | { from: "collecting" | "syncing"; to: "error"; via: "error" }
+  | { from: "error"; to: "idle"; via: "recovery" };
 
 /**
  * Core sync target interface
@@ -135,6 +156,23 @@ export interface SyncTarget {
    * Get current target state
    */
   getState(): TargetState;
+
+  /**
+   * Validate if a state transition is allowed
+   * @returns boolean indicating if the transition is valid
+   */
+  validateStateTransition(from: TargetStateType, to: TargetStateType, via: string): boolean;
+
+  /**
+   * Get current state type
+   */
+  getCurrentState(): TargetStateType;
+
+  /**
+   * Transition to a new state
+   * @throws {SyncOperationError} if transition is invalid
+   */
+  transitionTo(newState: TargetStateType, via: string): void;
 }
 
 export class SyncOperationError extends Error {
