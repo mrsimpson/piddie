@@ -11,8 +11,8 @@ import type {
 import { BrowserNativeFileSystem } from "./BrowserNativeFileSystem";
 
 declare const globalThis: {
-  setInterval(callback: () => void, ms: number): number;
-  clearInterval(id: number): void;
+  setTimeout(callback: () => void, ms: number): ReturnType<typeof setTimeout>;
+  clearTimeout(id: ReturnType<typeof setTimeout>): void;
 };
 
 export class BrowserNativeSyncTarget implements SyncTarget {
@@ -21,7 +21,9 @@ export class BrowserNativeSyncTarget implements SyncTarget {
 
   private fileSystem?: FileSystem;
   private state: TargetState;
-  private watchIntervalId: number | null = null;
+  private watchTimeout: ReturnType<typeof setTimeout> | null = null;
+  private isCheckingForChanges = false;
+  private watchCallback: ((changes: FileChangeInfo[]) => void) | null = null;
   private lastKnownFiles = new Map<string, { lastModified: number }>();
 
   constructor(targetId: string) {
@@ -158,8 +160,21 @@ export class BrowserNativeSyncTarget implements SyncTarget {
   async watch(callback: (changes: FileChangeInfo[]) => void): Promise<void> {
     if (!this.fileSystem) throw new Error("Not initialized");
 
-    // Setup interval to check for changes
-    this.watchIntervalId = globalThis.setInterval(async () => {
+    this.watchCallback = callback;
+    this.scheduleNextCheck();
+  }
+
+  private scheduleNextCheck(): void {
+    if (this.watchCallback === null) return; // Don't schedule if watching was stopped
+
+    this.watchTimeout = globalThis.setTimeout(async () => {
+      if (this.isCheckingForChanges) {
+        // If a check is already in progress, schedule the next one
+        this.scheduleNextCheck();
+        return;
+      }
+
+      this.isCheckingForChanges = true;
       try {
         const changes: FileChangeInfo[] = [];
         const currentFiles = new Map<string, { lastModified: number }>();
@@ -213,20 +228,26 @@ export class BrowserNativeSyncTarget implements SyncTarget {
         }
 
         this.lastKnownFiles = currentFiles;
-        if (changes.length > 0) {
-          callback(changes);
+        if (changes.length > 0 && this.watchCallback) {
+          this.watchCallback(changes);
         }
       } catch (error) {
         console.error("Error watching for changes:", error);
+      } finally {
+        this.isCheckingForChanges = false;
+        // Schedule the next check after this one completes
+        this.scheduleNextCheck();
       }
     }, 1000);
   }
 
   async unwatch(): Promise<void> {
-    if (this.watchIntervalId !== null) {
-      globalThis.clearInterval(this.watchIntervalId);
-      this.watchIntervalId = null;
+    if (this.watchTimeout !== null) {
+      globalThis.clearTimeout(this.watchTimeout);
+      this.watchTimeout = null;
     }
+    this.watchCallback = null;
+    this.isCheckingForChanges = false;
   }
 
   getState(): TargetState {

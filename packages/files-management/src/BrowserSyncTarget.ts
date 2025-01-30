@@ -28,7 +28,8 @@ export class BrowserSyncTarget implements SyncTarget {
   private error: string | null = "Not initialized";
   private pendingChanges: FileChangeInfo[] = [];
   private watchCallback: ((changes: FileChangeInfo[]) => void) | null = null;
-  private watchInterval: ReturnType<typeof setInterval> | null = null;
+  private watchTimeout: ReturnType<typeof setTimeout> | null = null;
+  private isCheckingForChanges = false;
   private lockState: TargetState["lockState"] = { isLocked: false };
   readonly type = "browser";
   readonly id: string;
@@ -179,8 +180,21 @@ export class BrowserSyncTarget implements SyncTarget {
     this.watchCallback = callback;
     this.lastWatchTimestamp = Date.now();
 
-    // In the browser, we'll poll for changes every second as there's no native file system watcher
-    this.watchInterval = globalThis.setInterval(async () => {
+    // Schedule the first check
+    this.scheduleNextCheck();
+  }
+
+  private scheduleNextCheck(): void {
+    if (this.watchCallback === null) return; // Don't schedule if watching was stopped
+
+    this.watchTimeout = globalThis.setTimeout(async () => {
+      if (this.isCheckingForChanges) {
+        // If a check is already in progress, schedule the next one
+        this.scheduleNextCheck();
+        return;
+      }
+
+      this.isCheckingForChanges = true;
       try {
         const changes = await this.checkForChanges();
         if (changes.length > 0 && this.watchCallback) {
@@ -195,17 +209,22 @@ export class BrowserSyncTarget implements SyncTarget {
           );
         }
         throw error;
+      } finally {
+        this.isCheckingForChanges = false;
+        // Schedule the next check after this one completes
+        this.scheduleNextCheck();
       }
     }, 1000);
   }
 
   async unwatch(): Promise<void> {
-    if (this.watchInterval !== null) {
-      globalThis.clearInterval(this.watchInterval);
-      this.watchInterval = null;
+    if (this.watchTimeout !== null) {
+      globalThis.clearTimeout(this.watchTimeout);
+      this.watchTimeout = null;
     }
     this.watchCallback = null;
     this.pendingChanges = [];
+    this.isCheckingForChanges = false;
   }
 
   getState(): TargetState {

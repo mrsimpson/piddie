@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { MockInstance } from "vitest";
 import { BrowserSyncTarget } from "../src/BrowserSyncTarget";
 import { BrowserFileSystem } from "../src/BrowserFileSystem";
@@ -32,12 +32,6 @@ vi.mock("@isomorphic-git/lightning-fs", () => {
   return { default: MockFS };
 });
 
-// Mock window.setInterval and window.clearInterval
-const mockSetInterval = vi.fn();
-const mockClearInterval = vi.fn();
-vi.stubGlobal("setInterval", mockSetInterval);
-vi.stubGlobal("clearInterval", mockClearInterval);
-
 describe("BrowserSyncTarget", () => {
   const TEST_ROOT = "/test/root";
   let target: BrowserSyncTarget;
@@ -56,6 +50,7 @@ describe("BrowserSyncTarget", () => {
   };
 
   beforeEach(() => {
+    vi.useFakeTimers();
     vi.resetAllMocks();
 
     // Reset mock implementations
@@ -102,10 +97,10 @@ describe("BrowserSyncTarget", () => {
     spies.exists.mockResolvedValue(true);
     spies.lock.mockResolvedValue(undefined);
     spies.forceUnlock.mockResolvedValue(undefined);
+  });
 
-    // Reset interval mocks
-    mockSetInterval.mockReturnValue(123); // Mock interval ID
-    mockClearInterval.mockReturnValue(undefined);
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   describe("Initialization", () => {
@@ -275,37 +270,42 @@ describe("BrowserSyncTarget", () => {
       await target.initialize(fileSystem);
     });
 
-    it("should setup file watching with interval", async () => {
+    it("should setup file watching with timeout", async () => {
       const callback = vi.fn();
       await target.watch(callback);
 
-      expect(mockSetInterval).toHaveBeenCalledWith(expect.any(Function), 1000);
+      // Verify that no changes are detected immediately
+      expect(callback).not.toHaveBeenCalled();
+
+      // Advance timer by 1 second
+      await vi.advanceTimersByTimeAsync(1000);
+
+      // Initial check should have run
+      expect(callback).not.toHaveBeenCalled(); // No changes yet
     });
 
-    it("should cleanup interval on unwatch", async () => {
+    it("should cleanup timeout on unwatch", async () => {
       const callback = vi.fn();
       await target.watch(callback);
-      const intervalId = mockSetInterval.mock?.results[0]?.value;
 
       await target.unwatch();
-      expect(mockClearInterval).toHaveBeenCalledWith(intervalId);
+
+      // Advance timer
+      await vi.advanceTimersByTimeAsync(1000);
+
+      // Callback should not be called after unwatch
+      expect(callback).not.toHaveBeenCalled();
     });
 
     it("should detect new files", async () => {
       const callback = vi.fn();
       await target.watch(callback);
 
-      // Get the interval callback
-      const intervalCallback = mockSetInterval.mock?.calls[0]?.[0];
-      if (!intervalCallback) {
-        throw new Error("Interval callback not set");
-      }
-
       // Mock a new file appearing
       mockPromises.readdir.mockResolvedValue(["newfile.txt"]);
 
-      // Trigger the interval callback
-      await intervalCallback();
+      // Advance timer to trigger check
+      await vi.advanceTimersByTimeAsync(1000);
 
       // Should detect the new file
       expect(callback).toHaveBeenCalledWith([
@@ -321,18 +321,12 @@ describe("BrowserSyncTarget", () => {
       const callback = vi.fn();
       await target.watch(callback);
 
-      // Get the interval callback
-      const intervalCallback = mockSetInterval.mock?.calls[0]?.[0];
-      if (!intervalCallback) {
-        throw new Error("Interval callback not set");
-      }
-
       // First, set up initial state with a file
       const initialTimestamp = Date.now();
       mockPromises.readdir.mockResolvedValue(["test.txt"]);
 
-      // Let one interval pass to register the file
-      await intervalCallback();
+      // First check to register the file
+      await vi.advanceTimersByTimeAsync(1000);
 
       // Now simulate a modification with a newer timestamp
       mockPromises.stat.mockImplementation((filePath: string) => {
@@ -349,9 +343,8 @@ describe("BrowserSyncTarget", () => {
         });
       });
 
-
-      // Trigger another interval
-      await intervalCallback();
+      // Advance timer for next check
+      await vi.advanceTimersByTimeAsync(1000);
 
       // Should detect the modification
       expect(callback).toHaveBeenLastCalledWith([
@@ -370,20 +363,14 @@ describe("BrowserSyncTarget", () => {
       // First, mock an existing file
       mockPromises.readdir.mockResolvedValue(["test.txt"]);
 
-      // Get the interval callback
-      const intervalCallback = mockSetInterval.mock?.calls[0]?.[0];
-      if (!intervalCallback) {
-        throw new Error("Interval callback not set");
-      }
-
-      // Let one interval pass to register the file
-      await intervalCallback();
+      // First check to register the file
+      await vi.advanceTimersByTimeAsync(1000);
 
       // Now simulate file deletion by returning empty directory
       mockPromises.readdir.mockResolvedValue([]);
 
-      // Trigger another interval
-      await intervalCallback();
+      // Advance timer for next check
+      await vi.advanceTimersByTimeAsync(1000);
 
       // Should detect the deletion
       expect(callback).toHaveBeenLastCalledWith([
@@ -393,6 +380,26 @@ describe("BrowserSyncTarget", () => {
           sourceTarget: "test-target"
         })
       ]);
+    });
+
+    it("should not overlap checks if previous check is still running", async () => {
+      const callback = vi.fn();
+      await target.watch(callback);
+
+      // Make the first check take longer by adding a delay
+      mockPromises.readdir.mockImplementation(async () => {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        return ["test.txt"];
+      });
+
+      // Advance timer to trigger first check
+      await vi.advanceTimersByTimeAsync(1000);
+
+      // Advance timer again before first check completes
+      await vi.advanceTimersByTimeAsync(1000);
+
+      // Only one check should have started
+      expect(mockPromises.readdir).toHaveBeenCalledTimes(1);
     });
   });
 

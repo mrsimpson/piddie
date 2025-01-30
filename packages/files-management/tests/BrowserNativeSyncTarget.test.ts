@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { MockInstance } from "vitest";
 import { BrowserNativeSyncTarget } from "../src/BrowserNativeSyncTarget";
 import { BrowserNativeFileSystem } from "../src/BrowserNativeFileSystem";
@@ -16,12 +16,6 @@ vi.mock("native-file-system-adapter", () => {
     showDirectoryPicker: vi.fn()
   };
 });
-
-// Mock window.setInterval and window.clearInterval
-const mockSetInterval = vi.fn();
-const mockClearInterval = vi.fn();
-vi.stubGlobal("setInterval", mockSetInterval);
-vi.stubGlobal("clearInterval", mockClearInterval);
 
 // Create mock implementations for File System Access API
 const createMockFile = (
@@ -83,6 +77,7 @@ describe("BrowserNativeSyncTarget", () => {
   };
 
   beforeEach(() => {
+    vi.useFakeTimers();
     vi.resetAllMocks();
 
     // Setup mock file system
@@ -115,10 +110,10 @@ describe("BrowserNativeSyncTarget", () => {
     spies.exists.mockResolvedValue(false);
     spies.lock.mockResolvedValue(undefined);
     spies.forceUnlock.mockResolvedValue(undefined);
+  });
 
-    // Reset interval mocks
-    mockSetInterval.mockReturnValue(123); // Mock interval ID
-    mockClearInterval.mockReturnValue(undefined);
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   describe("Initialization", () => {
@@ -285,29 +280,41 @@ describe("BrowserNativeSyncTarget", () => {
       await target.initialize(fileSystem);
     });
 
-    it("should setup file watching with interval", async () => {
+    it("should setup file watching with timeout", async () => {
       const callback = vi.fn();
       await target.watch(callback);
 
-      expect(mockSetInterval).toHaveBeenCalledWith(expect.any(Function), 1000);
+      // Verify that no changes are detected immediately
+      expect(callback).not.toHaveBeenCalled();
+
+      // Advance timer by 1 second
+      await vi.advanceTimersByTimeAsync(1000);
+
+      // Initial check should have run
+      expect(callback).not.toHaveBeenCalled(); // No changes yet
     });
 
-    it("should cleanup interval on unwatch", async () => {
+    it("should cleanup timeout on unwatch", async () => {
       const callback = vi.fn();
       await target.watch(callback);
-      const intervalId = mockSetInterval.mock?.results[0]?.value;
 
       await target.unwatch();
-      expect(mockClearInterval).toHaveBeenCalledWith(intervalId);
+
+      // Advance timer
+      await vi.advanceTimersByTimeAsync(1000);
+
+      // Callback should not be called after unwatch
+      expect(callback).not.toHaveBeenCalled();
     });
 
     it("should detect new files", async () => {
       await target.initialize(fileSystem);
-      const { callback, intervalCallback } = await setupWatchCallback(target);
+      const callback = vi.fn();
+      await target.watch(callback);
 
       // First call returns empty directory
       spies.listDirectory.mockResolvedValueOnce([]);
-      await intervalCallback();
+      await vi.advanceTimersByTimeAsync(1000);
 
       // Setup new file
       const { metadata } = await setupFileWithMetadata(
@@ -321,8 +328,8 @@ describe("BrowserNativeSyncTarget", () => {
         }
       );
 
-      // Trigger another interval
-      await intervalCallback();
+      // Advance timer for next check
+      await vi.advanceTimersByTimeAsync(1000);
 
       // Should detect the new file
       expect(callback).toHaveBeenCalledWith([
@@ -338,7 +345,8 @@ describe("BrowserNativeSyncTarget", () => {
 
     it("should detect modified files", async () => {
       await target.initialize(fileSystem);
-      const { callback, intervalCallback } = await setupWatchCallback(target);
+      const callback = vi.fn();
+      await target.watch(callback);
 
       const initialTimestamp = Date.now();
       const modifiedTimestamp = initialTimestamp + 5000;
@@ -348,7 +356,7 @@ describe("BrowserNativeSyncTarget", () => {
         lastModified: initialTimestamp,
         hash: "initialhash"
       });
-      await intervalCallback();
+      await vi.advanceTimersByTimeAsync(1000);
 
       // Clear previous mock to set up modified state
       spies.listDirectory.mockReset();
@@ -367,8 +375,8 @@ describe("BrowserNativeSyncTarget", () => {
         }
       );
 
-      // Trigger another interval
-      await intervalCallback();
+      // Advance timer for next check
+      await vi.advanceTimersByTimeAsync(1000);
 
       // Should detect the modification
       expect(callback).toHaveBeenLastCalledWith([
@@ -385,7 +393,8 @@ describe("BrowserNativeSyncTarget", () => {
 
     it("should detect deleted files", async () => {
       await target.initialize(fileSystem);
-      const { callback, intervalCallback } = await setupWatchCallback(target);
+      const callback = vi.fn();
+      await target.watch(callback);
 
       // Setup initial file
       const { metadata } = await setupFileWithMetadata(
@@ -393,14 +402,14 @@ describe("BrowserNativeSyncTarget", () => {
         mockFiles,
         "test.txt"
       );
-      await intervalCallback();
+      await vi.advanceTimersByTimeAsync(1000);
 
       // Simulate deletion
       mockFiles.delete("test.txt");
       spies.listDirectory.mockResolvedValueOnce([]);
 
-      // Trigger another interval
-      await intervalCallback();
+      // Advance timer for next check
+      await vi.advanceTimersByTimeAsync(1000);
 
       // Should detect the deletion
       expect(callback).toHaveBeenLastCalledWith([
@@ -410,6 +419,26 @@ describe("BrowserNativeSyncTarget", () => {
           sourceTarget: "test-target"
         })
       ]);
+    });
+
+    it("should not overlap checks if previous check is still running", async () => {
+      const callback = vi.fn();
+      await target.watch(callback);
+
+      // Make the first check take longer by adding a delay
+      spies.listDirectory.mockImplementation(async () => {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        return [];
+      });
+
+      // Advance timer to trigger first check
+      await vi.advanceTimersByTimeAsync(1000);
+
+      // Advance timer again before first check completes
+      await vi.advanceTimersByTimeAsync(1000);
+
+      // Only one check should have started
+      expect(spies.listDirectory).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -509,16 +538,4 @@ const setupFileWithMetadata = async (
   spies.getMetadata.mockResolvedValueOnce(fullMetadata);
 
   return { fileHandle, metadata: fullMetadata };
-};
-
-const setupWatchCallback = async (target: BrowserNativeSyncTarget) => {
-  const callback = vi.fn();
-  await target.watch(callback);
-
-  const intervalCallback = mockSetInterval.mock?.calls[0]?.[0];
-  if (!intervalCallback) {
-    throw new Error("Interval callback not set");
-  }
-
-  return { callback, intervalCallback };
 };
