@@ -186,16 +186,16 @@ export class FsPromisesAdapter implements FileSystem {
     }
   }
 
-  private checkLock(operation: 'read' | 'write' = 'write') {
+  private checkLock(operation: 'read' | 'write' = 'write', isSyncOperation: boolean = false) {
     if (this.lockState.isLocked) {
-      // Allow read operations during sync mode
+      // Always allow read operations
       if (operation === 'read') {
         return;
       }
 
-      // Allow write operations during sync mode if they are part of the sync process
-      if (this.lockState.lockMode === 'sync') {
-        return; // Allow sync operations
+      // Allow write operations during sync mode only for sync operations
+      if (this.lockState.lockMode === 'sync' && isSyncOperation) {
+        return;
       }
 
       throw new FileSystemError(
@@ -227,9 +227,9 @@ export class FsPromisesAdapter implements FileSystem {
     }
   }
 
-  async writeFile(filePath: string, content: string): Promise<void> {
+  async writeFile(filePath: string, content: string, isSyncOperation: boolean = false): Promise<void> {
     this.ensureInitialized();
-    this.checkLock('write');
+    this.checkLock('write', isSyncOperation);
 
     const absolutePath = this.getAbsolutePath(filePath);
     const parentDir = this.getDirname(absolutePath);
@@ -271,9 +271,9 @@ export class FsPromisesAdapter implements FileSystem {
     }
   }
 
-  async deleteItem(itemPath: string): Promise<void> {
+  async deleteItem(itemPath: string, isSyncOperation: boolean = false): Promise<void> {
     this.ensureInitialized();
-    this.checkLock('write');
+    this.checkLock('write', isSyncOperation);
 
     const absolutePath = this.getAbsolutePath(itemPath);
 
@@ -297,7 +297,7 @@ export class FsPromisesAdapter implements FileSystem {
             entries.map((entry) => {
               const fullPath = this.joinPaths(absolutePath, entry.name);
               return entry.isDirectory()
-                ? this.deleteItem(fullPath)
+                ? this.deleteItem(fullPath, isSyncOperation)
                 : this.options.fs.unlink(fullPath);
             })
           );
@@ -454,11 +454,25 @@ export class FsPromisesAdapter implements FileSystem {
   }
 
   async lock(timeoutMs: number, reason: string, mode: LockMode = "external"): Promise<void> {
+    // If already locked, just update the timeout and reason if needed
     if (this.lockState.isLocked) {
-      throw new FileSystemError("File system already locked", "LOCKED");
+      // Only update if the lock mode matches
+      if (this.lockState.lockMode === mode) {
+        this.lockState = {
+          ...this.lockState,
+          lockTimeout: timeoutMs,
+          lockReason: reason
+        };
+        return;
+      }
+      // If modes don't match, throw error
+      throw new FileSystemError(
+        `File system already locked in ${this.lockState.lockMode} mode`,
+        "LOCKED"
+      );
     }
 
-    this.transitionTo("locked", "lock");
+    // Just set the lock state without transitioning state
     this.lockState = {
       isLocked: true,
       lockedSince: Date.now(),
@@ -473,7 +487,7 @@ export class FsPromisesAdapter implements FileSystem {
       return;
     }
 
-    this.transitionTo("ready", "unlock");
+    // Just clear the lock state without transitioning state
     this.lockState = { isLocked: false };
   }
 }

@@ -182,8 +182,7 @@ export class FileSyncManager implements SyncManager {
   private async applyChangesToTarget(
     target: SyncTarget,
     sourceTarget: SyncTarget,
-    changes: FileChangeInfo[],
-    bypassLock: boolean = false
+    changes: FileChangeInfo[]
   ): Promise<ApplyChangesResult> {
     const result: ApplyChangesResult = {
       targetId: target.id,
@@ -192,11 +191,6 @@ export class FileSyncManager implements SyncManager {
     };
 
     try {
-      // Only notify and lock if we're not bypassing the lock
-      if (!bypassLock) {
-        await target.notifyIncomingChanges(changes.map((c) => c.path));
-      }
-
       // Split changes into batches
       const batchSize = this.config?.maxBatchSize ?? 10;
       const batches = Array.from(
@@ -237,11 +231,6 @@ export class FileSyncManager implements SyncManager {
           .map(r => r.value);
         result.appliedChanges.push(...succeededChanges);
       }
-
-      // Only complete sync if we're not bypassing the lock
-      if (!bypassLock) {
-        await target.syncComplete();
-      }
     } catch (error) {
       result.success = false;
       result.error = error as Error;
@@ -254,43 +243,52 @@ export class FileSyncManager implements SyncManager {
   private async fullSyncFromPrimaryToTarget(target: SyncTarget): Promise<void> {
     if (!this.primaryTarget) return;
 
-    // First, get all existing files in the target and delete them
-    const targetPaths = await this.getAllPaths(target);
-    if (targetPaths.length > 0) {
-      // Create delete changes for all existing files
-      const deleteChanges: FileChangeInfo[] = targetPaths.map(path => ({
-        path,
-        type: "delete",
-        hash: "",
-        size: 0,
-        lastModified: Date.now(),
+    try {
+      // Get all paths from primary first to know what changes are coming
+      const allPaths = await this.getAllPaths(this.primaryTarget);
+
+      // Notify target about incoming changes
+      await target.notifyIncomingChanges(allPaths);
+
+      // First, get all existing files in the target and delete them
+      const targetPaths = await this.getAllPaths(target);
+      if (targetPaths.length > 0) {
+        // Create delete changes for all existing files
+        const deleteChanges: FileChangeInfo[] = targetPaths.map(path => ({
+          path,
+          type: "delete",
+          hash: "",
+          size: 0,
+          lastModified: Date.now(),
+          sourceTarget: this.primaryTarget!.id
+        }));
+
+        // Apply delete changes first
+        await this.applyChangesToTarget(target, this.primaryTarget, deleteChanges);
+      }
+
+      // Get metadata for all paths
+      const allFiles = await this.primaryTarget.getMetadata(allPaths);
+
+      // Create change info for each file - treat all as new creations
+      const changes: FileChangeInfo[] = allFiles.map(file => ({
+        path: file.path,
+        type: "create", // Always treat as create for initialization
+        hash: file.hash,
+        size: file.size,
+        lastModified: file.lastModified,
         sourceTarget: this.primaryTarget!.id
       }));
 
-      // Apply delete changes first, bypassing lock
-      await this.applyChangesToTarget(target, this.primaryTarget, deleteChanges, true);
+      // Apply changes to target
+      await this.applyChangesToTarget(target, this.primaryTarget, changes);
+
+      // Complete the sync
+      await target.syncComplete();
+    } catch (error) {
+      target.getState().status = "error";
+      throw error;
     }
-
-    // Get all paths from primary
-    const allPaths = await this.getAllPaths(this.primaryTarget);
-
-    // Get metadata for all paths
-    const allFiles = await this.primaryTarget.getMetadata(allPaths);
-
-    // Create change info for each file - treat all as new creations
-    const changes: FileChangeInfo[] = allFiles.map(file => ({
-      path: file.path,
-      type: "create", // Always treat as create for initialization
-      hash: file.hash,
-      size: file.size,
-      lastModified: file.lastModified,
-      sourceTarget: this.primaryTarget!.id
-    }));
-
-    // Apply changes to target, bypassing lock
-    await this.applyChangesToTarget(target, this.primaryTarget, changes, true);
-
-    target.syncComplete();
   }
 
   async registerTarget(target: SyncTarget, options: TargetRegistrationOptions): Promise<void> {
@@ -619,6 +617,12 @@ export class FileSyncManager implements SyncManager {
     }
 
     try {
+      // Get all paths from primary first to know what changes are coming
+      const allPaths = await this.getAllPaths(this.primaryTarget);
+
+      // Notify target about incoming changes
+      await target.notifyIncomingChanges(allPaths);
+
       // First, get all existing files in the target and delete them
       const targetPaths = await this.getAllPaths(target);
       if (targetPaths.length > 0) {
@@ -632,12 +636,9 @@ export class FileSyncManager implements SyncManager {
           sourceTarget: this.primaryTarget!.id
         }));
 
-        // Apply delete changes first, bypassing lock
-        await this.applyChangesToTarget(target, this.primaryTarget, deleteChanges, true);
+        // Apply delete changes first
+        await this.applyChangesToTarget(target, this.primaryTarget, deleteChanges);
       }
-
-      // Get all paths from primary
-      const allPaths = await this.getAllPaths(this.primaryTarget);
 
       // Then get metadata for all paths
       const allFiles = await this.primaryTarget.getMetadata(allPaths);
@@ -654,7 +655,7 @@ export class FileSyncManager implements SyncManager {
         }
       }
 
-      // Apply only existing files - treat all as new creations, bypassing lock
+      // Apply only existing files - treat all as new creations
       await this.applyChangesToTarget(
         target,
         this.primaryTarget,
@@ -665,10 +666,11 @@ export class FileSyncManager implements SyncManager {
           size: file.size,
           lastModified: file.lastModified,
           sourceTarget: this.primaryTarget!.id
-        })),
-        true
+        }))
       );
 
+      // Complete the sync
+      await target.syncComplete();
       target.getState().status = "idle";
     } catch (error) {
       target.getState().status = "error";

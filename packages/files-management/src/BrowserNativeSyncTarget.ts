@@ -26,12 +26,12 @@ export class BrowserNativeSyncTarget implements SyncTarget {
   private currentState: TargetStateType = "uninitialized";
   private error: string | null = null;
   private watchTimeout: ReturnType<typeof setTimeout> | null = null;
-  private isCheckingForChanges = false;
   private watchCallback: ((changes: FileChangeInfo[]) => void) | null = null;
   private lastKnownFiles = new Map<string, { lastModified: number }>();
   private isInitialSync = false;
   private isPrimaryTarget = true;
   private pendingChanges: FileChangeInfo[] = [];
+  private originalLastModified = new Map<string, number>();
 
   constructor(targetId: string) {
     this.id = targetId;
@@ -61,9 +61,11 @@ export class BrowserNativeSyncTarget implements SyncTarget {
       // Special case: when transitioning to error state, just set it
       if (newState === "error") {
         this.currentState = "error";
+        debugger;
         return;
       }
 
+      debugger;
       this.currentState = "error";
       throw new SyncOperationError(
         `Invalid state transition from ${this.currentState} to ${newState} via ${via}`,
@@ -84,6 +86,25 @@ export class BrowserNativeSyncTarget implements SyncTarget {
     };
   }
 
+  private async getCurrentFilesState(): Promise<Map<string, { lastModified: number }>> {
+    if (!this.fileSystem) {
+      throw new SyncOperationError("FileSystem not initialized", "INITIALIZATION_FAILED");
+    }
+
+    const currentFiles = new Map<string, { lastModified: number }>();
+    const items = await this.fileSystem.listDirectory("/");
+
+    for (const item of items) {
+      if (item.type === "file") {
+        const metadata = await this.fileSystem.getMetadata(item.path);
+        const lastModified = this.originalLastModified.get(item.path) ?? metadata.lastModified;
+        currentFiles.set(item.path, { lastModified });
+      }
+    }
+
+    return currentFiles;
+  }
+
   async initialize(fileSystem: FileSystem, isPrimary: boolean): Promise<void> {
     // If already initialized in a non-error state, don't initialize again
     if (this.currentState !== "uninitialized" && this.currentState !== "error") {
@@ -102,7 +123,6 @@ export class BrowserNativeSyncTarget implements SyncTarget {
       // Start with clean state
       this.lastKnownFiles.clear();
       this.pendingChanges = [];
-      this.isCheckingForChanges = false;
       if (this.watchTimeout) {
         globalThis.clearTimeout(this.watchTimeout);
         this.watchTimeout = null;
@@ -119,17 +139,10 @@ export class BrowserNativeSyncTarget implements SyncTarget {
       this.transitionTo("idle", "initialize");
       this.error = null;
 
-      // Initialize baseline file state
-      const items = await this.fileSystem.listDirectory("/");
-      const currentFiles = new Map<string, { lastModified: number }>();
-
-      for (const item of items) {
-        if (item.type === "file") {
-          const metadata = await this.fileSystem.getMetadata(item.path);
-          currentFiles.set(item.path, { lastModified: metadata.lastModified });
-        }
+      // Initialize baseline file state for primary target
+      if (isPrimary) {
+        this.lastKnownFiles = await this.getCurrentFilesState();
       }
-      this.lastKnownFiles = currentFiles;
 
     } catch (error) {
       this.transitionTo("error", "initialize");
@@ -154,7 +167,7 @@ export class BrowserNativeSyncTarget implements SyncTarget {
 
     // Lock for sync operations, allowing sync writes but blocking external writes
     await this.fileSystem.lock(30000, "Sync in progress", "sync");
-    this.transitionTo("syncing", "notifyIncomingChanges");
+    this.transitionTo("collecting", "notifyIncomingChanges");
   }
 
   async syncComplete(): Promise<boolean> {
@@ -174,17 +187,7 @@ export class BrowserNativeSyncTarget implements SyncTarget {
 
       // After initial sync, capture current state as baseline
       if (this.isInitialSync) {
-        const items = await this.fileSystem.listDirectory("/");
-        const currentFiles = new Map<string, { lastModified: number }>();
-
-        for (const item of items) {
-          if (item.type === "file") {
-            const metadata = await this.fileSystem.getMetadata(item.path);
-            currentFiles.set(item.path, { lastModified: metadata.lastModified });
-          }
-        }
-
-        this.lastKnownFiles = currentFiles;
+        this.lastKnownFiles = await this.getCurrentFilesState();
       }
 
       // Mark initial sync as complete
@@ -206,7 +209,15 @@ export class BrowserNativeSyncTarget implements SyncTarget {
   async getMetadata(paths: string[]): Promise<FileMetadata[]> {
     if (!this.fileSystem) throw new Error("Not initialized");
 
-    return Promise.all(paths.map((path) => this.fileSystem!.getMetadata(path)));
+    return Promise.all(paths.map(async (path) => {
+      const metadata = await this.fileSystem!.getMetadata(path);
+      // Use the original lastModified if available, otherwise use the file system's value
+      const lastModified = this.originalLastModified.get(path) ?? metadata.lastModified;
+      return {
+        ...metadata,
+        lastModified
+      };
+    }));
   }
 
   async getFileContent(path: string): Promise<FileContentStream> {
@@ -271,6 +282,8 @@ export class BrowserNativeSyncTarget implements SyncTarget {
         // This is a deletion
         if (await this.fileSystem.exists(metadata.path)) {
           await this.fileSystem.deleteItem(metadata.path);
+          // Remove from original lastModified map
+          this.originalLastModified.delete(metadata.path);
         }
         return null;
       }
@@ -279,7 +292,8 @@ export class BrowserNativeSyncTarget implements SyncTarget {
       const exists = await this.fileSystem.exists(metadata.path);
       if (exists) {
         const existingMetadata = await this.fileSystem.getMetadata(metadata.path);
-        if (existingMetadata.lastModified > metadata.lastModified) {
+        const existingLastModified = this.originalLastModified.get(metadata.path) ?? existingMetadata.lastModified;
+        if (existingLastModified > metadata.lastModified) {
           return {
             path: metadata.path,
             sourceTarget: this.id,
@@ -298,8 +312,9 @@ export class BrowserNativeSyncTarget implements SyncTarget {
         content += value.content;
       }
 
-      // Write content
+      // Write content and store original lastModified
       await this.fileSystem.writeFile(metadata.path, content);
+      this.originalLastModified.set(metadata.path, metadata.lastModified);
       return null;
     } catch (error) {
       this.transitionTo("error", "error");
@@ -331,8 +346,7 @@ export class BrowserNativeSyncTarget implements SyncTarget {
     }
 
     try {
-      // Transition to collecting state when starting to watch
-      this.transitionTo("collecting", "watch");
+      // Just set up the watch callback without changing state
       this.watchCallback = callback;
       this.scheduleNextCheck();
     } catch (error) {
@@ -358,7 +372,8 @@ export class BrowserNativeSyncTarget implements SyncTarget {
         return;
       }
 
-      if (this.isCheckingForChanges) {
+      // Skip if already collecting changes
+      if (this.currentState === "collecting") {
         this.scheduleNextCheck();
         return;
       }
@@ -369,42 +384,38 @@ export class BrowserNativeSyncTarget implements SyncTarget {
         return;
       }
 
-      this.isCheckingForChanges = true;
       try {
+        // Lock filesystem and transition to collecting state
+        await this.notifyIncomingChanges();
+
         const changes: FileChangeInfo[] = [];
-        const currentFiles = new Map<string, { lastModified: number }>();
+        const currentFiles = await this.getCurrentFilesState();
 
-        // List all files in root directory
-        const items = await this.fileSystem!.listDirectory("/");
-        for (const item of items) {
-          if (item.type === "file") {
-            const metadata = await this.fileSystem!.getMetadata(item.path);
-            currentFiles.set(item.path, {
-              lastModified: metadata.lastModified
+        // Check for new or modified files
+        for (const [path, current] of currentFiles) {
+          const lastKnown = this.lastKnownFiles.get(path);
+          if (!lastKnown) {
+            // New file
+            const metadata = await this.fileSystem!.getMetadata(path);
+            changes.push({
+              path,
+              type: "create",
+              hash: metadata.hash,
+              size: metadata.size,
+              lastModified: current.lastModified,
+              sourceTarget: this.id
             });
-
-            const lastKnown = this.lastKnownFiles.get(item.path);
-            if (!lastKnown) {
-              // New file
-              changes.push({
-                path: item.path,
-                type: "create",
-                hash: metadata.hash,
-                size: metadata.size,
-                lastModified: metadata.lastModified,
-                sourceTarget: this.id
-              });
-            } else if (lastKnown.lastModified !== metadata.lastModified) {
-              // Modified file
-              changes.push({
-                path: item.path,
-                type: "modify",
-                hash: metadata.hash,
-                size: metadata.size,
-                lastModified: metadata.lastModified,
-                sourceTarget: this.id
-              });
-            }
+          } else if (lastKnown.lastModified !== current.lastModified) {
+            // Modified file
+            const metadata = await this.fileSystem!.getMetadata(path);
+            changes.push({
+              path,
+              type: "modify",
+              hash: metadata.hash,
+              size: metadata.size,
+              lastModified: current.lastModified,
+              sourceTarget: this.id
+            });
           }
         }
 
@@ -419,11 +430,15 @@ export class BrowserNativeSyncTarget implements SyncTarget {
               lastModified: Date.now(),
               sourceTarget: this.id
             });
+            // Remove from original lastModified map
+            this.originalLastModified.delete(path);
           }
         }
 
+        this.transitionTo("syncing", "allChangesReceived");
+
         this.lastKnownFiles = currentFiles;
-        if (changes.length > 0 && this.watchCallback && ["idle", "collecting", "syncing"].includes(this.currentState)) {
+        if (changes.length > 0 && this.watchCallback) {
           try {
             // First notify sync manager
             await this.watchCallback(changes);
@@ -438,7 +453,6 @@ export class BrowserNativeSyncTarget implements SyncTarget {
         // Log error but don't transition to error state to allow recovery
         console.error("Error watching for changes:", error);
       } finally {
-        this.isCheckingForChanges = false;
         // Schedule the next check after this one completes
         this.scheduleNextCheck();
       }
@@ -451,7 +465,6 @@ export class BrowserNativeSyncTarget implements SyncTarget {
       this.watchTimeout = null;
     }
     this.watchCallback = null;
-    this.isCheckingForChanges = false;
 
     // If we were in collecting state, transition back to idle
     if (this.currentState === "collecting") {
