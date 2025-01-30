@@ -6,10 +6,12 @@ import type {
   FileContentStream,
   FileConflict,
   FileChangeInfo,
-  FileSystemItem
+  FileSystemItem,
+  TargetStateType
 } from "@piddie/shared-types";
 import { BrowserNativeFileSystem } from "./BrowserNativeFileSystem";
 import { SyncOperationError } from "@piddie/shared-types";
+import { VALID_TARGET_STATE_TRANSITIONS } from "@piddie/shared-types";
 
 declare const globalThis: {
   setTimeout(callback: () => void, ms: number): ReturnType<typeof setTimeout>;
@@ -21,72 +23,103 @@ export class BrowserNativeSyncTarget implements SyncTarget {
   readonly id: string;
 
   private fileSystem?: FileSystem;
-  private state: TargetState;
+  private currentState: TargetStateType = "uninitialized";
+  private error: string | null = null;
   private watchTimeout: ReturnType<typeof setTimeout> | null = null;
   private isCheckingForChanges = false;
   private watchCallback: ((changes: FileChangeInfo[]) => void) | null = null;
   private lastKnownFiles = new Map<string, { lastModified: number }>();
   private isInitialSync = false;
   private isPrimaryTarget = true;
+  private pendingChanges: FileChangeInfo[] = [];
 
   constructor(targetId: string) {
     this.id = targetId;
-    this.state = {
+  }
+
+  validateStateTransition(from: TargetStateType, to: TargetStateType, via: string): boolean {
+    // If we're already in error state, only allow transitions from error to idle via initialize
+    if (from === "error") {
+      return to === "idle" && via === "initialize";
+    }
+    return VALID_TARGET_STATE_TRANSITIONS.some(
+      t => t.from === from && t.to === to && t.via === via
+    );
+  }
+
+  getCurrentState(): TargetStateType {
+    return this.currentState;
+  }
+
+  transitionTo(newState: TargetStateType, via: string): void {
+    // If we're already in error state, don't try to transition again unless it's to idle via initialize
+    if (this.currentState === "error" && !(newState === "idle" && via === "initialize")) {
+      return;
+    }
+
+    if (!this.validateStateTransition(this.currentState, newState, via)) {
+      // Special case: when transitioning to error state, just set it
+      if (newState === "error") {
+        this.currentState = "error";
+        return;
+      }
+
+      this.currentState = "error";
+      throw new SyncOperationError(
+        `Invalid state transition from ${this.currentState} to ${newState} via ${via}`,
+        "INITIALIZATION_FAILED"
+      );
+    }
+    this.currentState = newState;
+  }
+
+  getState(): TargetState {
+    return {
       id: this.id,
       type: this.type,
-      status: "error",
-      error: "Not initialized",
-      lockState: { isLocked: false },
-      pendingChanges: 0
+      status: this.currentState,
+      lockState: this.fileSystem?.getState().lockState ?? { isLocked: false },
+      pendingChanges: this.pendingChanges.length,
+      error: this.error ?? undefined
     };
   }
 
   async initialize(fileSystem: FileSystem, isPrimary: boolean): Promise<void> {
-    if (!(fileSystem instanceof BrowserNativeFileSystem)) {
-      throw new Error(
-        "BrowserNativeSyncTarget requires BrowserNativeFileSystem"
-      );
+    // If already initialized in a non-error state, don't initialize again
+    if (this.currentState !== "uninitialized" && this.currentState !== "error") {
+      return;
     }
-    this.fileSystem = fileSystem;
-    await this.fileSystem.initialize();
-    this.isPrimaryTarget = isPrimary;
-    this.isInitialSync = !isPrimary;
-    this.state = {
-      id: this.id,
-      type: this.type,
-      status: "idle",
-      lockState: { isLocked: false },
-      pendingChanges: 0
-    };
-  }
 
-  async notifyIncomingChanges(paths?: string[]): Promise<void> {
-    if (!this.fileSystem) {
+    if (!(fileSystem instanceof BrowserNativeFileSystem)) {
+      this.transitionTo("error", "initialize");
       throw new SyncOperationError(
-        "FileSystem not initialized",
+        "BrowserNativeSyncTarget requires BrowserNativeFileSystem",
         "INITIALIZATION_FAILED"
       );
     }
 
-    // Lock for sync operations, allowing sync writes but blocking external writes
-    await this.fileSystem.lock(30000, "Sync in progress", "sync");
-    this.state.status = "syncing";
-    this.state.lockState = this.fileSystem.getState().lockState;
-  }
+    try {
+      // Start with clean state
+      this.lastKnownFiles.clear();
+      this.pendingChanges = [];
+      this.isCheckingForChanges = false;
+      if (this.watchTimeout) {
+        globalThis.clearTimeout(this.watchTimeout);
+        this.watchTimeout = null;
+      }
 
-  async syncComplete(): Promise<boolean> {
-    if (!this.fileSystem) throw new Error("Not initialized");
+      this.fileSystem = fileSystem;
+      this.isPrimaryTarget = isPrimary;
+      this.isInitialSync = !isPrimary;
 
-    // Unlock the file system
-    await this.fileSystem.forceUnlock();
-    this.state = {
-      ...this.state,
-      status: "idle",
-      pendingChanges: 0
-    };
+      // Initialize the file system first
+      await this.fileSystem.initialize();
 
-    // After initial sync, capture current state as baseline
-    if (this.isInitialSync) {
+      // Only transition to idle after successful initialization
+      this.transitionTo("idle", "initialize");
+      this.error = null;
+
+      // Initialize baseline file state
       const items = await this.fileSystem.listDirectory("/");
       const currentFiles = new Map<string, { lastModified: number }>();
 
@@ -96,13 +129,78 @@ export class BrowserNativeSyncTarget implements SyncTarget {
           currentFiles.set(item.path, { lastModified: metadata.lastModified });
         }
       }
-
       this.lastKnownFiles = currentFiles;
+
+    } catch (error) {
+      this.transitionTo("error", "initialize");
+      if (error instanceof Error) {
+        this.error = error.message;
+        throw new SyncOperationError(
+          `Failed to initialize browser native sync target: ${error.message}`,
+          "INITIALIZATION_FAILED"
+        );
+      }
+      throw error;
+    }
+  }
+
+  async notifyIncomingChanges(): Promise<void> {
+    if (!this.fileSystem) {
+      throw new SyncOperationError(
+        "FileSystem not initialized",
+        "INITIALIZATION_FAILED"
+      );
     }
 
-    // Mark initial sync as complete
-    this.isInitialSync = false;
-    return true;
+    // Lock for sync operations, allowing sync writes but blocking external writes
+    await this.fileSystem.lock(30000, "Sync in progress", "sync");
+    this.transitionTo("syncing", "notifyIncomingChanges");
+  }
+
+  async syncComplete(): Promise<boolean> {
+    if (!this.fileSystem) {
+      this.transitionTo("error", "syncComplete");
+      throw new SyncOperationError("Not initialized", "INITIALIZATION_FAILED");
+    }
+
+    try {
+      // Unlock the file system
+      await this.fileSystem.forceUnlock();
+
+      // Only transition if we're not in error state
+      if (this.currentState !== "error") {
+        this.transitionTo("idle", "syncComplete");
+      }
+
+      // After initial sync, capture current state as baseline
+      if (this.isInitialSync) {
+        const items = await this.fileSystem.listDirectory("/");
+        const currentFiles = new Map<string, { lastModified: number }>();
+
+        for (const item of items) {
+          if (item.type === "file") {
+            const metadata = await this.fileSystem.getMetadata(item.path);
+            currentFiles.set(item.path, { lastModified: metadata.lastModified });
+          }
+        }
+
+        this.lastKnownFiles = currentFiles;
+      }
+
+      // Mark initial sync as complete
+      this.isInitialSync = false;
+      return true;
+    } catch (error) {
+      this.transitionTo("error", "syncComplete");
+      if (error instanceof Error) {
+        this.error = error.message;
+        throw new SyncOperationError(
+          `Failed to complete sync: ${error.message}`,
+          "INITIALIZATION_FAILED"
+        );
+      }
+      throw error;
+    }
   }
 
   async getMetadata(paths: string[]): Promise<FileMetadata[]> {
@@ -148,61 +246,118 @@ export class BrowserNativeSyncTarget implements SyncTarget {
     metadata: FileMetadata,
     contentStream: FileContentStream
   ): Promise<FileConflict | null> {
-    if (!this.fileSystem) throw new Error("Not initialized");
+    if (!this.fileSystem) {
+      this.transitionTo("error", "error");
+      throw new SyncOperationError("Not initialized", "INITIALIZATION_FAILED");
+    }
 
-    this.state = {
-      ...this.state,
-      status: "syncing"
-    };
-
-    // Handle deletion
-    if (metadata.size === 0 && metadata.hash === "") {
-      // This is a deletion
-      if (await this.fileSystem.exists(metadata.path)) {
-        await this.fileSystem.deleteItem(metadata.path);
+    try {
+      // During initial sync or if we're in idle state, we need to transition through the proper states
+      if (this.currentState === "idle") {
+        // Lock for sync operations with sync mode to allow sync operations
+        await this.fileSystem.lock(30000, "Sync in progress", "sync");
+        // Transition through collecting to syncing
+        this.transitionTo("collecting", "notifyIncomingChanges");
+        this.transitionTo("syncing", "allChangesReceived");
+      } else if (this.currentState !== "syncing") {
+        throw new SyncOperationError(
+          `Cannot apply changes in ${this.currentState} state`,
+          "APPLY_FAILED"
+        );
       }
+
+      // Handle deletion
+      if (metadata.size === 0 && metadata.hash === "") {
+        // This is a deletion
+        if (await this.fileSystem.exists(metadata.path)) {
+          await this.fileSystem.deleteItem(metadata.path);
+        }
+        return null;
+      }
+
+      // Check for conflicts only if file exists and is newer
+      const exists = await this.fileSystem.exists(metadata.path);
+      if (exists) {
+        const existingMetadata = await this.fileSystem.getMetadata(metadata.path);
+        if (existingMetadata.lastModified > metadata.lastModified) {
+          return {
+            path: metadata.path,
+            sourceTarget: this.id,
+            targetId: this.id,
+            timestamp: Date.now()
+          };
+        }
+      }
+
+      // Read content from stream
+      const reader = contentStream.getReader();
+      let content = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        content += value.content;
+      }
+
+      // Write content
+      await this.fileSystem.writeFile(metadata.path, content);
       return null;
-    }
-
-    // Check for conflicts only if file exists and is newer
-    const exists = await this.fileSystem.exists(metadata.path);
-    if (exists) {
-      const existingMetadata = await this.fileSystem.getMetadata(metadata.path);
-      if (existingMetadata.lastModified > metadata.lastModified) {
-        return {
-          path: metadata.path,
-          sourceTarget: this.id,
-          targetId: this.id,
-          timestamp: Date.now()
-        };
+    } catch (error) {
+      this.transitionTo("error", "error");
+      if (error instanceof SyncOperationError) {
+        throw error;
       }
+      throw new SyncOperationError(
+        `Failed to apply change: ${error}`,
+        "APPLY_FAILED"
+      );
     }
-
-    // Read content from stream
-    const reader = contentStream.getReader();
-    let content = "";
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      content += value.content;
-    }
-
-    // Write content
-    await this.fileSystem.writeFile(metadata.path, content);
-    return null;
   }
 
   async watch(callback: (changes: FileChangeInfo[]) => void): Promise<void> {
-    if (!this.fileSystem) throw new Error("Not initialized");
+    if (!this.fileSystem) {
+      this.transitionTo("error", "watch");
+      throw new SyncOperationError(
+        "FileSystem not initialized",
+        "INITIALIZATION_FAILED"
+      );
+    }
 
-    this.watchCallback = callback;
-    this.scheduleNextCheck();
+    // Don't start watching if not in idle state
+    if (this.currentState !== "idle") {
+      throw new SyncOperationError(
+        `Cannot start watching in ${this.currentState} state`,
+        "INITIALIZATION_FAILED"
+      );
+    }
+
+    try {
+      // Transition to collecting state when starting to watch
+      this.transitionTo("collecting", "watch");
+      this.watchCallback = callback;
+      this.scheduleNextCheck();
+    } catch (error) {
+      this.transitionTo("error", "watch");
+      if (error instanceof Error) {
+        this.error = error.message;
+        throw new SyncOperationError(
+          `Failed to start watching: ${error.message}`,
+          "WATCH_FAILED"
+        );
+      }
+      throw error;
+    }
   }
 
   private scheduleNextCheck(): void {
     if (this.watchCallback === null) return;
 
     this.watchTimeout = globalThis.setTimeout(async () => {
+      // Don't check for changes if not in a valid state
+      if (!["idle", "collecting", "syncing"].includes(this.currentState)) {
+        this.scheduleNextCheck();
+        return;
+      }
+
       if (this.isCheckingForChanges) {
         this.scheduleNextCheck();
         return;
@@ -268,16 +423,19 @@ export class BrowserNativeSyncTarget implements SyncTarget {
         }
 
         this.lastKnownFiles = currentFiles;
-        if (changes.length > 0 && this.watchCallback) {
-          // First notify sync manager
-          await this.watchCallback(changes);
-          // Update state with pending changes
-          this.state = {
-            ...this.state,
-            pendingChanges: this.state.pendingChanges + changes.length
-          };
+        if (changes.length > 0 && this.watchCallback && ["idle", "collecting", "syncing"].includes(this.currentState)) {
+          try {
+            // First notify sync manager
+            await this.watchCallback(changes);
+            // Update state with pending changes
+            this.pendingChanges = [...this.pendingChanges, ...changes];
+          } catch (callbackError) {
+            // Log callback error but don't transition to error state
+            console.error("Error in watch callback:", callbackError);
+          }
         }
       } catch (error) {
+        // Log error but don't transition to error state to allow recovery
         console.error("Error watching for changes:", error);
       } finally {
         this.isCheckingForChanges = false;
@@ -294,9 +452,10 @@ export class BrowserNativeSyncTarget implements SyncTarget {
     }
     this.watchCallback = null;
     this.isCheckingForChanges = false;
-  }
 
-  getState(): TargetState {
-    return this.state;
+    // If we were in collecting state, transition back to idle
+    if (this.currentState === "collecting") {
+      this.transitionTo("idle", "unwatch");
+    }
   }
 }

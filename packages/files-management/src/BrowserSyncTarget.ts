@@ -8,8 +8,10 @@ import type {
   TargetState,
   FileMetadata,
   FileContentStream,
-  FileSystemItem
+  FileSystemItem,
+  TargetStateType
 } from "@piddie/shared-types";
+import { VALID_TARGET_STATE_TRANSITIONS } from "@piddie/shared-types";
 import { BrowserFileSystem } from "./BrowserFileSystem";
 
 declare global {
@@ -24,15 +26,15 @@ declare global {
  */
 export class BrowserSyncTarget implements SyncTarget {
   private fileSystem: BrowserFileSystem | null = null;
-  private status: TargetState["status"] = "error";
+  private currentState: TargetStateType = "uninitialized";
   private error: string | null = "Not initialized";
   private pendingChanges: FileChangeInfo[] = [];
   private watchCallback: ((changes: FileChangeInfo[]) => void) | null = null;
   private watchTimeout: ReturnType<typeof setTimeout> | null = null;
   private isCheckingForChanges = false;
   private lockState: TargetState["lockState"] = { isLocked: false };
-  private isInitialSync = false;  // Changed: start as false
-  private isPrimaryTarget = true; // Added: track if this is primary target
+  private isInitialSync = false;
+  private isPrimaryTarget = true;
   readonly type = "browser";
   readonly id: string;
   lastWatchTimestamp: number;
@@ -42,7 +44,41 @@ export class BrowserSyncTarget implements SyncTarget {
 
   constructor(id: string) {
     this.id = id;
+    this.lastWatchTimestamp = Date.now();
   }
+
+  validateStateTransition(from: TargetStateType, to: TargetStateType, via: string): boolean {
+    return VALID_TARGET_STATE_TRANSITIONS.some(
+      t => t.from === from && t.to === to && t.via === via
+    );
+  }
+
+  getCurrentState(): TargetStateType {
+    return this.currentState;
+  }
+
+  transitionTo(newState: TargetStateType, via: string): void {
+    if (!this.validateStateTransition(this.currentState, newState, via)) {
+      this.currentState = "error";
+      throw new SyncOperationError(
+        `Invalid state transition from ${this.currentState} to ${newState} via ${via}`,
+        "INITIALIZATION_FAILED"
+      );
+    }
+    this.currentState = newState;
+  }
+
+  getState(): TargetState {
+    return {
+      id: this.id,
+      type: this.type,
+      lockState: this.fileSystem?.getState().lockState ?? this.lockState,
+      pendingChanges: this.pendingChanges.length,
+      status: this.currentState,
+      error: this.error ?? undefined
+    };
+  }
+
   getFileSystem(): FileSystem {
     if (!this.fileSystem) {
       throw new SyncOperationError(
@@ -55,32 +91,49 @@ export class BrowserSyncTarget implements SyncTarget {
 
   async initialize(fileSystem: FileSystem, isPrimary: boolean): Promise<void> {
     if (!(fileSystem instanceof BrowserFileSystem)) {
+      this.transitionTo("error", "initialize");
       throw new SyncOperationError(
         "BrowserSyncTarget requires BrowserFileSystem",
         "INITIALIZATION_FAILED"
       );
     }
 
-    this.fileSystem = fileSystem;
-    this.status = "idle";
-    this.error = null;
-    this.isPrimaryTarget = isPrimary;
-    // Only set isInitialSync true for secondary targets
-    this.isInitialSync = !isPrimary;
-    await this.fileSystem.initialize();
+    try {
+      this.fileSystem = fileSystem;
+      this.isPrimaryTarget = isPrimary;
+      // Only set isInitialSync true for secondary targets
+      this.isInitialSync = !isPrimary;
 
-    // Capture initial file state as baseline
-    const items = await this.fileSystem.listDirectory("/");
-    const currentFiles = new Map<string, { lastModified: number }>();
+      // Initialize the file system first
+      await this.fileSystem.initialize();
 
-    for (const item of items) {
-      if (item.type === "file") {
-        const stats = await this.fileSystem.getMetadata(item.path);
-        currentFiles.set(item.path, { lastModified: stats.lastModified });
+      // Only transition to idle after successful initialization
+      this.transitionTo("idle", "initialize");
+
+      // Capture initial file state as baseline
+      const items = await this.fileSystem.listDirectory("/");
+      const currentFiles = new Map<string, { lastModified: number }>();
+
+      for (const item of items) {
+        if (item.type === "file") {
+          const stats = await this.fileSystem.getMetadata(item.path);
+          currentFiles.set(item.path, { lastModified: stats.lastModified });
+        }
       }
-    }
 
-    this.lastKnownFiles = currentFiles;
+      this.lastKnownFiles = currentFiles;
+      this.error = null;
+    } catch (error) {
+      this.transitionTo("error", "initialize");
+      if (error instanceof Error) {
+        this.error = error.message;
+        throw new SyncOperationError(
+          `Failed to initialize browser sync target: ${error.message}`,
+          "INITIALIZATION_FAILED"
+        );
+      }
+      throw error;
+    }
   }
 
   async applyChanges(changes: FileChange[]): Promise<FileConflict[]> {
@@ -92,7 +145,7 @@ export class BrowserSyncTarget implements SyncTarget {
     }
 
     const conflicts: FileConflict[] = [];
-    this.status = "syncing";
+    this.transitionTo("syncing", "APPLY_CHANGES_STARTED");
 
     for (const change of changes) {
       try {
@@ -161,7 +214,7 @@ export class BrowserSyncTarget implements SyncTarget {
     return contents;
   }
 
-  async notifyIncomingChanges(paths?: string[]): Promise<void> {
+  async notifyIncomingChanges(): Promise<void> {
     if (!this.fileSystem) {
       throw new SyncOperationError(
         "FileSystem not initialized",
@@ -171,7 +224,7 @@ export class BrowserSyncTarget implements SyncTarget {
 
     // Lock for sync operations, allowing sync writes but blocking external writes
     await this.fileSystem.lock(30000, "Sync in progress", "sync");
-    this.status = "syncing";
+    this.transitionTo("syncing", "SYNC_IN_PROGRESS");
     this.lockState = this.fileSystem.getState().lockState;
 
     // Clear all files if this is initial sync on secondary target
@@ -196,7 +249,7 @@ export class BrowserSyncTarget implements SyncTarget {
     }
 
     await this.fileSystem.forceUnlock();
-    this.status = "idle";
+    this.transitionTo("idle", "SYNC_COMPLETE");
     this.pendingChanges = [];
 
     // After initial sync, capture current state as baseline
@@ -282,22 +335,6 @@ export class BrowserSyncTarget implements SyncTarget {
     this.watchCallback = null;
     this.pendingChanges = [];
     this.isCheckingForChanges = false;
-  }
-
-  getState(): TargetState {
-    const state: TargetState = {
-      id: this.id,
-      type: this.type,
-      status: this.status,
-      pendingChanges: this.pendingChanges.length,
-      lockState: this.lockState
-    };
-
-    if (this.error) {
-      state.error = this.error;
-    }
-
-    return state;
   }
 
   private async checkForChanges(): Promise<FileChangeInfo[]> {
@@ -454,7 +491,7 @@ export class BrowserSyncTarget implements SyncTarget {
       );
     }
 
-    this.status = "syncing";
+    this.transitionTo("syncing", "APPLY_FILE_CHANGE_STARTED");
 
     // Handle deletion
     if (metadata.size === 0 && metadata.hash === "") {

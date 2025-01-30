@@ -7,6 +7,10 @@ import {
   LockMode
 } from "@piddie/shared-types";
 import path from "path";
+import type {
+  FileSystemStateType
+} from "@piddie/shared-types";
+import { VALID_FILE_SYSTEM_STATE_TRANSITIONS } from "@piddie/shared-types";
 
 /**
  * Minimum required subset of fs.promises API that we need
@@ -47,34 +51,62 @@ export interface FsPromisesAdapterOptions {
   fs: MinimalFsPromises;
 }
 
-/**
- * Internal state management for the file system
- */
-interface InternalState {
-  lockState: {
-    isLocked: boolean;
-    lockedSince?: number;
-    lockTimeout?: number;
-    lockReason?: string;
-    lockMode?: LockMode;
-  };
-  timeoutId: NodeJS.Timeout | null;
-  pendingOperations: number;
-}
 
 /**
  * Adapts any fs.promises-like implementation to our FileSystem interface.
  * This serves as the base for both node's fs.promises and browser-based implementations like LightningFS.
  */
 export class FsPromisesAdapter implements FileSystem {
-  private state: InternalState = {
-    lockState: { isLocked: false },
-    timeoutId: null,
-    pendingOperations: 0
-  };
-  protected initialized = false;
+  protected options: FsPromisesAdapterOptions;
+  protected currentState: FileSystemStateType = "uninitialized";
+  protected lockState: FileSystemState["lockState"] = { isLocked: false };
+  protected pendingOperations = 0;
+  protected lastOperation?: FileSystemState["lastOperation"];
 
-  constructor(protected options: FsPromisesAdapterOptions) { }
+  constructor(options: FsPromisesAdapterOptions) {
+    this.options = options;
+  }
+
+  validateStateTransition(from: FileSystemStateType, to: FileSystemStateType, via: string): boolean {
+    return VALID_FILE_SYSTEM_STATE_TRANSITIONS.some(
+      t => t.from === from && t.to === to && t.via === via
+    );
+  }
+
+  getCurrentState(): FileSystemStateType {
+    return this.currentState;
+  }
+
+  transitionTo(newState: FileSystemStateType, via: string): void {
+    // If we're already in error state, don't try to transition again
+    if (this.currentState === "error") {
+      return;
+    }
+
+    if (!this.validateStateTransition(this.currentState, newState, via)) {
+      // Special case: when transitioning to error state, just set it
+      if (newState === "error") {
+        this.currentState = "error";
+        return;
+      }
+
+      this.currentState = "error";
+      throw new FileSystemError(
+        `Invalid state transition from ${this.currentState} to ${newState} via ${via}`,
+        "INVALID_OPERATION"
+      );
+    }
+    this.currentState = newState;
+  }
+
+  getState(): FileSystemState {
+    return {
+      lockState: this.lockState,
+      pendingOperations: this.pendingOperations,
+      lastOperation: this.lastOperation,
+      currentState: this.currentState
+    };
+  }
 
   /**
    * Normalize a path according to the file system's rules
@@ -117,46 +149,59 @@ export class FsPromisesAdapter implements FileSystem {
   }
 
   async initialize(): Promise<void> {
-    if (this.initialized) return;
+    // If already in error state, don't try to initialize
+    if (this.currentState === "error") {
+      throw new FileSystemError("File system is in error state", "INVALID_OPERATION");
+    }
 
     try {
-      // Verify we can access the root directory
-      if (this.options.fs.access) {
-        await this.options.fs.access(this.options.rootDir);
-      } else {
-        await this.options.fs.stat(this.options.rootDir);
+      // Check if root directory exists first
+      try {
+        if (this.options.fs.access) {
+          await this.options.fs.access(this.options.rootDir);
+        } else {
+          await this.options.fs.stat(this.options.rootDir);
+        }
+      } catch {
+        // Directory doesn't exist, create it
+        await this.options.fs.mkdir(this.options.rootDir, { recursive: true });
       }
-      this.initialized = true;
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Unknown error";
-      throw new FileSystemError(
-        `Failed to initialize file system: ${message}`,
-        "PERMISSION_DENIED"
-      );
+
+      this.transitionTo("ready", "initialize");
+    } catch (error) {
+      this.transitionTo("error", "initialize");
+      if (error instanceof Error) {
+        throw new FileSystemError(
+          `Failed to initialize file system: ${error.message}`,
+          "INVALID_OPERATION"
+        );
+      }
+      throw error;
     }
   }
 
   private ensureInitialized() {
-    if (!this.initialized) {
-      throw new FileSystemError(
-        "File system not initialized",
-        "INVALID_OPERATION"
-      );
+    if (this.currentState === "error") {
+      throw new FileSystemError("File system is in error state", "INVALID_OPERATION");
     }
   }
 
   private checkLock(operation: 'read' | 'write' = 'write') {
-    if (this.state.lockState.isLocked) {
+    if (this.lockState.isLocked) {
+      // Allow read operations during sync mode
+      if (operation === 'read') {
+        return;
+      }
+
       // Allow write operations during sync mode if they are part of the sync process
-      if (operation === 'write' && this.state.lockState.lockMode === 'sync') {
+      if (this.lockState.lockMode === 'sync') {
         return; // Allow sync operations
       }
-      if (operation === 'write') {
-        throw new FileSystemError(
-          `File system is locked: ${this.state.lockState.lockReason}`,
-          "LOCKED"
-        );
-      }
+
+      throw new FileSystemError(
+        `File system is locked: ${this.lockState.lockReason}`,
+        "LOCKED"
+      );
     }
   }
 
@@ -408,57 +453,27 @@ export class FsPromisesAdapter implements FileSystem {
     return hash.toString(16);
   }
 
-  async lock(timeoutMs: number, reason: string, mode: LockMode = 'external'): Promise<void> {
-    this.ensureInitialized();
-
-    if (this.state.lockState.isLocked) {
-      throw new FileSystemError("File system is already locked", "LOCKED");
+  async lock(timeoutMs: number, reason: string, mode: LockMode = "external"): Promise<void> {
+    if (this.lockState.isLocked) {
+      throw new FileSystemError("File system already locked", "LOCKED");
     }
 
-    this.state.lockState = {
+    this.transitionTo("locked", "lock");
+    this.lockState = {
       isLocked: true,
       lockedSince: Date.now(),
       lockTimeout: timeoutMs,
       lockReason: reason,
       lockMode: mode
     };
-
-    this.state.timeoutId = setTimeout(() => {
-      this.forceUnlock();
-    }, timeoutMs);
   }
 
   async forceUnlock(): Promise<void> {
-    this.ensureInitialized();
-
-    if (this.state.timeoutId) {
-      clearTimeout(this.state.timeoutId);
-      this.state.timeoutId = null;
+    if (!this.lockState.isLocked) {
+      return;
     }
 
-    this.state.lockState = {
-      isLocked: false
-    };
-  }
-
-  getState(): FileSystemState {
-    return {
-      lockState: {
-        isLocked: this.state.lockState.isLocked,
-        ...(this.state.lockState.lockedSince && {
-          lockedSince: this.state.lockState.lockedSince
-        }),
-        ...(this.state.lockState.lockTimeout && {
-          lockTimeout: this.state.lockState.lockTimeout
-        }),
-        ...(this.state.lockState.lockReason && {
-          lockReason: this.state.lockState.lockReason
-        }),
-        ...(this.state.lockState.lockMode && {
-          lockMode: this.state.lockState.lockMode
-        })
-      },
-      pendingOperations: this.state.pendingOperations
-    };
+    this.transitionTo("ready", "unlock");
+    this.lockState = { isLocked: false };
   }
 }

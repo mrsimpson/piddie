@@ -8,8 +8,10 @@ import type {
   TargetState,
   FileMetadata,
   FileContentStream,
-  FileSystemItem
+  FileSystemItem,
+  TargetStateType
 } from "@piddie/shared-types";
+import { VALID_TARGET_STATE_TRANSITIONS } from "@piddie/shared-types";
 import { NodeFileSystem } from "./NodeFileSystem";
 import { SyncOperationError } from "@piddie/shared-types";
 import { ReadableStream } from "node:stream/web";
@@ -23,12 +25,45 @@ export class NodeSyncTarget implements SyncTarget {
   private watchAbortController: AbortController | null = null;
   private watchCallback: ((changes: FileChangeInfo[]) => void) | null = null;
   private pendingChanges: FileChangeInfo[] = [];
-  private status: TargetState["status"] = "idle";
+  private currentState: TargetStateType = "uninitialized";
 
   constructor(
     public readonly id: string,
     private rootDir: string
   ) { }
+
+  validateStateTransition(from: TargetStateType, to: TargetStateType, via: string): boolean {
+    return VALID_TARGET_STATE_TRANSITIONS.some(
+      t => t.from === from && t.to === to && t.via === via
+    );
+  }
+
+  getCurrentState(): TargetStateType {
+    return this.currentState;
+  }
+
+  transitionTo(newState: TargetStateType, via: string): void {
+    if (!this.validateStateTransition(this.currentState, newState, via)) {
+      this.currentState = "error";
+      throw new SyncOperationError(
+        `Invalid state transition from ${this.currentState} to ${newState} via ${via}`,
+        "INITIALIZATION_FAILED"
+      );
+    }
+    this.currentState = newState;
+  }
+
+  getState(): TargetState {
+    return {
+      id: this.id,
+      type: this.type,
+      lockState: this.fileSystem?.getState().lockState ?? { isLocked: false },
+      pendingChanges: this.pendingChanges.length,
+      status: this.currentState,
+      error: this.currentState === "error" ? "Target in error state" : undefined
+    };
+  }
+
   getFileSystem(): FileSystem {
     if (!this.fileSystem) {
       throw new SyncOperationError(
@@ -41,35 +76,50 @@ export class NodeSyncTarget implements SyncTarget {
 
   async initialize(fileSystem: FileSystem): Promise<void> {
     if (!(fileSystem instanceof NodeFileSystem)) {
+      this.transitionTo("error", "initialize");
       throw new SyncOperationError(
         "NodeSyncTarget requires NodeFileSystem",
         "INITIALIZATION_FAILED"
       );
     }
-    this.fileSystem = fileSystem;
-    await this.fileSystem.initialize();
+
+    try {
+      this.fileSystem = fileSystem;
+      await this.fileSystem.initialize();
+      this.transitionTo("idle", "initialize");
+    } catch (error) {
+      this.transitionTo("error", "initialize");
+      throw error;
+    }
   }
 
   async notifyIncomingChanges(paths: string[]): Promise<void> {
     if (!this.fileSystem) {
+      this.transitionTo("error", "notifyIncomingChanges");
       throw new SyncOperationError(
         "FileSystem not initialized",
         "INITIALIZATION_FAILED"
       );
     }
 
-    // Lock the file system during sync
-    await this.fileSystem.lock(30000, "Sync in progress");
-    this.status = "notifying";
+    try {
+      // Lock the file system during sync
+      await this.fileSystem.lock(30000, "Sync in progress");
+      this.transitionTo("syncing", "notifyIncomingChanges");
 
-    // Verify all paths exist
-    for (const path of paths) {
-      if (!(await this.fileSystem.exists(path))) {
-        throw new SyncOperationError(
-          `Path not found: ${path}`,
-          "FILE_NOT_FOUND"
-        );
+      // Verify all paths exist
+      for (const path of paths) {
+        if (!(await this.fileSystem.exists(path))) {
+          this.transitionTo("error", "notifyIncomingChanges");
+          throw new SyncOperationError(
+            `Path not found: ${path}`,
+            "FILE_NOT_FOUND"
+          );
+        }
       }
+    } catch (error) {
+      this.transitionTo("error", "notifyIncomingChanges");
+      throw error;
     }
   }
 
@@ -166,15 +216,16 @@ export class NodeSyncTarget implements SyncTarget {
     contentStream: FileContentStream
   ): Promise<FileConflict | null> {
     if (!this.fileSystem) {
+      this.transitionTo("error", "applyFileChange");
       throw new SyncOperationError(
         "FileSystem not initialized",
         "INITIALIZATION_FAILED"
       );
     }
 
-    this.status = "syncing";
-
     try {
+      this.transitionTo("syncing", "applyFileChange");
+
       // Check for existence and potential conflicts
       const exists = await this.fileSystem.exists(metadata.path);
       if (exists) {
@@ -208,6 +259,7 @@ export class NodeSyncTarget implements SyncTarget {
       await this.fileSystem.writeFile(metadata.path, fullContent);
       return null;
     } catch (error) {
+      this.transitionTo("error", "applyFileChange");
       throw new SyncOperationError(
         `Failed to apply change to ${metadata.path}: ${error}`,
         "APPLY_FAILED"
@@ -249,7 +301,7 @@ export class NodeSyncTarget implements SyncTarget {
     }
 
     const conflicts: FileConflict[] = [];
-    this.status = "syncing"; // Set status to syncing when we start applying changes
+    this.currentState = "syncing"; // Set status to syncing when we start applying changes
 
     for (const change of changes) {
       try {
@@ -298,17 +350,21 @@ export class NodeSyncTarget implements SyncTarget {
 
   async syncComplete(): Promise<boolean> {
     if (!this.fileSystem) {
+      this.transitionTo("error", "syncComplete");
       throw new SyncOperationError(
         "FileSystem not initialized",
         "INITIALIZATION_FAILED"
       );
     }
 
-    await this.fileSystem.forceUnlock();
-    this.status = "idle";
-
-    // Return true if no pending changes
-    return this.pendingChanges.length === 0;
+    try {
+      await this.fileSystem.forceUnlock();
+      this.transitionTo("idle", "syncComplete");
+      return true;
+    } catch (error) {
+      this.transitionTo("error", "syncComplete");
+      throw error;
+    }
   }
 
   async watch(callback: (changes: FileChangeInfo[]) => void): Promise<void> {
@@ -392,26 +448,5 @@ export class NodeSyncTarget implements SyncTarget {
     this.watchAbortController?.abort();
     this.watchCallback = null;
     this.watchAbortController = null;
-  }
-
-  getState(): TargetState {
-    if (!this.fileSystem) {
-      return {
-        id: this.id,
-        type: this.type,
-        lockState: { isLocked: false },
-        pendingChanges: 0,
-        status: "error",
-        error: "Not initialized"
-      };
-    }
-
-    return {
-      id: this.id,
-      type: this.type,
-      lockState: this.fileSystem.getState().lockState,
-      pendingChanges: this.pendingChanges.length,
-      status: this.status
-    };
   }
 }

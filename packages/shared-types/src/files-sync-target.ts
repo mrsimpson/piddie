@@ -68,7 +68,7 @@ export interface TargetState {
   pendingChanges: number;
   lastSyncTime?: number;
   status: TargetStateType;
-  error?: string;
+  error?: string | undefined;
 }
 
 /**
@@ -84,13 +84,23 @@ export type TargetStateType =
 /**
  * Valid state transitions for the sync target
  */
-export type TargetStateTransition =
+type TargetStateTransition =
   | { from: "uninitialized"; to: "idle"; via: "initialize" }
   | { from: "idle"; to: "collecting"; via: "notifyIncomingChanges" }
   | { from: "collecting"; to: "syncing"; via: "allChangesReceived" }
   | { from: "syncing"; to: "idle"; via: "syncComplete" }
   | { from: "collecting" | "syncing"; to: "error"; via: "error" }
   | { from: "error"; to: "idle"; via: "recovery" };
+
+export const VALID_TARGET_STATE_TRANSITIONS: TargetStateTransition[] = [
+  { from: "uninitialized", to: "idle", via: "initialize" },
+  { from: "idle", to: "collecting", via: "notifyIncomingChanges" },
+  { from: "collecting", to: "syncing", via: "allChangesReceived" },
+  { from: "syncing", to: "idle", via: "syncComplete" },
+  { from: "collecting", to: "error", via: "error" },
+  { from: "syncing", to: "error", via: "error" },
+  { from: "error", to: "idle", via: "recovery" }
+];
 
 /**
  * Core sync target interface

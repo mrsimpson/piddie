@@ -1,16 +1,17 @@
 import { describe, beforeEach, it, expect, vi } from "vitest";
-import {
-  type SyncTarget,
-  type FileMetadata,
-  type FileContentStream,
-  type FileChangeInfo,
-  type TargetState,
-  type SyncManagerConfig,
-  type FileChunk,
-  SyncManagerError,
+import type {
+  SyncTarget,
+  FileMetadata,
+  FileContentStream,
+  FileChangeInfo,
+  TargetState,
+  SyncManagerConfig,
+  FileChunk,
   FileSystem,
-  FileSystemItem
+  FileSystemItem,
+  SyncManager
 } from "@piddie/shared-types";
+import { SyncManagerError, SyncManagerStateType } from "@piddie/shared-types";
 import { ReadableStream, ReadableStreamDefaultReader } from "node:stream/web";
 import { FileSyncManager } from "../src/FileSyncManager";
 
@@ -313,15 +314,141 @@ describe("FileSyncManager", () => {
     });
   });
 
+  describe("State Machine", () => {
+    it("should validate state transitions correctly", () => {
+      // Given a new manager
+      const manager = new FileSyncManager();
+
+      // Then initial state should be uninitialized
+      expect(manager.getCurrentState()).toBe("uninitialized");
+
+      // And valid transitions should be validated correctly
+      expect(manager.validateStateTransition("uninitialized", "ready", "initialize")).toBe(true);
+      expect(manager.validateStateTransition("ready", "syncing", "changesDetected")).toBe(true);
+      expect(manager.validateStateTransition("syncing", "ready", "syncComplete")).toBe(true);
+      expect(manager.validateStateTransition("syncing", "conflict", "conflictDetected")).toBe(true);
+      expect(manager.validateStateTransition("conflict", "ready", "conflictResolved")).toBe(true);
+      expect(manager.validateStateTransition("ready", "error", "error")).toBe(true);
+      expect(manager.validateStateTransition("error", "ready", "recovery")).toBe(true);
+
+      // And invalid transitions should be rejected
+      expect(manager.validateStateTransition("uninitialized", "syncing", "initialize")).toBe(false);
+      expect(manager.validateStateTransition("ready", "ready", "someAction")).toBe(false);
+      expect(manager.validateStateTransition("error", "syncing", "recovery")).toBe(false);
+    });
+
+    it("should transition through states during initialization", async () => {
+      // Given a new manager
+      const manager = new FileSyncManager();
+      expect(manager.getCurrentState()).toBe("uninitialized");
+
+      // When registering targets and initializing
+      await manager.registerTarget(primaryTarget, { role: "primary" });
+      await manager.registerTarget(secondaryTarget1, { role: "secondary" });
+
+      // Then state should still be uninitialized
+      expect(manager.getCurrentState()).toBe("uninitialized");
+
+      // When initializing
+      await manager.initialize(config);
+
+      // Then state should be ready
+      expect(manager.getCurrentState()).toBe("ready");
+    });
+
+    it("should transition through states during sync", async () => {
+      // Given an initialized manager
+      await manager.registerTarget(primaryTarget, { role: "primary" });
+      await manager.registerTarget(secondaryTarget1, { role: "secondary" });
+      await manager.initialize(config);
+      expect(manager.getCurrentState()).toBe("ready");
+
+      // When primary reports changes
+      const { change } = createTestFile();
+      const syncPromise = manager.handleTargetChanges(primaryTarget.id, [change]);
+
+      // Then state should be syncing
+      expect(manager.getCurrentState()).toBe("syncing");
+
+      // When sync completes
+      await syncPromise;
+
+      // Then state should be ready again
+      expect(manager.getCurrentState()).toBe("ready");
+    });
+
+    it("should transition to conflict state on sync conflicts", async () => {
+      // Given an initialized manager
+      await manager.registerTarget(primaryTarget, { role: "primary" });
+      await manager.registerTarget(secondaryTarget1, { role: "secondary" });
+      await manager.initialize(config);
+
+      // And a file that will cause conflict
+      const { metadata, change, content } = createTestFile();
+      secondaryTarget1.setMockFile(metadata.path, content, metadata);
+
+      // When secondary reports changes and primary sync fails
+      const error = new Error("Sync failed");
+      vi.spyOn(primaryTarget, "applyFileChange").mockRejectedValueOnce(error);
+      await manager.handleTargetChanges(secondaryTarget1.id, [change]);
+
+      // Then state should be conflict
+      expect(manager.getCurrentState()).toBe("conflict");
+
+      // When confirming the sync
+      await manager.confirmPrimarySync();
+
+      // Then state should be ready
+      expect(manager.getCurrentState()).toBe("ready");
+    });
+
+    it("should transition to error state on critical failures", async () => {
+      // Given an initialized manager
+      await manager.registerTarget(primaryTarget, { role: "primary" });
+      await manager.registerTarget(secondaryTarget1, { role: "secondary" });
+      await manager.initialize(config);
+
+      // When a critical error occurs (simulate by forcing invalid state transition)
+      try {
+        manager.transitionTo("invalid" as SyncManagerStateType, "someAction");
+      } catch (e) {
+        // Expected
+      }
+
+      // Then state should be error
+      expect(manager.getCurrentState()).toBe("error");
+    });
+  });
+
   describe("Change Handling", () => {
     beforeEach(async () => {
-      manager.registerTarget(primaryTarget, { role: "primary" });
-      manager.registerTarget(secondaryTarget1, { role: "secondary" });
-      manager.registerTarget(secondaryTarget2, { role: "secondary" });
+      await manager.registerTarget(primaryTarget, { role: "primary" });
+      await manager.registerTarget(secondaryTarget1, { role: "secondary" });
+      await manager.registerTarget(secondaryTarget2, { role: "secondary" });
       await manager.initialize(config);
+      expect(manager.getCurrentState()).toBe("ready");
     });
 
     describe("Primary Target Changes", () => {
+      it("should handle state transitions during primary sync", async () => {
+        // Given a file change in primary
+        const { metadata, change, content } = createTestFile();
+        primaryTarget.setMockFile(metadata.path, content, metadata);
+
+        // When primary reports changes
+        const syncPromise = manager.handleTargetChanges(primaryTarget.id, [change]);
+
+        // Then state should be syncing
+        expect(manager.getCurrentState()).toBe("syncing");
+
+        // When sync completes
+        await syncPromise;
+
+        // Then state should be ready
+        expect(manager.getCurrentState()).toBe("ready");
+        expect(manager.validateStateTransition("ready", "syncing", "changesDetected")).toBe(true);
+      });
+
       it("should propagate changes from primary to secondaries", async () => {
         // Given a file change in primary
         const { metadata, change, content } = createTestFile();
@@ -386,6 +513,25 @@ describe("FileSyncManager", () => {
     });
 
     describe("Secondary Target Changes", () => {
+      it("should handle state transitions during secondary sync", async () => {
+        // Given a file change in secondary
+        const { metadata, change, content } = createTestFile();
+        change.sourceTarget = secondaryTarget1.id;
+        secondaryTarget1.setMockFile(metadata.path, content, metadata);
+
+        // When secondary reports changes
+        const syncPromise = manager.handleTargetChanges(secondaryTarget1.id, [change]);
+
+        // Then state should be syncing
+        expect(manager.getCurrentState()).toBe("syncing");
+
+        // When sync completes
+        await syncPromise;
+
+        // Then state should be ready
+        expect(manager.getCurrentState()).toBe("ready");
+      });
+
       it("should sync changes to primary first", async () => {
         // Given a file change in secondary
         const { metadata, change, content } = createTestFile();

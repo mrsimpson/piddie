@@ -110,7 +110,7 @@ export type SyncManagerStateType =
 /**
  * Valid state transitions for the sync manager
  */
-export type SyncManagerStateTransition =
+type SyncManagerStateTransition =
   | { from: "uninitialized"; to: "ready"; via: "initialize" }
   | { from: "ready"; to: "syncing"; via: "changesDetected" }
   | { from: "syncing"; to: "ready"; via: "syncComplete" }
@@ -118,6 +118,18 @@ export type SyncManagerStateTransition =
   | { from: "conflict"; to: "ready"; via: "conflictResolved" }
   | { from: "ready" | "syncing" | "conflict"; to: "error"; via: "error" }
   | { from: "error"; to: "ready"; via: "recovery" };
+
+export const VALID_SYNC_MANAGER_TRANSITIONS: SyncManagerStateTransition[] = [
+  { from: "uninitialized", to: "ready", via: "initialize" },
+  { from: "ready", to: "syncing", via: "changesDetected" },
+  { from: "syncing", to: "ready", via: "syncComplete" },
+  { from: "syncing", to: "conflict", via: "conflictDetected" },
+  { from: "conflict", to: "ready", via: "conflictResolved" },
+  { from: "ready", to: "error", via: "error" },
+  { from: "syncing", to: "error", via: "error" },
+  { from: "conflict", to: "error", via: "error" },
+  { from: "error", to: "ready", via: "recovery" }
+];
 
 /**
  * Core sync manager interface

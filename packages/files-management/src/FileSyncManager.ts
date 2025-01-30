@@ -10,8 +10,10 @@ import type {
   SyncStatus,
   PendingSync,
   FileMetadata,
-  FileConflict
+  FileConflict,
+  SyncManagerStateType
 } from "@piddie/shared-types";
+import { VALID_SYNC_MANAGER_TRANSITIONS } from "@piddie/shared-types";
 
 /**
  * Result of applying changes to a target
@@ -39,6 +41,28 @@ export class FileSyncManager implements SyncManager {
   private currentPhase: SyncStatus["phase"] = "idle";
   private pendingSync: PendingSync | null = null;
   private activeWatchers: Map<string, () => Promise<void>> = new Map();
+  private currentState: SyncManagerStateType = "uninitialized";
+
+  validateStateTransition(from: SyncManagerStateType, to: SyncManagerStateType, via: string): boolean {
+    return VALID_SYNC_MANAGER_TRANSITIONS.some(
+      t => t.from === from && t.to === to && t.via === via
+    );
+  }
+
+  getCurrentState(): SyncManagerStateType {
+    return this.currentState;
+  }
+
+  transitionTo(newState: SyncManagerStateType, via: string): void {
+    if (!this.validateStateTransition(this.currentState, newState, via)) {
+      this.currentState = "error";
+      throw new SyncManagerError(
+        `Invalid state transition from ${this.currentState} to ${newState} via ${via}`,
+        "SYNC_IN_PROGRESS"
+      );
+    }
+    this.currentState = newState;
+  }
 
   private validateTarget(target: SyncTarget, options: TargetRegistrationOptions): void {
     // Synchronous validations first
@@ -75,23 +99,33 @@ export class FileSyncManager implements SyncManager {
   }
 
   private async startWatching(target: SyncTarget): Promise<void> {
-    // Don't start watching if already watching
-    if (this.activeWatchers.has(target.id)) {
-      return;
+    try {
+      // Don't start watching if already watching
+      if (this.activeWatchers.has(target.id)) {
+        return;
+      }
+
+      // Start watching the target
+      await target.watch((changes) => this.handleTargetChanges(target.id, changes));
+
+      // Store unwatch function
+      this.activeWatchers.set(target.id, () => target.unwatch());
+    } catch (error) {
+      this.transitionTo("error", "error");
+      throw error;
     }
-
-    // Start watching the target
-    await target.watch((changes) => this.handleTargetChanges(target.id, changes));
-
-    // Store unwatch function
-    this.activeWatchers.set(target.id, () => target.unwatch());
   }
 
   private async stopWatching(targetId: string): Promise<void> {
-    const unwatch = this.activeWatchers.get(targetId);
-    if (unwatch) {
-      await unwatch();
-      this.activeWatchers.delete(targetId);
+    try {
+      const unwatch = this.activeWatchers.get(targetId);
+      if (unwatch) {
+        await unwatch();
+        this.activeWatchers.delete(targetId);
+      }
+    } catch (error) {
+      this.transitionTo("error", "error");
+      throw error;
     }
   }
 
@@ -380,7 +414,7 @@ export class FileSyncManager implements SyncManager {
     sourceId: string,
     changes: FileChangeInfo[]
   ): Promise<void> {
-    this.currentPhase = "collecting";
+    this.transitionTo("syncing", "changesDetected");
 
     const sourceTarget =
       sourceId === this.primaryTarget?.id
@@ -388,10 +422,12 @@ export class FileSyncManager implements SyncManager {
         : this.secondaryTargets.get(sourceId);
 
     if (!sourceTarget) {
+      this.transitionTo("error", "error");
       throw new SyncManagerError("Source target not found", "TARGET_NOT_FOUND");
     }
 
     if (!this.primaryTarget) {
+      this.transitionTo("error", "error");
       throw new SyncManagerError(
         "No primary target registered",
         "NO_PRIMARY_TARGET"
@@ -404,33 +440,43 @@ export class FileSyncManager implements SyncManager {
       results: []
     };
 
-    this.currentPhase = "syncing";
-
-    if (sourceTarget === this.primaryTarget) {
-      // Changes from primary - propagate to all secondaries
-      for (const target of this.secondaryTargets.values()) {
-        const result = await this.applyChangesToTarget(target, sourceTarget, changes);
-        state.results.push(result);
-      }
-    } else {
-      // Changes from secondary - sync to primary first
-      const primaryResult = await this.applyChangesToTarget(this.primaryTarget, sourceTarget, changes);
-      state.results.push(primaryResult);
-
-      // Only propagate to other secondaries if primary sync succeeded
-      if (primaryResult.success) {
+    try {
+      if (sourceTarget === this.primaryTarget) {
+        // Changes from primary - propagate to all secondaries
         for (const target of this.secondaryTargets.values()) {
-          if (target !== sourceTarget) {
-            const result = await this.applyChangesToTarget(target, this.primaryTarget, changes);
-            state.results.push(result);
+          const result = await this.applyChangesToTarget(target, sourceTarget, changes);
+          state.results.push(result);
+        }
+      } else {
+        // Changes from secondary - sync to primary first
+        const primaryResult = await this.applyChangesToTarget(this.primaryTarget, sourceTarget, changes);
+        state.results.push(primaryResult);
+
+        // Only propagate to other secondaries if primary sync succeeded
+        if (primaryResult.success) {
+          for (const target of this.secondaryTargets.values()) {
+            if (target !== sourceTarget) {
+              const result = await this.applyChangesToTarget(target, this.primaryTarget, changes);
+              state.results.push(result);
+            }
           }
+        } else {
+          // Primary sync failed - transition to conflict state
+          this.transitionTo("conflict", "conflictDetected");
         }
       }
-    }
 
-    // Update pending syncs based on results
-    this.updatePendingSyncs(state);
-    this.currentPhase = "idle";
+      // Update pending syncs based on results
+      this.updatePendingSyncs(state);
+
+      // If we're not in conflict state, transition back to ready
+      if (this.getCurrentState() === "syncing") {
+        this.transitionTo("ready", "syncComplete");
+      }
+    } catch (error) {
+      this.transitionTo("error", "error");
+      throw error;
+    }
   }
 
   async getFileContent(
@@ -487,36 +533,49 @@ export class FileSyncManager implements SyncManager {
 
     const sourceTarget = this.secondaryTargets.get(this.pendingSync.sourceTargetId);
     if (!sourceTarget) {
+      this.transitionTo("error", "error");
       throw new SyncManagerError("Source target not found", "TARGET_NOT_FOUND");
     }
 
     if (!this.primaryTarget) {
+      this.transitionTo("error", "error");
       throw new SyncManagerError("No primary target", "NO_PRIMARY_TARGET");
     }
 
-    // Get all unique changes
-    const changes = await this.getPendingChanges();
+    try {
+      // Get all unique changes
+      const changes = await this.getPendingChanges();
 
-    // First verify source files exist
-    for (const change of changes) {
-      await sourceTarget.getFileContent(change.path);
+      // First verify source files exist
+      for (const change of changes) {
+        await sourceTarget.getFileContent(change.path);
+      }
+
+      // Then apply to primary
+      await this.applyChangesToTarget(this.primaryTarget, sourceTarget, changes);
+
+      // On success, reinitialize other secondaries
+      const reinitPromises = Array.from(this.secondaryTargets.values())
+        .filter((target) => target !== sourceTarget)
+        .map((target) => this.reinitializeTarget(target.id));
+
+      await Promise.all(reinitPromises);
+
+      this.pendingSync = null;
+      this.transitionTo("ready", "conflictResolved");
+    } catch (error) {
+      this.transitionTo("error", "error");
+      throw error;
     }
-
-    // Then apply to primary
-    await this.applyChangesToTarget(this.primaryTarget, sourceTarget, changes);
-
-    // On success, reinitialize other secondaries
-    const reinitPromises = Array.from(this.secondaryTargets.values())
-      .filter((target) => target !== sourceTarget)
-      .map((target) => this.reinitializeTarget(target.id));
-
-    await Promise.all(reinitPromises);
-
-    this.pendingSync = null;
   }
 
   async rejectPendingSync(): Promise<void> {
+    if (!this.pendingSync) {
+      throw new SyncManagerError("No pending changes", "NO_PENDING_SYNC");
+    }
+
     this.pendingSync = null;
+    this.transitionTo("ready", "conflictResolved");
   }
 
   private async getAllPaths(target: SyncTarget): Promise<string[]> {
@@ -555,6 +614,7 @@ export class FileSyncManager implements SyncManager {
     }
 
     if (!this.primaryTarget) {
+      this.transitionTo("error", "error");
       throw new SyncManagerError("No primary target", "NO_PRIMARY_TARGET");
     }
 
@@ -612,6 +672,7 @@ export class FileSyncManager implements SyncManager {
       target.getState().status = "idle";
     } catch (error) {
       target.getState().status = "error";
+      this.transitionTo("error", "error");
       throw error;
     }
   }
@@ -638,22 +699,32 @@ export class FileSyncManager implements SyncManager {
         );
       }
     }
+
+    this.transitionTo("ready", "initialize");
   }
 
   async dispose(): Promise<void> {
-    // Unwatch all targets
-    const unwatchPromises = [];
-    if (this.primaryTarget) {
-      unwatchPromises.push(this.primaryTarget.unwatch());
-    }
-    for (const target of this.secondaryTargets.values()) {
-      unwatchPromises.push(target.unwatch());
-    }
-    await Promise.all(unwatchPromises);
+    try {
+      // Unwatch all targets
+      const unwatchPromises = [];
+      if (this.primaryTarget) {
+        unwatchPromises.push(this.primaryTarget.unwatch());
+      }
+      for (const target of this.secondaryTargets.values()) {
+        unwatchPromises.push(target.unwatch());
+      }
+      await Promise.all(unwatchPromises);
 
-    // Clear all references
-    this.primaryTarget = null;
-    this.secondaryTargets.clear();
-    this.pendingSync = null;
+      // Clear all references
+      this.primaryTarget = null;
+      this.secondaryTargets.clear();
+      this.pendingSync = null;
+
+      // Reset state
+      this.currentState = "uninitialized";
+    } catch (error) {
+      this.transitionTo("error", "error");
+      throw error;
+    }
   }
 }

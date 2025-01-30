@@ -4,6 +4,13 @@ import type {
   MKDirOptions,
   WriteFileOptions
 } from "@isomorphic-git/lightning-fs";
+import type {
+  FileSystem,
+  FileSystemState,
+  FileSystemStateType,
+  LockMode
+} from "@piddie/shared-types";
+import { FileSystemError, VALID_FILE_SYSTEM_STATE_TRANSITIONS } from "@piddie/shared-types";
 
 /**
  * Browser-compatible path utilities
@@ -39,7 +46,12 @@ const browserPath = {
  * Browser implementation of the FileSystem interface using LightningFS.
  * This implementation uses LightningFS for browser-based file system operations.
  */
-export class BrowserFileSystem extends FsPromisesAdapter {
+export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
+  protected override currentState: FileSystemStateType = "uninitialized";
+  protected override lockState: FileSystemState["lockState"] = { isLocked: false };
+  protected override pendingOperations = 0;
+  protected declare lastOperation?: FileSystemState["lastOperation"];
+
   /**
    * Creates a new instance of BrowserFileSystem
    * @param options Configuration options for the file system
@@ -70,7 +82,6 @@ export class BrowserFileSystem extends FsPromisesAdapter {
           encoding: "utf8"
         } as WriteFileOptions),
       unlink: fs.promises.unlink,
-      // Wrap readdir to return Dirent-like objects
       readdir: async (path: string) => {
         const entries = await fs.promises.readdir(path);
         const results = await Promise.all(
@@ -85,7 +96,6 @@ export class BrowserFileSystem extends FsPromisesAdapter {
         );
         return results;
       },
-      // Polyfill rm using unlink/rmdir
       rm: async (path: string, options?: { recursive?: boolean }) => {
         const stats = await fs.promises.stat(path);
         if (stats.isDirectory()) {
@@ -105,7 +115,6 @@ export class BrowserFileSystem extends FsPromisesAdapter {
           await fs.promises.unlink(path);
         }
       },
-      // Polyfill access using stat
       access: async (path: string) => {
         await fs.promises.stat(path);
       }
@@ -117,6 +126,141 @@ export class BrowserFileSystem extends FsPromisesAdapter {
     });
   }
 
+  override validateStateTransition(from: FileSystemStateType, to: FileSystemStateType, via: string): boolean {
+    // If we're already in error state, only allow transitions from error to ready via initialize
+    if (from === "error") {
+      return to === "ready" && via === "initialize";
+    }
+    return VALID_FILE_SYSTEM_STATE_TRANSITIONS.some(
+      t => t.from === from && t.to === to && t.via === via
+    );
+  }
+
+  override getCurrentState(): FileSystemStateType {
+    return this.currentState;
+  }
+
+  override transitionTo(newState: FileSystemStateType, via: string): void {
+    // If we're already in error state, don't try to transition again unless it's to ready via initialize
+    if (this.currentState === "error" && !(newState === "ready" && via === "initialize")) {
+      return;
+    }
+
+    if (!this.validateStateTransition(this.currentState, newState, via)) {
+      // Special case: when transitioning to error state, just set it
+      if (newState === "error") {
+        this.currentState = "error";
+        return;
+      }
+
+      this.currentState = "error";
+      throw new FileSystemError(
+        `Invalid state transition from ${this.currentState} to ${newState} via ${via}`,
+        "INVALID_OPERATION"
+      );
+    }
+    this.currentState = newState;
+  }
+
+  override getState(): FileSystemState {
+    return {
+      lockState: this.lockState,
+      pendingOperations: this.pendingOperations,
+      lastOperation: this.lastOperation,
+      currentState: this.currentState
+    };
+  }
+
+  override async initialize(): Promise<void> {
+    // If already in error state, don't try to initialize
+    if (this.currentState === "error") {
+      throw new FileSystemError("File system is in error state", "INVALID_OPERATION");
+    }
+
+    // If already initialized, don't initialize again
+    if (this.currentState !== "uninitialized") {
+      return;
+    }
+
+    try {
+      // First try to access the root directory
+      try {
+        await this.options.fs.access!(this.options.rootDir);
+      } catch {
+        // If access fails, try to create the directory
+        try {
+          await this.options.fs.mkdir(this.options.rootDir, { recursive: true });
+        } catch (mkdirError) {
+          // If mkdir fails with EEXIST, that's fine - the directory exists
+          if (mkdirError instanceof Error && !mkdirError.message.includes('EEXIST')) {
+            throw mkdirError;
+          }
+        }
+      }
+
+      // Initialize parent class (which will handle state transition)
+      await super.initialize();
+    } catch (error) {
+      this.transitionTo("error", "initialize");
+      if (error instanceof Error) {
+        throw new FileSystemError(
+          `Failed to initialize browser file system: ${error.message}`,
+          "INVALID_OPERATION"
+        );
+      }
+      throw error;
+    }
+  }
+
+  override async lock(timeoutMs: number, reason: string, mode: LockMode = "external"): Promise<void> {
+    if (this.lockState.isLocked) {
+      throw new FileSystemError("File system already locked", "LOCKED");
+    }
+
+    this.transitionTo("locked", "lock");
+    this.lockState = {
+      isLocked: true,
+      lockedSince: Date.now(),
+      lockTimeout: timeoutMs,
+      lockReason: reason,
+      lockMode: mode
+    };
+  }
+
+  override async forceUnlock(): Promise<void> {
+    if (!this.lockState.isLocked) {
+      return;
+    }
+
+    this.transitionTo("ready", "unlock");
+    this.lockState = { isLocked: false };
+  }
+
+  protected async handleOperation<T>(
+    operation: () => Promise<T>,
+    type: string,
+    path: string
+  ): Promise<T> {
+    if (this.lockState.isLocked && this.lockState.lockMode === "external") {
+      throw new FileSystemError("File system is locked", "LOCKED");
+    }
+
+    this.pendingOperations++;
+    this.lastOperation = {
+      type,
+      path,
+      timestamp: Date.now()
+    };
+
+    try {
+      return await operation();
+    } catch (error) {
+      this.transitionTo("error", "error");
+      throw error;
+    } finally {
+      this.pendingOperations--;
+    }
+  }
 
   /**
    * Normalize a path according to the browser file system rules

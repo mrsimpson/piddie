@@ -115,7 +115,7 @@ export interface FileSystemState {
     type: string;
     path: string;
     timestamp: number;
-  };
+  } | undefined;
   currentState: FileSystemStateType;
 }
 
@@ -131,12 +131,21 @@ export type FileSystemStateType =
 /**
  * Valid state transitions for the file system
  */
-export type FileSystemStateTransition =
+type FileSystemStateTransition =
   | { from: "uninitialized"; to: "ready"; via: "initialize" }
   | { from: "ready"; to: "locked"; via: "lock" }
   | { from: "locked"; to: "ready"; via: "unlock" }
   | { from: "ready" | "locked"; to: "error"; via: "error" }
   | { from: "error"; to: "ready"; via: "recovery" };
+
+export const VALID_FILE_SYSTEM_STATE_TRANSITIONS: FileSystemStateTransition[] = [
+  { from: "uninitialized", to: "ready", via: "initialize" },
+  { from: "ready", to: "locked", via: "lock" },
+  { from: "locked", to: "ready", via: "unlock" },
+  { from: "ready", to: "error", via: "error" },
+  { from: "locked", to: "error", via: "error" },
+  { from: "error", to: "ready", via: "recovery" }
+];
 
 /**
  * Interface for file system operations

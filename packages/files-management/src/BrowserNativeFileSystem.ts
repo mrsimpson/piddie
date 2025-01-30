@@ -191,7 +191,10 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
    * Initialize the file system and verify permissions
    */
   override async initialize(): Promise<void> {
-    if (this.initialized) return;
+    // Check if already initialized by checking the current state
+    if (this.currentState !== "uninitialized") {
+      return;
+    }
 
     // First verify we have the necessary permissions
     const permissionState = await this.rootHandle.queryPermission({
@@ -205,20 +208,28 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
       });
 
       if (newState !== "granted") {
+        this.transitionTo("error", "initialize");
         throw new FileSystemError(
           "Permission denied for readwrite access to directory",
           "PERMISSION_DENIED"
         );
       }
     } else if (permissionState === "denied") {
+      this.transitionTo("error", "initialize");
       throw new FileSystemError(
         "Permission denied for readwrite access to directory",
         "PERMISSION_DENIED"
       );
     }
 
-    // Initialize parent class
-    await super.initialize();
+    try {
+      // Initialize parent class
+      await super.initialize();
+      // State transition is handled in super.initialize()
+    } catch (error) {
+      this.transitionTo("error", "initialize");
+      throw error;
+    }
   }
 
   /**
