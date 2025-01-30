@@ -143,8 +143,8 @@ export class FsPromisesAdapter implements FileSystem {
     }
   }
 
-  private checkLock() {
-    if (this.state.lockState.isLocked) {
+  private checkLock(operation: 'read' | 'write' = 'write') {
+    if (this.state.lockState.isLocked && operation === 'write') {
       throw new FileSystemError(
         `File system is locked: ${this.state.lockState.lockReason}`,
         "LOCKED"
@@ -154,7 +154,7 @@ export class FsPromisesAdapter implements FileSystem {
 
   async readFile(filePath: string): Promise<string> {
     this.ensureInitialized();
-    this.checkLock();
+    this.checkLock('read');
 
     const absolutePath = this.getAbsolutePath(filePath);
 
@@ -176,7 +176,7 @@ export class FsPromisesAdapter implements FileSystem {
 
   async writeFile(filePath: string, content: string): Promise<void> {
     this.ensureInitialized();
-    this.checkLock();
+    this.checkLock('write');
 
     const absolutePath = this.getAbsolutePath(filePath);
     const parentDir = this.getDirname(absolutePath);
@@ -203,7 +203,7 @@ export class FsPromisesAdapter implements FileSystem {
 
   async exists(itemPath: string): Promise<boolean> {
     this.ensureInitialized();
-    this.checkLock();
+    this.checkLock('read');
 
     try {
       const absolutePath = this.getAbsolutePath(itemPath);
@@ -220,7 +220,7 @@ export class FsPromisesAdapter implements FileSystem {
 
   async deleteItem(itemPath: string): Promise<void> {
     this.ensureInitialized();
-    this.checkLock();
+    this.checkLock('write');
 
     const absolutePath = this.getAbsolutePath(itemPath);
 
@@ -263,7 +263,7 @@ export class FsPromisesAdapter implements FileSystem {
 
   async createDirectory(dirPath: string): Promise<void> {
     this.ensureInitialized();
-    this.checkLock();
+    this.checkLock('write');
 
     const absolutePath = this.getAbsolutePath(dirPath);
 
@@ -277,7 +277,7 @@ export class FsPromisesAdapter implements FileSystem {
 
   async listDirectory(dirPath: string): Promise<FileSystemItem[]> {
     this.ensureInitialized();
-    this.checkLock();
+    this.checkLock('read');
 
     const absolutePath = this.getAbsolutePath(dirPath);
 
@@ -332,7 +332,7 @@ export class FsPromisesAdapter implements FileSystem {
 
   async getMetadata(itemPath: string): Promise<FileMetadata> {
     this.ensureInitialized();
-    this.checkLock();
+    this.checkLock('read');
 
     const absolutePath = this.getAbsolutePath(itemPath);
 

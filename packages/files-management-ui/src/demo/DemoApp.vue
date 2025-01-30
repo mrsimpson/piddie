@@ -15,6 +15,7 @@ import { handleUIError } from '../utils/error-handling'
 
 const COMPONENT_ID = 'DemoApp'
 const systems = ref<SynchronizedFileSystem[]>([])
+const syncManager = new FileSyncManager()
 
 async function initializeBrowserSystem() {
   try {
@@ -25,8 +26,9 @@ async function initializeBrowserSystem() {
     })
     await browserFs.initialize()
 
-    // Create browser sync target
+    // Create and initialize browser sync target
     const browserTarget = new BrowserSyncTarget('browser')
+    await browserTarget.initialize(browserFs)
 
     // Create synchronized system
     const browserSystem = await createSynchronizedFileSystem({
@@ -53,8 +55,9 @@ async function addNativeSystem() {
     const nativeFs = new BrowserNativeFileSystem({ rootHandle: dirHandle })
     await nativeFs.initialize()
 
-    // Create native sync target
+    // Create and initialize native sync target
     const nativeTarget = new BrowserNativeSyncTarget('native')
+    await nativeTarget.initialize(nativeFs)
 
     // Create synchronized system
     const nativeSystem = await createSynchronizedFileSystem({
@@ -66,9 +69,8 @@ async function addNativeSystem() {
 
     // Initialize sync manager if this is the second system
     if (systems.value.length === 1) {
-      const syncManager = new FileSyncManager()
-      syncManager.registerTarget(systems.value[0].syncTarget, { role: 'primary' })
-      syncManager.registerTarget(nativeSystem.syncTarget, { role: 'secondary' })
+      await syncManager.registerTarget(systems.value[0].syncTarget, { role: 'primary' })
+      await syncManager.registerTarget(nativeSystem.syncTarget, { role: 'secondary' })
     }
 
     // Add native system to the list

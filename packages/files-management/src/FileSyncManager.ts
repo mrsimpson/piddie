@@ -93,8 +93,94 @@ export class FileSyncManager implements SyncManager {
     }
   }
 
-  private async syncFromPrimaryToTarget(target: SyncTarget): Promise<void> {
+  private async applyChangesToTarget(
+    target: SyncTarget,
+    sourceTarget: SyncTarget,
+    changes: FileChangeInfo[],
+    bypassLock: boolean = false
+  ): Promise<ApplyChangesResult> {
+    const result: ApplyChangesResult = {
+      targetId: target.id,
+      success: true,
+      appliedChanges: []
+    };
+
+    try {
+      // Only notify and lock if we're not bypassing the lock
+      if (!bypassLock) {
+        await target.notifyIncomingChanges(changes.map((c) => c.path));
+      }
+
+      // Split changes into batches
+      const batchSize = this.config?.maxBatchSize ?? 10;
+      const batches = Array.from(
+        { length: Math.ceil(changes.length / batchSize) },
+        (_, i) => changes.slice(i * batchSize, (i + 1) * batchSize)
+      );
+
+      // Process each batch sequentially
+      for (const batch of batches) {
+        // Process all changes in the batch concurrently
+        const batchResults = await Promise.allSettled(
+          batch.map(async (change) => {
+            const content = await sourceTarget.getFileContent(change.path);
+            await target.applyFileChange(content.metadata, content);
+            return change;
+          })
+        );
+
+        // Check for failures in the batch
+        const failedResults = batchResults.filter(
+          (r): r is PromiseRejectedResult => r.status === 'rejected'
+        );
+
+        if (failedResults.length > 0) {
+          // At least one change in the batch failed
+          result.success = false;
+          result.error = failedResults[0]!.reason;
+          target.getState().status = "error";
+          return result;
+        }
+
+        // Add successfully applied changes
+        const succeededChanges = batchResults
+          .filter((r): r is PromiseFulfilledResult<FileChangeInfo> => r.status === 'fulfilled')
+          .map(r => r.value);
+        result.appliedChanges.push(...succeededChanges);
+      }
+
+      // Only complete sync if we're not bypassing the lock
+      if (!bypassLock) {
+        await target.syncComplete();
+      }
+    } catch (error) {
+      result.success = false;
+      result.error = error as Error;
+      target.getState().status = "error";
+    }
+
+    return result;
+  }
+
+  private async fullSyncFromPrimaryToTarget(target: SyncTarget): Promise<void> {
     if (!this.primaryTarget) return;
+
+    // First, get all existing files in the target and delete them
+    const targetPaths = await this.getAllPaths(target);
+    if (targetPaths.length > 0) {
+      // Create delete changes for all existing files
+      const deleteChanges: FileChangeInfo[] = targetPaths.map(path => ({
+        path,
+        type: "delete",
+        hash: "",
+        size: 0,
+        lastModified: Date.now(),
+        sourceTarget: this.primaryTarget!.id
+      }));
+
+      // Apply delete changes first, bypassing lock
+      await this.applyChangesToTarget(target, this.primaryTarget, deleteChanges, true);
+    }
 
     // Get all paths from primary
     const allPaths = await this.getAllPaths(this.primaryTarget);
@@ -102,18 +188,18 @@ export class FileSyncManager implements SyncManager {
     // Get metadata for all paths
     const allFiles = await this.primaryTarget.getMetadata(allPaths);
 
-    // Create change info for each file
+    // Create change info for each file - treat all as new creations
     const changes: FileChangeInfo[] = allFiles.map(file => ({
       path: file.path,
-      type: "modify",
+      type: "create", // Always treat as create for initialization
       hash: file.hash,
       size: file.size,
       lastModified: file.lastModified,
       sourceTarget: this.primaryTarget!.id
     }));
 
-    // Apply changes to target
-    await this.applyChangesToTarget(target, this.primaryTarget, changes);
+    // Apply changes to target, bypassing lock
+    await this.applyChangesToTarget(target, this.primaryTarget, changes, true);
   }
 
   async registerTarget(target: SyncTarget, options: TargetRegistrationOptions): Promise<void> {
@@ -129,7 +215,7 @@ export class FileSyncManager implements SyncManager {
 
       // Sync primary contents to all existing secondaries
       for (const secondary of this.secondaryTargets.values()) {
-        await this.syncFromPrimaryToTarget(secondary);
+        await this.fullSyncFromPrimaryToTarget(secondary);
       }
     } else {
       // Register secondary target
@@ -137,7 +223,7 @@ export class FileSyncManager implements SyncManager {
 
       // If primary exists, sync its contents to the new secondary
       if (this.primaryTarget) {
-        await this.syncFromPrimaryToTarget(target);
+        await this.fullSyncFromPrimaryToTarget(target);
       }
 
       // Start watching secondary
@@ -205,70 +291,6 @@ export class FileSyncManager implements SyncManager {
     }
 
     return this.pendingSync;
-  }
-
-  private async applyChangesToTarget(
-    target: SyncTarget,
-    sourceTarget: SyncTarget,
-    changes: FileChangeInfo[]
-  ): Promise<ApplyChangesResult> {
-    const result: ApplyChangesResult = {
-      targetId: target.id,
-      success: true,
-      appliedChanges: []
-    };
-
-    try {
-      // Notify target about incoming changes
-      await target.notifyIncomingChanges(changes.map((c) => c.path));
-
-      // Split changes into batches
-      const batchSize = this.config?.maxBatchSize ?? 10;
-      const batches = Array.from(
-        { length: Math.ceil(changes.length / batchSize) },
-        (_, i) => changes.slice(i * batchSize, (i + 1) * batchSize)
-      );
-
-      // Process each batch sequentially
-      for (const batch of batches) {
-        // Process all changes in the batch concurrently
-        const batchResults = await Promise.allSettled(
-          batch.map(async (change) => {
-            const content = await sourceTarget.getFileContent(change.path);
-            await target.applyFileChange(content.metadata, content);
-            return change;
-          })
-        );
-
-        // Check for failures in the batch
-        const failedResults = batchResults.filter(
-          (r): r is PromiseRejectedResult => r.status === 'rejected'
-        );
-
-        if (failedResults.length > 0) {
-          // At least one change in the batch failed
-          result.success = false;
-          result.error = failedResults[0]!.reason;
-          target.getState().status = "error";
-          return result;
-        }
-
-        // Add successfully applied changes
-        const succeededChanges = batchResults
-          .filter((r): r is PromiseFulfilledResult<FileChangeInfo> => r.status === 'fulfilled')
-          .map(r => r.value);
-        result.appliedChanges.push(...succeededChanges);
-      }
-
-      // All batches completed
-      await target.syncComplete();
-    } catch (error) {
-      result.success = false;
-      result.error = error as Error;
-      target.getState().status = "error";
-    }
-
-    return result;
   }
 
   private updatePendingSyncs(state: SyncOperationState): void {
@@ -480,7 +502,24 @@ export class FileSyncManager implements SyncManager {
     }
 
     try {
-      // First get all paths from primary
+      // First, get all existing files in the target and delete them
+      const targetPaths = await this.getAllPaths(target);
+      if (targetPaths.length > 0) {
+        // Create delete changes for all existing files
+        const deleteChanges: FileChangeInfo[] = targetPaths.map(path => ({
+          path,
+          type: "delete",
+          hash: "",
+          size: 0,
+          lastModified: Date.now(),
+          sourceTarget: this.primaryTarget!.id
+        }));
+
+        // Apply delete changes first, bypassing lock
+        await this.applyChangesToTarget(target, this.primaryTarget, deleteChanges, true);
+      }
+
+      // Get all paths from primary
       const allPaths = await this.getAllPaths(this.primaryTarget);
 
       // Then get metadata for all paths
@@ -498,18 +537,19 @@ export class FileSyncManager implements SyncManager {
         }
       }
 
-      // Apply only existing files
+      // Apply only existing files - treat all as new creations, bypassing lock
       await this.applyChangesToTarget(
         target,
         this.primaryTarget,
         existingFiles.map((file) => ({
           path: file.path,
-          type: "modify",
+          type: "create", // Always treat as create for reinitialization
           hash: file.hash,
           size: file.size,
           lastModified: file.lastModified,
           sourceTarget: this.primaryTarget!.id
-        }))
+        })),
+        true
       );
 
       target.getState().status = "idle";

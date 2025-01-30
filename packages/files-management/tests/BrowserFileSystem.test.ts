@@ -269,25 +269,25 @@ describe("Browser FileSystem", () => {
         expect(state.lockState.isLocked).toBe(false);
       });
 
-      it("should prevent operations while locked", async () => {
+      it("should prevent write operations while locked", async () => {
         // Given a locked system
         await fileSystem.lock(1000, "test lock");
 
         // When attempting operations
         const writePromise = fileSystem.writeFile("/test.txt", "content");
-        const readPromise = fileSystem.readFile("/existing.txt");
         const deletePromise = fileSystem.deleteItem("/some-file.txt");
+        const readPromise = fileSystem.readFile("/existing.txt");
 
-        // Then all operations should fail with LOCKED
+        // Then write operations should fail with LOCKED
         await expect(writePromise).rejects.toThrow(
-          expect.objectContaining({ code: "LOCKED" })
-        );
-        await expect(readPromise).rejects.toThrow(
           expect.objectContaining({ code: "LOCKED" })
         );
         await expect(deletePromise).rejects.toThrow(
           expect.objectContaining({ code: "LOCKED" })
         );
+
+        // But read operations should succeed
+        await expect(readPromise).resolves.not.toThrow();
       });
     });
   });
