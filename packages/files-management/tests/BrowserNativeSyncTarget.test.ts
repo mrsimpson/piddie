@@ -118,13 +118,13 @@ describe("BrowserNativeSyncTarget", () => {
 
   describe("Initialization", () => {
     it("should initialize with BrowserNativeFileSystem", async () => {
-      await target.initialize(fileSystem);
+      await target.initialize(fileSystem, true);
       expect(spies.initialize).toHaveBeenCalled();
     });
 
     it("should reject non-BrowserNativeFileSystem instances", async () => {
       const invalidFs = {} as any;
-      await expect(target.initialize(invalidFs)).rejects.toThrow(
+      await expect(target.initialize(invalidFs, true)).rejects.toThrow(
         "BrowserNativeSyncTarget requires BrowserNativeFileSystem"
       );
     });
@@ -132,22 +132,25 @@ describe("BrowserNativeSyncTarget", () => {
 
   describe("File Operations", () => {
     beforeEach(async () => {
-      await target.initialize(fileSystem);
+      await target.initialize(fileSystem, true);
+      await spies.listDirectory.mockResolvedValue([
+        { path: "/test.txt", type: "file" }
+      ]);
     });
 
     it("should lock filesystem during sync", async () => {
-      await target.notifyIncomingChanges();
-      expect(spies.lock).toHaveBeenCalledWith(30000, "Sync in progress");
+      await target.notifyIncomingChanges(["/test.txt"]);
+      expect(spies.lock).toHaveBeenCalledWith(30000, "Sync in progress", "sync");
     });
 
     it("should unlock filesystem after sync completion", async () => {
-      await target.notifyIncomingChanges();
+      await target.notifyIncomingChanges(["/test.txt"]);
       await target.syncComplete();
       expect(spies.forceUnlock).toHaveBeenCalled();
     });
 
     it("should get file metadata", async () => {
-      await target.initialize(fileSystem);
+      await target.initialize(fileSystem, true);
 
       const { metadata: expectedMetadata } = await setupFileWithMetadata(
         spies,
@@ -277,7 +280,7 @@ describe("BrowserNativeSyncTarget", () => {
 
   describe("File Watching", () => {
     beforeEach(async () => {
-      await target.initialize(fileSystem);
+      await target.initialize(fileSystem, true);
     });
 
     it("should setup file watching with timeout", async () => {
@@ -308,7 +311,7 @@ describe("BrowserNativeSyncTarget", () => {
     });
 
     it("should detect new files", async () => {
-      await target.initialize(fileSystem);
+      await target.initialize(fileSystem, true);
       const callback = vi.fn();
       await target.watch(callback);
 
@@ -344,7 +347,7 @@ describe("BrowserNativeSyncTarget", () => {
     });
 
     it("should detect modified files", async () => {
-      await target.initialize(fileSystem);
+      await target.initialize(fileSystem, true);
       const callback = vi.fn();
       await target.watch(callback);
 
@@ -392,7 +395,7 @@ describe("BrowserNativeSyncTarget", () => {
     });
 
     it("should detect deleted files", async () => {
-      await target.initialize(fileSystem);
+      await target.initialize(fileSystem, true);
       const callback = vi.fn();
       await target.watch(callback);
 
@@ -447,17 +450,17 @@ describe("BrowserNativeSyncTarget", () => {
       const state = target.getState();
       expect(state).toEqual(
         expect.objectContaining({
-          status: "error",
-          error: "Not initialized"
+          status: "uninitialized",
+          error: undefined
         })
       );
     });
 
     it("should update status during sync operations", async () => {
-      await target.initialize(fileSystem);
+      await target.initialize(fileSystem, true);
 
-      await target.notifyIncomingChanges();
-      expect(target.getState().status).toBe("notifying");
+      await target.notifyIncomingChanges(["/test.txt"]);
+      expect(target.getState().status).toBe("collecting");
 
       const metadata: FileMetadata = {
         path: "test.txt",

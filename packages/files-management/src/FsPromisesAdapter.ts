@@ -314,15 +314,19 @@ export class FsPromisesAdapter implements FileSystem {
     }
   }
 
-  async createDirectory(dirPath: string): Promise<void> {
+  async createDirectory(path: string, isSyncOperation: boolean = false): Promise<void> {
     this.ensureInitialized();
-    this.checkLock('write');
+    this.checkLock('write', isSyncOperation);
 
-    const absolutePath = this.getAbsolutePath(dirPath);
+    const absolutePath = this.getAbsolutePath(path);
 
     try {
       await this.options.fs.mkdir(absolutePath, { recursive: true });
     } catch (error: unknown) {
+      if (error instanceof Error && error.message.includes('EEXIST')) {
+        // Directory already exists - that's fine
+        return;
+      }
       const message = error instanceof Error ? error.message : "Unknown error";
       throw new FileSystemError(message, "PERMISSION_DENIED");
     }
@@ -393,10 +397,13 @@ export class FsPromisesAdapter implements FileSystem {
       const stats = await this.options.fs.stat(absolutePath);
 
       if (stats.isDirectory()) {
-        throw new FileSystemError(
-          `Path is not a file: ${itemPath}`,
-          "INVALID_OPERATION"
-        );
+        return {
+          path: itemPath,
+          type: "directory",
+          hash: "",  // Directories don't have a hash
+          size: 0,   // Directories don't have a size
+          lastModified: stats.mtimeMs
+        };
       }
 
       // For files, include hash and size

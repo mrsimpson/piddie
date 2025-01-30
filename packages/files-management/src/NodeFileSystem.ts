@@ -77,7 +77,6 @@ export class NodeFileSystem extends FsPromisesAdapter implements FileSystem {
       throw new FileSystemError("File system already locked", "LOCKED");
     }
 
-    this.transitionTo("locked", "lock");
     this.lockState = {
       isLocked: true,
       lockedSince: Date.now(),

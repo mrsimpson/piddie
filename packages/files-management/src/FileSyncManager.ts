@@ -55,6 +55,7 @@ export class FileSyncManager implements SyncManager {
 
   transitionTo(newState: SyncManagerStateType, via: string): void {
     if (!this.validateStateTransition(this.currentState, newState, via)) {
+      debugger;
       this.currentState = "error";
       throw new SyncManagerError(
         `Invalid state transition from ${this.currentState} to ${newState} via ${via}`,
@@ -137,14 +138,26 @@ export class FileSyncManager implements SyncManager {
     try {
       // For deletions, we don't need to get file content
       if (change.type === "delete") {
+        // Check if the path exists and get its type
+        let type: "file" | "directory" = "file";
+        try {
+          const metadataResult = await target.getMetadata([change.path]);
+          if (metadataResult?.[0]?.type) {
+            type = metadataResult[0].type;
+          }
+        } catch {
+          // If we can't get metadata, assume it's a file
+          type = "file";
+        }
+
         const metadata: FileMetadata = {
           path: change.path,
           hash: "",
           size: 0,
           lastModified: change.lastModified,
-          type: "file"
+          type
         };
-        const conflict = await target.applyFileChange(metadata, {
+        const content: FileContentStream = {
           metadata,
           getReader: () => {
             const stream = new ReadableStream({
@@ -161,12 +174,13 @@ export class FileSyncManager implements SyncManager {
             return stream.getReader();
           },
           close: async () => { /* No cleanup needed */ }
-        });
+        };
+        const conflict = await target.applyFileChange(metadata, content);
         if (conflict) return conflict;
         return change;
       }
 
-      // For creates and modifications, get the file content
+      // For creates and modifications, get the file content and metadata
       const content = await sourceTarget.getFileContent(change.path);
       const conflict = await target.applyFileChange(content.metadata, content);
       if (conflict) return conflict;
@@ -270,15 +284,24 @@ export class FileSyncManager implements SyncManager {
       // Get metadata for all paths
       const allFiles = await this.primaryTarget.getMetadata(allPaths);
 
-      // Create change info for each file - treat all as new creations
+      // Create change info for each item - handle directories and files differently
       const changes: FileChangeInfo[] = allFiles.map(file => ({
         path: file.path,
-        type: "create", // Always treat as create for initialization
-        hash: file.hash,
-        size: file.size,
+        type: "create" as const, // Always treat as create for initialization
+        hash: file.type === "directory" ? "" : file.hash,
+        size: file.type === "directory" ? 0 : file.size,
         lastModified: file.lastModified,
         sourceTarget: this.primaryTarget!.id
       }));
+
+      // Sort changes so directories are created before their contents
+      changes.sort((a, b) => {
+        const aIsDir = a.hash === "" && a.size === 0;
+        const bIsDir = b.hash === "" && b.size === 0;
+        if (aIsDir && !bIsDir) return -1;
+        if (!aIsDir && bIsDir) return 1;
+        return a.path.localeCompare(b.path);
+      });
 
       // Apply changes to target
       await this.applyChangesToTarget(target, this.primaryTarget, changes);
@@ -442,19 +465,32 @@ export class FileSyncManager implements SyncManager {
       if (sourceTarget === this.primaryTarget) {
         // Changes from primary - propagate to all secondaries
         for (const target of this.secondaryTargets.values()) {
+          // Notify target about incoming changes
+          await target.notifyIncomingChanges(changes.map(c => c.path));
           const result = await this.applyChangesToTarget(target, sourceTarget, changes);
+          if (result.success) {
+            await target.syncComplete();
+          }
           state.results.push(result);
         }
       } else {
         // Changes from secondary - sync to primary first
+        await this.primaryTarget.notifyIncomingChanges(changes.map(c => c.path));
         const primaryResult = await this.applyChangesToTarget(this.primaryTarget, sourceTarget, changes);
+        if (primaryResult.success) {
+          await this.primaryTarget.syncComplete();
+        }
         state.results.push(primaryResult);
 
         // Only propagate to other secondaries if primary sync succeeded
         if (primaryResult.success) {
           for (const target of this.secondaryTargets.values()) {
             if (target !== sourceTarget) {
+              await target.notifyIncomingChanges(changes.map(c => c.path));
               const result = await this.applyChangesToTarget(target, this.primaryTarget, changes);
+              if (result.success) {
+                await target.syncComplete();
+              }
               state.results.push(result);
             }
           }
@@ -643,31 +679,43 @@ export class FileSyncManager implements SyncManager {
       // Then get metadata for all paths
       const allFiles = await this.primaryTarget.getMetadata(allPaths);
 
-      // Filter to only existing files
-      const existingFiles: FileMetadata[] = [];
-      for (const file of allFiles) {
+      // Filter to only existing files and directories
+      const existingItems: FileMetadata[] = [];
+      for (const item of allFiles) {
         try {
-          await this.primaryTarget.getFileContent(file.path);
-          existingFiles.push(file);
+          if (item.type === "directory") {
+            existingItems.push(item);
+          } else {
+            await this.primaryTarget.getFileContent(item.path);
+            existingItems.push(item);
+          }
         } catch {
-          // Skip files that don't exist
+          // Skip items that don't exist
           continue;
         }
       }
 
-      // Apply only existing files - treat all as new creations
-      await this.applyChangesToTarget(
-        target,
-        this.primaryTarget,
-        existingFiles.map((file) => ({
-          path: file.path,
-          type: "create", // Always treat as create for reinitialization
-          hash: file.hash,
-          size: file.size,
-          lastModified: file.lastModified,
-          sourceTarget: this.primaryTarget!.id
-        }))
-      );
+      // Create changes for existing items - handle directories and files differently
+      const changes: FileChangeInfo[] = existingItems.map((item) => ({
+        path: item.path,
+        type: "create" as const, // Always treat as create for reinitialization
+        hash: item.type === "directory" ? "" : item.hash,
+        size: item.type === "directory" ? 0 : item.size,
+        lastModified: item.lastModified,
+        sourceTarget: this.primaryTarget!.id
+      }));
+
+      // Sort changes so directories are created before their contents
+      changes.sort((a, b) => {
+        const aIsDir = a.hash === "" && a.size === 0;
+        const bIsDir = b.hash === "" && b.size === 0;
+        if (aIsDir && !bIsDir) return -1;
+        if (!aIsDir && bIsDir) return 1;
+        return a.path.localeCompare(b.path);
+      });
+
+      // Apply changes to target
+      await this.applyChangesToTarget(target, this.primaryTarget, changes);
 
       // Complete the sync
       await target.syncComplete();

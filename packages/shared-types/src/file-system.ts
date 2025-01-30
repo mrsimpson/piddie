@@ -14,7 +14,7 @@ export interface FileSystemItem {
 }
 
 /**
- * Metadata about a file
+ * Metadata about a file or directory
  */
 export interface FileMetadata {
   /**
@@ -23,17 +23,17 @@ export interface FileMetadata {
   path: string;
 
   /**
-   * Type of the file
+   * Type of the item
    */
-  type: "file";
+  type: "file" | "directory";
 
   /**
-   * Hash of the file content
+   * Hash of the file content (empty for directories)
    */
   hash: string;
 
   /**
-   * Size in bytes
+   * Size in bytes (0 for directories)
    */
   size: number;
 
@@ -163,17 +163,17 @@ export interface FileSystem {
   /**
    * Write file content
    */
-  writeFile(path: string, content: string): Promise<void>;
+  writeFile(path: string, content: string, isSyncOperation?: boolean): Promise<void>;
 
   /**
    * Create directory
    */
-  createDirectory(path: string): Promise<void>;
+  createDirectory(path: string, isSyncOperation?: boolean): Promise<void>;
 
   /**
    * Delete file or directory
    */
-  deleteItem(path: string): Promise<void>;
+  deleteItem(path: string, isSyncOperation?: boolean): Promise<void>;
 
   /**
    * Check if path exists

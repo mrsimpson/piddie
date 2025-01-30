@@ -73,7 +73,16 @@ export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
     const fsWrapper: MinimalFsPromises = {
       mkdir: (path: string, options?: { recursive?: boolean }) =>
         fs.promises.mkdir(path, { mode: 0o777, ...options } as MKDirOptions),
-      stat: fs.promises.stat,
+      stat: async (path: string) => {
+        const stats = await fs.promises.stat(path);
+        // Use the built-in methods from LightningFS stats
+        return {
+          isDirectory: () => stats.isDirectory(),
+          isFile: () => stats.isFile(),
+          mtimeMs: stats.mtimeMs,
+          size: stats.size
+        };
+      },
       readFile: (path: string) =>
         fs.promises.readFile(path, { encoding: "utf8" }) as Promise<string>,
       writeFile: (path: string, data: string) =>
@@ -217,7 +226,6 @@ export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
       throw new FileSystemError("File system already locked", "LOCKED");
     }
 
-    this.transitionTo("locked", "lock");
     this.lockState = {
       isLocked: true,
       lockedSince: Date.now(),
@@ -231,8 +239,9 @@ export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
     if (!this.lockState.isLocked) {
       return;
     }
-
-    this.transitionTo("ready", "unlock");
+    if (this.currentState !== "ready") {
+      this.transitionTo("ready", "unlock");
+    }
     this.lockState = { isLocked: false };
   }
 

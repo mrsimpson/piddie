@@ -86,20 +86,20 @@ export type TargetStateType =
  */
 type TargetStateTransition =
   | { from: "uninitialized"; to: "idle"; via: "initialize" }
-  | { from: "idle"; to: "collecting"; via: "notifyIncomingChanges" }
-  | { from: "collecting"; to: "syncing"; via: "allChangesReceived" }
-  | { from: "syncing"; to: "idle"; via: "syncComplete" }
+  | { from: "idle"; to: "collecting"; via: "collect" }
+  | { from: "collecting"; to: "syncing"; via: "sync" }
+  | { from: "syncing"; to: "idle"; via: "finishSync" }
   | { from: "collecting" | "syncing"; to: "error"; via: "error" }
-  | { from: "error"; to: "idle"; via: "recovery" };
+  | { from: "error"; to: "idle"; via: "recover" };
 
 export const VALID_TARGET_STATE_TRANSITIONS: TargetStateTransition[] = [
   { from: "uninitialized", to: "idle", via: "initialize" },
-  { from: "idle", to: "collecting", via: "notifyIncomingChanges" },
-  { from: "collecting", to: "syncing", via: "allChangesReceived" },
-  { from: "syncing", to: "idle", via: "syncComplete" },
+  { from: "idle", to: "collecting", via: "collect" },
+  { from: "collecting", to: "syncing", via: "sync" },
+  { from: "syncing", to: "idle", via: "finishSync" },
   { from: "collecting", to: "error", via: "error" },
   { from: "syncing", to: "error", via: "error" },
-  { from: "error", to: "idle", via: "recovery" }
+  { from: "error", to: "idle", via: "recover" }
 ];
 
 /**

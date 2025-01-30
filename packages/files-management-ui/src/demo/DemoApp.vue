@@ -70,16 +70,16 @@ async function addNativeSystem() {
     // Initialize sync manager if this is the second system
     if (systems.value.length === 1) {
       try {
-        await syncManager.registerTarget(systems.value[0].syncTarget, { role: 'primary' })
-        await syncManager.registerTarget(nativeSystem.syncTarget, { role: 'secondary' })
-        
         // Initialize sync manager
         await syncManager.initialize({
           maxBatchSize: 10,
           inactivityDelay: 1000, // Wait 1 second for more changes
           maxRetries: 3 // Try up to 3 times on failure
         })
-
+        
+        await syncManager.registerTarget(systems.value[0].syncTarget, { role: 'primary' })
+        await syncManager.registerTarget(nativeSystem.syncTarget, { role: 'secondary' })
+        
         // Set up error monitoring
         const monitorSync = () => {
           const status = syncManager.getStatus()

@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import type { FileSystem } from '@piddie/shared-types'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import type { FileSystem, SyncTarget, FileChangeInfo } from '@piddie/shared-types'
 import type { FileViewModel } from '../types/file-explorer'
 import { handleUIError } from '../utils/error-handling'
 import TextFileEditor from './TextFileEditor.vue'
 
 const props = defineProps<{
   fileSystem: FileSystem
+  syncTarget: SyncTarget
   title: string
 }>()
 
@@ -37,14 +38,28 @@ async function loadDirectory(path: string) {
     error.value = null
     currentPath.value = path
 
+    console.log(`Loading directory ${path}...`)
     const entries = await props.fileSystem.listDirectory(path)
-    const metadataPromises = entries.map((entry) => props.fileSystem.getMetadata(entry.path))
+    console.log(`Found ${entries.length} entries:`, entries)
+
+    const metadataPromises = entries.map(async (entry) => {
+      try {
+        return await props.fileSystem.getMetadata(entry.path)
+      } catch (err) {
+        console.error(`Failed to get metadata for ${entry.path}:`, err)
+        throw err
+      }
+    })
 
     const metadata = await Promise.all(metadataPromises)
+    console.log(`Got metadata for ${metadata.length} entries:`, metadata)
 
     items.value = entries.map((entry, index) => {
       const meta = metadata[index]
-      if (!meta) throw new Error(`No metadata for ${entry.path}`)
+      if (!meta) {
+        console.error(`No metadata for ${entry.path}`)
+        throw new Error(`No metadata for ${entry.path}`)
+      }
 
       return {
         path: entry.path,
@@ -57,7 +72,9 @@ async function loadDirectory(path: string) {
       }
     })
   } catch (err) {
-    handleUIError(err, 'Failed to load directory', COMPONENT_ID)
+    console.error(`Failed to load directory ${path}:`, err)
+    error.value = err instanceof Error ? err.message : 'Failed to load directory'
+    handleUIError(err, `Failed to load directory ${path}`, COMPONENT_ID)
   } finally {
     loading.value = false
   }
@@ -132,7 +149,48 @@ function formatDate(timestamp: number): string {
 }
 
 // Load initial directory
-loadDirectory('/')
+
+// Handle file changes from sync target
+function handleFileChanges(changes: FileChangeInfo[]) {
+  // Check if any of the changes affect the current directory
+  const affectedPaths = changes.map(c => c.path)
+  const currentDir = currentPath.value
+  const hasChangesInCurrentDir = affectedPaths.some(path => {
+    const parentDir = path.split('/').slice(0, -1).join('/') || '/'
+    return parentDir === currentDir
+  })
+
+  if (hasChangesInCurrentDir) {
+    loadDirectory(currentDir)
+  }
+}
+
+// Set up and clean up file change watching
+onMounted(async () => {
+  try {
+    console.log('FileSystemExplorer mounted, initializing...')
+    console.log('SyncTarget state:', props.syncTarget.getCurrentState())
+    console.log('Setting up file watching...')
+    await props.syncTarget.watch(handleFileChanges)
+    console.log('File watching set up, loading initial directory...')
+    await loadDirectory('/')
+    console.log('Initial directory loaded')
+  } catch (err) {
+    console.error('Failed to initialize FileSystemExplorer:', err)
+    error.value = err instanceof Error ? err.message : 'Failed to initialize file explorer'
+    handleUIError(err, 'Failed to initialize file explorer', COMPONENT_ID)
+  }
+})
+
+onUnmounted(async () => {
+  try {
+    console.log('FileSystemExplorer unmounting, cleaning up...')
+    await props.syncTarget.unwatch()
+    console.log('Cleanup complete')
+  } catch (err) {
+    console.error('Error during cleanup:', err)
+  }
+})
 </script>
 
 <template>

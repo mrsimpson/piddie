@@ -12,7 +12,11 @@ const props = defineProps<{
 
 <template>
   <div class="file-system-panel">
-    <FileSystemExplorer :file-system="fileSystem" :title="title" />
+    <FileSystemExplorer 
+      :file-system="fileSystem" 
+      :sync-target="syncTarget"
+      :title="title" 
+    />
     <SyncTargetStatus :target="syncTarget" class="sync-status" />
   </div>
 </template>
