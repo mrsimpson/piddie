@@ -409,7 +409,10 @@ describe("BrowserNativeFileSystem", () => {
       it("should prevent write operations while locked", async () => {
         // Given a locked system and an existing file
         const existingContent = "existing content";
-        mockFiles.set("existing.txt", createMockFileHandle("existing.txt", existingContent));
+        mockFiles.set(
+          "existing.txt",
+          createMockFileHandle("existing.txt", existingContent)
+        );
         await fileSystem.lock(1000, "test lock");
 
         // When attempting operations

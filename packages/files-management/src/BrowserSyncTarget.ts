@@ -21,7 +21,10 @@ export class BrowserSyncTarget extends BaseSyncTarget {
     super(targetId);
   }
 
-  override async initialize(fileSystem: FileSystem, isPrimary: boolean): Promise<void> {
+  override async initialize(
+    fileSystem: FileSystem,
+    isPrimary: boolean
+  ): Promise<void> {
     if (!(fileSystem instanceof BrowserFileSystem)) {
       this.transitionTo("error", "initialize");
       throw new SyncOperationError(
@@ -86,7 +89,10 @@ export class BrowserSyncTarget extends BaseSyncTarget {
               lastModified: currentState.lastModified,
               sourceTarget: this.id
             });
-          } else if (currentState.lastModified !== knownState.lastModified || currentState.hash !== knownState.hash) {
+          } else if (
+            currentState.lastModified !== knownState.lastModified ||
+            currentState.hash !== knownState.hash
+          ) {
             // Modified file - detect changes by either timestamp or hash
             const metadata = await this.fileSystem!.getMetadata(path);
             changes.push({

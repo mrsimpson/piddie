@@ -140,7 +140,11 @@ describe("BrowserNativeSyncTarget", () => {
 
     it("should lock filesystem during sync", async () => {
       await target.notifyIncomingChanges(["/test.txt"]);
-      expect(spies.lock).toHaveBeenCalledWith(30000, "Sync in progress", "sync");
+      expect(spies.lock).toHaveBeenCalledWith(
+        30000,
+        "Sync in progress",
+        "sync"
+      );
     });
 
     it("should unlock filesystem after sync completion", async () => {
@@ -430,7 +434,7 @@ describe("BrowserNativeSyncTarget", () => {
 
       // Make the first check take longer by adding a delay
       spies.listDirectory.mockImplementation(async () => {
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise((resolve) => setTimeout(resolve, 2000));
         return [];
       });
 

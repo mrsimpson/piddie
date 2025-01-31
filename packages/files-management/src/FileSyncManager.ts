@@ -44,9 +44,13 @@ export class FileSyncManager implements SyncManager {
   private activeWatchers: Map<string, () => Promise<void>> = new Map();
   private currentState: SyncManagerStateType = "uninitialized";
 
-  validateStateTransition(from: SyncManagerStateType, to: SyncManagerStateType, via: string): boolean {
+  validateStateTransition(
+    from: SyncManagerStateType,
+    to: SyncManagerStateType,
+    via: string
+  ): boolean {
     return VALID_SYNC_MANAGER_TRANSITIONS.some(
-      t => t.from === from && t.to === to && t.via === via
+      (t) => t.from === from && t.to === to && t.via === via
     );
   }
 
@@ -55,7 +59,7 @@ export class FileSyncManager implements SyncManager {
   }
 
   transitionTo(newState: SyncManagerStateType, via: string): void {
-    const fromState = this.currentState
+    const fromState = this.currentState;
     if (!this.validateStateTransition(this.currentState, newState, via)) {
       this.currentState = "error";
       throw new SyncManagerError(
@@ -66,7 +70,10 @@ export class FileSyncManager implements SyncManager {
     this.currentState = newState;
   }
 
-  private validateTarget(target: SyncTarget, options: TargetRegistrationOptions): void {
+  private validateTarget(
+    target: SyncTarget,
+    options: TargetRegistrationOptions
+  ): void {
     // Synchronous validations first
     if (options.role !== "primary" && options.role !== "secondary") {
       throw new SyncManagerError("Invalid target role", "TARGET_NOT_FOUND");
@@ -113,8 +120,8 @@ export class FileSyncManager implements SyncManager {
         {
           priority: WATCHER_PRIORITIES.SYNC_MANAGER,
           metadata: {
-            registeredBy: 'FileSyncManager',
-            type: 'sync-watcher'
+            registeredBy: "FileSyncManager",
+            type: "sync-watcher"
           }
         }
       );
@@ -183,7 +190,9 @@ export class FileSyncManager implements SyncManager {
             });
             return stream.getReader();
           },
-          close: async () => { /* No cleanup needed */ }
+          close: async () => {
+            /* No cleanup needed */
+          }
         };
         const conflict = await target.applyFileChange(metadata, content);
         if (conflict) return conflict;
@@ -227,8 +236,12 @@ export class FileSyncManager implements SyncManager {
         // Process all changes in the batch concurrently
         const batchResults = await Promise.allSettled(
           batch.map(async (change) => {
-            const result = await this.applyChangeToTarget(change, sourceTarget, target);
-            if ('targetId' in result) {
+            const result = await this.applyChangeToTarget(
+              change,
+              sourceTarget,
+              target
+            );
+            if ("targetId" in result) {
               // This is a FileConflict
               return result;
             }
@@ -238,7 +251,7 @@ export class FileSyncManager implements SyncManager {
 
         // Check for failures in the batch
         const failedResults = batchResults.filter(
-          (r): r is PromiseRejectedResult => r.status === 'rejected'
+          (r): r is PromiseRejectedResult => r.status === "rejected"
         );
 
         if (failedResults.length > 0) {
@@ -251,8 +264,11 @@ export class FileSyncManager implements SyncManager {
 
         // Add successfully applied changes
         const succeededChanges = batchResults
-          .filter((r): r is PromiseFulfilledResult<FileChangeInfo> => r.status === 'fulfilled')
-          .map(r => r.value);
+          .filter(
+            (r): r is PromiseFulfilledResult<FileChangeInfo> =>
+              r.status === "fulfilled"
+          )
+          .map((r) => r.value);
         result.appliedChanges.push(...succeededChanges);
       }
     } catch (error) {
@@ -278,7 +294,7 @@ export class FileSyncManager implements SyncManager {
       const targetPaths = await this.getAllPaths(target);
       if (targetPaths.length > 0) {
         // Create delete changes for all existing files
-        const deleteChanges: FileChangeInfo[] = targetPaths.map(path => ({
+        const deleteChanges: FileChangeInfo[] = targetPaths.map((path) => ({
           path,
           type: "delete",
           hash: "",
@@ -288,14 +304,18 @@ export class FileSyncManager implements SyncManager {
         }));
 
         // Apply delete changes first
-        await this.applyChangesToTarget(target, this.primaryTarget, deleteChanges);
+        await this.applyChangesToTarget(
+          target,
+          this.primaryTarget,
+          deleteChanges
+        );
       }
 
       // Get metadata for all paths
       const allFiles = await this.primaryTarget.getMetadata(allPaths);
 
       // Create change info for each item - handle directories and files differently
-      const changes: FileChangeInfo[] = allFiles.map(file => ({
+      const changes: FileChangeInfo[] = allFiles.map((file) => ({
         path: file.path,
         type: "create" as const, // Always treat as create for initialization
         hash: file.type === "directory" ? "" : file.hash,
@@ -324,7 +344,10 @@ export class FileSyncManager implements SyncManager {
     }
   }
 
-  async registerTarget(target: SyncTarget, options: TargetRegistrationOptions): Promise<void> {
+  async registerTarget(
+    target: SyncTarget,
+    options: TargetRegistrationOptions
+  ): Promise<void> {
     // Run synchronous validations first
     this.validateTarget(target, options);
 
@@ -402,7 +425,9 @@ export class FileSyncManager implements SyncManager {
 
     // For backward compatibility with tests, if there's a pending sync for primary,
     // expose its changes directly on the PendingSync object
-    const primaryPending = this.pendingSync.pendingByTarget.get(this.primaryTarget?.id || '');
+    const primaryPending = this.pendingSync.pendingByTarget.get(
+      this.primaryTarget?.id || ""
+    );
     if (primaryPending) {
       return {
         ...this.pendingSync,
@@ -416,7 +441,7 @@ export class FileSyncManager implements SyncManager {
   }
 
   private updatePendingSyncs(state: SyncOperationState): void {
-    const failedResults = state.results.filter(r => !r.success);
+    const failedResults = state.results.filter((r) => !r.success);
     if (failedResults.length === 0) {
       // All succeeded, clear pending syncs
       this.pendingSync = null;
@@ -476,8 +501,12 @@ export class FileSyncManager implements SyncManager {
         // Changes from primary - propagate to all secondaries
         for (const target of this.secondaryTargets.values()) {
           // Notify target about incoming changes
-          await target.notifyIncomingChanges(changes.map(c => c.path));
-          const result = await this.applyChangesToTarget(target, sourceTarget, changes);
+          await target.notifyIncomingChanges(changes.map((c) => c.path));
+          const result = await this.applyChangesToTarget(
+            target,
+            sourceTarget,
+            changes
+          );
           if (result.success) {
             await target.syncComplete();
           }
@@ -485,8 +514,14 @@ export class FileSyncManager implements SyncManager {
         }
       } else {
         // Changes from secondary - sync to primary first
-        await this.primaryTarget.notifyIncomingChanges(changes.map(c => c.path));
-        const primaryResult = await this.applyChangesToTarget(this.primaryTarget, sourceTarget, changes);
+        await this.primaryTarget.notifyIncomingChanges(
+          changes.map((c) => c.path)
+        );
+        const primaryResult = await this.applyChangesToTarget(
+          this.primaryTarget,
+          sourceTarget,
+          changes
+        );
         if (primaryResult.success) {
           await this.primaryTarget.syncComplete();
         }
@@ -496,8 +531,12 @@ export class FileSyncManager implements SyncManager {
         if (primaryResult.success) {
           for (const target of this.secondaryTargets.values()) {
             if (target !== sourceTarget) {
-              await target.notifyIncomingChanges(changes.map(c => c.path));
-              const result = await this.applyChangesToTarget(target, this.primaryTarget, changes);
+              await target.notifyIncomingChanges(changes.map((c) => c.path));
+              const result = await this.applyChangesToTarget(
+                target,
+                this.primaryTarget,
+                changes
+              );
               if (result.success) {
                 await target.syncComplete();
               }
@@ -575,7 +614,9 @@ export class FileSyncManager implements SyncManager {
       throw new SyncManagerError("No pending changes", "NO_PENDING_SYNC");
     }
 
-    const sourceTarget = this.secondaryTargets.get(this.pendingSync.sourceTargetId);
+    const sourceTarget = this.secondaryTargets.get(
+      this.pendingSync.sourceTargetId
+    );
     if (!sourceTarget) {
       this.transitionTo("error", "error");
       throw new SyncManagerError("Source target not found", "TARGET_NOT_FOUND");
@@ -596,7 +637,11 @@ export class FileSyncManager implements SyncManager {
       }
 
       // Then apply to primary
-      await this.applyChangesToTarget(this.primaryTarget, sourceTarget, changes);
+      await this.applyChangesToTarget(
+        this.primaryTarget,
+        sourceTarget,
+        changes
+      );
 
       // On success, reinitialize other secondaries
       const reinitPromises = Array.from(this.secondaryTargets.values())
@@ -673,7 +718,7 @@ export class FileSyncManager implements SyncManager {
       const targetPaths = await this.getAllPaths(target);
       if (targetPaths.length > 0) {
         // Create delete changes for all existing files
-        const deleteChanges: FileChangeInfo[] = targetPaths.map(path => ({
+        const deleteChanges: FileChangeInfo[] = targetPaths.map((path) => ({
           path,
           type: "delete",
           hash: "",
@@ -683,7 +728,11 @@ export class FileSyncManager implements SyncManager {
         }));
 
         // Apply delete changes first
-        await this.applyChangesToTarget(target, this.primaryTarget, deleteChanges);
+        await this.applyChangesToTarget(
+          target,
+          this.primaryTarget,
+          deleteChanges
+        );
       }
 
       // Then get metadata for all paths

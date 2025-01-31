@@ -20,14 +20,15 @@ const uiSyncTarget = ref<BrowserSyncTarget | BrowserNativeSyncTarget | null>(nul
 async function initializeUISyncTarget() {
   try {
     // Create UI sync target of the same type as the main sync target
-    uiSyncTarget.value = props.system.syncTarget instanceof BrowserNativeSyncTarget
-      ? new BrowserNativeSyncTarget(`ui-${props.system.id}`)
-      : new BrowserSyncTarget(`ui-${props.system.id}`)
-    
+    uiSyncTarget.value =
+      props.system.syncTarget instanceof BrowserNativeSyncTarget
+        ? new BrowserNativeSyncTarget(`ui-${props.system.id}`)
+        : new BrowserSyncTarget(`ui-${props.system.id}`)
+
     // Initialize with the SAME file system instance as the main sync target
     await uiSyncTarget.value.initialize(props.system.fileSystem, false)
     console.log(`UI sync target initialized for ${props.system.id} with existing file system`)
-    
+
     // Set up watching only after successful initialization
     await setupWatcher()
   } catch (err) {
@@ -56,9 +57,9 @@ async function setupWatcher() {
         metadata: {
           registeredBy: 'FileSystem',
           type: 'ui-watcher',
-          systemId: props.system.id
-        }
-      }
+          systemId: props.system.id,
+        },
+      },
     )
     console.log(`Watcher set up for ${props.system.id}`)
   } catch (err) {
@@ -104,10 +105,10 @@ onBeforeUnmount(async () => {
     <header>
       <h2>{{ system.title }}</h2>
     </header>
-    <FileSystemExplorer 
-      :file-system="system.fileSystem" 
+    <FileSystemExplorer
+      :file-system="system.fileSystem"
       :sync-target="system.syncTarget"
-      :title="system.title" 
+      :title="system.title"
       class="explorer"
       ref="explorerRef"
     />
@@ -146,4 +147,4 @@ h2 {
   padding: var(--sl-spacing-small);
   border-top: 1px solid var(--sl-color-neutral-200);
 }
-</style> 
+</style>

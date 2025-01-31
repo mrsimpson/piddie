@@ -54,11 +54,13 @@ Each environment implements the SyncTarget interface:
 The synchronization system consists of three main components that work together hierarchically:
 
 1. **FileSyncManager** orchestrates the overall sync process
+
    - Coordinates between targets
    - Manages conflict resolution
    - Tracks global sync state
 
 2. **SyncTarget** manages individual target synchronization
+
    - Handles change detection
    - Manages sync operations
    - Controls target-specific state
@@ -84,60 +86,63 @@ graph TD
 Each component maintains its own state machine, coordinating through well-defined interfaces:
 
 #### 1. FileSystem States
+
 ```mermaid
 stateDiagram-v2
     [*] --> Uninitialized
     Uninitialized --> Ready: initialize()
     Ready --> Locked: lock()
-    
+
     state Locked {
         [*] --> ExternalLock
         [*] --> SyncLock
         ExternalLock: No writes allowed
         SyncLock: Only sync operations
     }
-    
+
     Locked --> Ready: unlock()
     Ready --> Error: on error
     Error --> Ready: recovery
 ```
 
 #### 2. SyncTarget States
+
 ```mermaid
 stateDiagram-v2
     [*] --> Uninitialized
     Uninitialized --> Idle: initialize()
     Idle --> Collecting: notifyIncomingChanges()
-    
+
     state Collecting {
         [*] --> Locked: acquire lock
         Locked --> ReceivingChanges: lock acquired
     }
-    
+
     Collecting --> Syncing: all changes received
-    
+
     state Syncing {
         [*] --> Applying
         Applying --> Verifying
     }
-    
+
     Syncing --> Idle: syncComplete()
     Syncing --> Error: failure
     Error --> Idle: recovery
 ```
 
 #### 3. FileSyncManager States
+
 ```mermaid
 stateDiagram-v2
     [*] --> Uninitialized
     Uninitialized --> Ready: initialize()
     Ready --> Syncing: changes detected
-    
+
     state Syncing {
         [*] --> PrimaryToSecondary
         [*] --> SecondaryToPrimary
     }
-    
+
     Syncing --> Conflict: conflict detected
     Syncing --> Ready: success
     Conflict --> Ready: resolution
@@ -161,14 +166,14 @@ sequenceDiagram
     ST->>FS: lock(mode='sync')
     Note over FS: State: Ready → Locked:SyncLock
     ST-->>FSM: Ready for changes
-    
+
     FSM->>ST: applyChanges(changes)
     Note over ST: State: Collecting changes...
-    
+
     Note over ST: All changes received
     Note over ST: State: Collecting → Syncing
     Note over ST: Apply changes...
-    
+
     FSM->>ST: syncComplete()
     ST->>FS: unlock()
     Note over FS: State: Locked → Ready

@@ -1,11 +1,11 @@
 export type {
-    FileSystem,
-    SyncTarget,
-    FileManagementService,
-    FileMetadata,
-    FileChange,
-    FileConflict,
-    TargetState
+  FileSystem,
+  SyncTarget,
+  FileManagementService,
+  FileMetadata,
+  FileChange,
+  FileConflict,
+  TargetState
 } from "@piddie/shared-types";
 
 export { FileSyncManager } from "./FileSyncManager";

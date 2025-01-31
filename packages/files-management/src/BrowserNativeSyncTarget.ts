@@ -1,7 +1,4 @@
-import type {
-  FileSystem,
-  FileChangeInfo
-} from "@piddie/shared-types";
+import type { FileSystem, FileChangeInfo } from "@piddie/shared-types";
 import { BrowserNativeFileSystem } from "./BrowserNativeFileSystem";
 import { SyncOperationError } from "@piddie/shared-types";
 import { BaseSyncTarget } from "./BaseSyncTarget";
@@ -24,7 +21,10 @@ export class BrowserNativeSyncTarget extends BaseSyncTarget {
     super(targetId);
   }
 
-  override async initialize(fileSystem: FileSystem, isPrimary: boolean): Promise<void> {
+  override async initialize(
+    fileSystem: FileSystem,
+    isPrimary: boolean
+  ): Promise<void> {
     if (!(fileSystem instanceof BrowserNativeFileSystem)) {
       this.transitionTo("error", "initialize");
       throw new SyncOperationError(
@@ -44,7 +44,10 @@ export class BrowserNativeSyncTarget extends BaseSyncTarget {
   }
 
   private async startWatching(): Promise<void> {
-    if (!this.fileSystem || !(this.fileSystem instanceof BrowserNativeFileSystem)) {
+    if (
+      !this.fileSystem ||
+      !(this.fileSystem instanceof BrowserNativeFileSystem)
+    ) {
       throw new SyncOperationError(
         "FileSystem not initialized",
         "INITIALIZATION_FAILED"
@@ -89,7 +92,10 @@ export class BrowserNativeSyncTarget extends BaseSyncTarget {
               lastModified: currentState.lastModified,
               sourceTarget: this.id
             });
-          } else if (currentState.lastModified !== knownState.lastModified || currentState.hash !== knownState.hash) {
+          } else if (
+            currentState.lastModified !== knownState.lastModified ||
+            currentState.hash !== knownState.hash
+          ) {
             // Modified file - detect changes by either timestamp or hash
             const metadata = await this.fileSystem!.getMetadata(path);
             changes.push({

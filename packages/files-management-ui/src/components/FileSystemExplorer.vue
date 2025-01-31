@@ -17,7 +17,7 @@ const currentPath = ref('/')
 defineExpose({
   handleFileChanges,
   loadDirectory,
-  currentPath
+  currentPath,
 })
 
 const items = ref<FileViewModel[]>([])
@@ -104,7 +104,7 @@ async function createNewFile() {
 
   try {
     error.value = null
-    if(await props.fileSystem.exists(newItemName.value)) {
+    if (await props.fileSystem.exists(newItemName.value)) {
       handleUIError(`File already exists: ${newItemName.value}`, COMPONENT_ID)
     }
     const filePath = `${currentPath.value}/${newItemName.value}`.replace(/\/+/g, '/')
@@ -162,8 +162,10 @@ async function handleFileChanges(changes: FileChangeInfo[]) {
   const currentDir = currentPath.value
 
   // Check if the current directory itself was deleted
-  const currentDirDeleted = changes.some(change => 
-    change.type === 'delete' && (change.path === currentDir || currentDir.startsWith(change.path + '/'))
+  const currentDirDeleted = changes.some(
+    (change) =>
+      change.type === 'delete' &&
+      (change.path === currentDir || currentDir.startsWith(change.path + '/')),
   )
 
   if (currentDirDeleted) {
@@ -174,7 +176,7 @@ async function handleFileChanges(changes: FileChangeInfo[]) {
   }
 
   // Check if any of the changes affect the current directory
-  const hasChangesInCurrentDir = changes.some(change => {
+  const hasChangesInCurrentDir = changes.some((change) => {
     const parentDir = change.path.split('/').slice(0, -1).join('/') || '/'
     return parentDir === currentDir
   })
@@ -226,8 +228,8 @@ onUnmounted(async () => {
           <sl-icon name="folder-plus"></sl-icon>
           New Folder
         </sl-button>
-        <sl-button 
-          size="small" 
+        <sl-button
+          size="small"
           variant="danger"
           :disabled="!selectedFile"
           @click="showDeleteConfirmDialog = true"

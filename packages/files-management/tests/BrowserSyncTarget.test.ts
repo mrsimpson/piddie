@@ -27,7 +27,7 @@ const mockPromises = {
 vi.mock("@isomorphic-git/lightning-fs", () => {
   class MockFS {
     promises = mockPromises;
-    constructor() { }
+    constructor() {}
   }
   return { default: MockFS };
 });
@@ -58,7 +58,7 @@ describe("BrowserSyncTarget", () => {
       if (filePath === TEST_ROOT) {
         return Promise.resolve({
           isDirectory: () => true,
-          isFile: () => false,
+          isFile: () => false
         });
       }
       return Promise.resolve({
@@ -333,7 +333,7 @@ describe("BrowserSyncTarget", () => {
         if (filePath === TEST_ROOT) {
           return Promise.resolve({
             isDirectory: () => true,
-            isFile: () => false,
+            isFile: () => false
           });
         }
         return Promise.resolve({
@@ -388,7 +388,7 @@ describe("BrowserSyncTarget", () => {
 
       // Make the first check take longer by adding a delay
       mockPromises.readdir.mockImplementation(async () => {
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise((resolve) => setTimeout(resolve, 2000));
         return ["test.txt"];
       });
 

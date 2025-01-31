@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import type { FileSystem, FileChangeInfo } from '@piddie/shared-types'
-import { BrowserSyncTarget, BrowserNativeSyncTarget, BrowserNativeFileSystem } from '@piddie/files-management'
+import {
+  BrowserSyncTarget,
+  BrowserNativeSyncTarget,
+  BrowserNativeFileSystem,
+} from '@piddie/files-management'
 import { WATCHER_PRIORITIES } from '@piddie/shared-types'
 import { handleUIError } from '../utils/error-handling'
 
@@ -70,12 +74,12 @@ async function initializeFileWatcher() {
 
     // Initialize with the same filesystem
     await uiSyncTarget.value.initialize(props.fileSystem, false)
-    
+
     // Watch for changes on the same filesystem
     await uiSyncTarget.value.watch(
       async (changes: FileChangeInfo[]) => {
         // Check if our file was changed
-        const fileChanged = changes.some(change => change.path === props.filePath)
+        const fileChanged = changes.some((change) => change.path === props.filePath)
         if (fileChanged) {
           console.log(`File ${props.filePath} changed externally`)
           // Get the latest content from the filesystem
@@ -97,9 +101,9 @@ async function initializeFileWatcher() {
         metadata: {
           registeredBy: COMPONENT_ID,
           type: 'editor-watcher',
-          filePath: props.filePath
-        }
-      }
+          filePath: props.filePath,
+        },
+      },
     )
   } catch (err) {
     console.error('Failed to initialize file watcher:', err)
@@ -120,12 +124,16 @@ async function cleanupFileWatcher() {
 }
 
 // Load content when filePath changes
-watch(() => props.filePath, async () => {
-  await loadContent()
-  // Reinitialize watcher for new file
-  await cleanupFileWatcher()
-  await initializeFileWatcher()
-}, { immediate: true })
+watch(
+  () => props.filePath,
+  async () => {
+    await loadContent()
+    // Reinitialize watcher for new file
+    await cleanupFileWatcher()
+    await initializeFileWatcher()
+  },
+  { immediate: true },
+)
 
 // Component lifecycle
 onMounted(initializeFileWatcher)
@@ -141,12 +149,7 @@ async function handleReload() {
     <header class="editor-header">
       <h3>{{ filePath }}</h3>
       <div class="toolbar">
-        <sl-button 
-          v-if="hasExternalChanges" 
-          size="small" 
-          variant="warning"
-          @click="handleReload"
-        >
+        <sl-button v-if="hasExternalChanges" size="small" variant="warning" @click="handleReload">
           <sl-icon name="arrow-clockwise"></sl-icon>
           Reload
         </sl-button>
@@ -180,7 +183,8 @@ async function handleReload() {
       <div v-if="hasExternalChanges" class="external-changes-warning">
         <sl-alert variant="warning" open>
           <sl-icon slot="icon" name="exclamation-triangle"></sl-icon>
-          This file has been modified externally. Click 'Reload' to load the latest version (your changes will be lost).
+          This file has been modified externally. Click 'Reload' to load the latest version (your
+          changes will be lost).
         </sl-alert>
       </div>
     </div>

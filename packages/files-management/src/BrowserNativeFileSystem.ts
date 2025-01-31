@@ -7,27 +7,30 @@ import { FileSystemError } from "@piddie/shared-types";
 const browserPath = {
   normalize(path: string): string {
     // Remove leading and trailing slashes, collapse multiple slashes
-    return path.replace(/^\/+|\/+$/g, '').replace(/\/+/g, '/');
+    return path.replace(/^\/+|\/+$/g, "").replace(/\/+/g, "/");
   },
 
   dirname(path: string): string {
     const normalized = browserPath.normalize(path);
-    const lastSlash = normalized.lastIndexOf('/');
-    if (lastSlash === -1) return '/';
-    return normalized.slice(0, lastSlash) || '/';
+    const lastSlash = normalized.lastIndexOf("/");
+    if (lastSlash === -1) return "/";
+    return normalized.slice(0, lastSlash) || "/";
   },
 
   basename(path: string): string {
     const normalized = browserPath.normalize(path);
-    const lastSlash = normalized.lastIndexOf('/');
+    const lastSlash = normalized.lastIndexOf("/");
     return lastSlash === -1 ? normalized : normalized.slice(lastSlash + 1);
   },
 
   join(...parts: string[]): string {
-    return '/' + parts
-      .map(part => browserPath.normalize(part))
-      .filter(Boolean)
-      .join('/');
+    return (
+      "/" +
+      parts
+        .map((part) => browserPath.normalize(part))
+        .filter(Boolean)
+        .join("/")
+    );
   }
 };
 
@@ -125,12 +128,12 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
         } else {
           // For directories, use a fixed timestamp based on the path
           // This ensures consistent timestamps for the same directory
-          const hashCode = filePath.split('').reduce((a, b) => {
-            a = ((a << 5) - a) + b.charCodeAt(0);
+          const hashCode = filePath.split("").reduce((a, b) => {
+            a = (a << 5) - a + b.charCodeAt(0);
             return a & a;
           }, 0);
           // Use a fixed base timestamp (e.g., start of 2024) plus the hash
-          const baseTimestamp = new Date('2024-01-01').getTime();
+          const baseTimestamp = new Date("2024-01-01").getTime();
           return {
             isDirectory: () => true,
             isFile: () => false,
@@ -150,9 +153,14 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
         const file = await (handle as FileSystemFileHandle).getFile();
         return await file.text();
       },
-      writeFile: async (filePath: string, content: string, options?: { encoding?: string; isSyncOperation?: boolean }) => {
+      writeFile: async (
+        filePath: string,
+        content: string,
+        options?: { encoding?: string; isSyncOperation?: boolean }
+      ) => {
         // Check if we're in a sync operation by checking the lock mode
-        const isInSyncMode = this.lockState.lockMode === "sync" || options?.isSyncOperation;
+        const isInSyncMode =
+          this.lockState.lockMode === "sync" || options?.isSyncOperation;
         if (this.lockState.isLocked && !isInSyncMode) {
           throw new FileSystemError("File system is locked", "LOCKED");
         }
@@ -267,7 +275,7 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
     }
 
     // Split path into components and filter out empty segments
-    const components = normalizedPath.split('/').filter(Boolean);
+    const components = normalizedPath.split("/").filter(Boolean);
     let currentHandle: FileSystemDirectoryHandle = this.rootHandle;
 
     // Traverse path
@@ -330,7 +338,7 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
    * Normalize a path according to the browser file system rules
    */
   protected override normalizePath(path: string): string {
-    return path.replace(/^\/+|\/+$/g, '').replace(/\/+/g, '/');
+    return path.replace(/^\/+|\/+$/g, "").replace(/\/+/g, "/");
   }
 
   /**
@@ -338,9 +346,9 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
    */
   protected override getDirname(path: string): string {
     const normalized = this.normalizePath(path);
-    const lastSlash = normalized.lastIndexOf('/');
-    if (lastSlash === -1) return '/';
-    return normalized.slice(0, lastSlash) || '/';
+    const lastSlash = normalized.lastIndexOf("/");
+    if (lastSlash === -1) return "/";
+    return normalized.slice(0, lastSlash) || "/";
   }
 
   /**
@@ -348,7 +356,7 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
    */
   protected override getBasename(path: string): string {
     const normalized = this.normalizePath(path);
-    const lastSlash = normalized.lastIndexOf('/');
+    const lastSlash = normalized.lastIndexOf("/");
     return lastSlash === -1 ? normalized : normalized.slice(lastSlash + 1);
   }
 
@@ -356,9 +364,12 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
    * Join path segments according to browser file system rules
    */
   protected override joinPaths(...paths: string[]): string {
-    return '/' + paths
-      .map(part => this.normalizePath(part))
-      .filter(Boolean)
-      .join('/');
+    return (
+      "/" +
+      paths
+        .map((part) => this.normalizePath(part))
+        .filter(Boolean)
+        .join("/")
+    );
   }
 }

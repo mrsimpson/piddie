@@ -7,9 +7,7 @@ import {
   LockMode
 } from "@piddie/shared-types";
 import path from "path";
-import type {
-  FileSystemStateType
-} from "@piddie/shared-types";
+import type { FileSystemStateType } from "@piddie/shared-types";
 import { VALID_FILE_SYSTEM_STATE_TRANSITIONS } from "@piddie/shared-types";
 
 /**
@@ -31,7 +29,11 @@ export interface MinimalFsPromises {
     size: number;
   }>;
   readFile(path: string, encoding: string): Promise<string>;
-  writeFile(path: string, data: string, options?: { encoding?: string; isSyncOperation?: boolean }): Promise<void>;
+  writeFile(
+    path: string,
+    data: string,
+    options?: { encoding?: string; isSyncOperation?: boolean }
+  ): Promise<void>;
   rm?(path: string, options?: { recursive?: boolean }): Promise<void>;
   unlink(path: string): Promise<void>;
   access?(path: string): Promise<void>;
@@ -51,7 +53,6 @@ export interface FsPromisesAdapterOptions {
   fs: MinimalFsPromises;
 }
 
-
 /**
  * Adapts any fs.promises-like implementation to our FileSystem interface.
  * This serves as the base for both node's fs.promises and browser-based implementations like LightningFS.
@@ -67,9 +68,13 @@ export class FsPromisesAdapter implements FileSystem {
     this.options = options;
   }
 
-  validateStateTransition(from: FileSystemStateType, to: FileSystemStateType, via: string): boolean {
+  validateStateTransition(
+    from: FileSystemStateType,
+    to: FileSystemStateType,
+    via: string
+  ): boolean {
     return VALID_FILE_SYSTEM_STATE_TRANSITIONS.some(
-      t => t.from === from && t.to === to && t.via === via
+      (t) => t.from === from && t.to === to && t.via === via
     );
   }
 
@@ -78,7 +83,7 @@ export class FsPromisesAdapter implements FileSystem {
   }
 
   transitionTo(newState: FileSystemStateType, via: string): void {
-    const fromState = this.currentState
+    const fromState = this.currentState;
 
     // If we're already in error state, don't try to transition again
     if (this.currentState === "error" && via !== "recovery") {
@@ -153,7 +158,10 @@ export class FsPromisesAdapter implements FileSystem {
   async initialize(): Promise<void> {
     // If already in error state, don't try to initialize
     if (this.currentState === "error") {
-      throw new FileSystemError("File system is in error state", "INVALID_OPERATION");
+      throw new FileSystemError(
+        "File system is in error state",
+        "INVALID_OPERATION"
+      );
     }
 
     try {
@@ -184,19 +192,25 @@ export class FsPromisesAdapter implements FileSystem {
 
   private ensureInitialized() {
     if (this.currentState === "error") {
-      throw new FileSystemError("File system is in error state", "INVALID_OPERATION");
+      throw new FileSystemError(
+        "File system is in error state",
+        "INVALID_OPERATION"
+      );
     }
   }
 
-  private checkLock(operation: 'read' | 'write' = 'write', isSyncOperation: boolean = false) {
+  private checkLock(
+    operation: "read" | "write" = "write",
+    isSyncOperation: boolean = false
+  ) {
     if (this.lockState.isLocked) {
       // Always allow read operations
-      if (operation === 'read') {
+      if (operation === "read") {
         return;
       }
 
       // Allow write operations during sync mode only for sync operations
-      if (this.lockState.lockMode === 'sync' && isSyncOperation) {
+      if (this.lockState.lockMode === "sync" && isSyncOperation) {
         return;
       }
 
@@ -209,7 +223,7 @@ export class FsPromisesAdapter implements FileSystem {
 
   async readFile(filePath: string): Promise<string> {
     this.ensureInitialized();
-    this.checkLock('read');
+    this.checkLock("read");
 
     const absolutePath = this.getAbsolutePath(filePath);
 
@@ -229,23 +243,30 @@ export class FsPromisesAdapter implements FileSystem {
     }
   }
 
-  async writeFile(path: string, content: string, isSyncOperation = false): Promise<void> {
+  async writeFile(
+    path: string,
+    content: string,
+    isSyncOperation = false
+  ): Promise<void> {
     const absolutePath = this.getAbsolutePath(path);
 
     try {
       // Check if we're in a sync operation by checking the lock mode
-      const isInSyncMode = this.lockState.lockMode === "sync" || isSyncOperation;
+      const isInSyncMode =
+        this.lockState.lockMode === "sync" || isSyncOperation;
       if (this.lockState.isLocked && !isInSyncMode) {
         throw new FileSystemError("File system is locked", "LOCKED");
       }
 
-      await this.options.fs.writeFile(absolutePath, content, { isSyncOperation });
+      await this.options.fs.writeFile(absolutePath, content, {
+        isSyncOperation
+      });
     } catch (error: unknown) {
       if (error instanceof FileSystemError) {
         throw error;
       }
       throw new FileSystemError(
-        `Failed to write file ${path}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        `Failed to write file ${path}: ${error instanceof Error ? error.message : "Unknown error"}`,
         "INVALID_OPERATION"
       );
     }
@@ -253,7 +274,7 @@ export class FsPromisesAdapter implements FileSystem {
 
   async exists(itemPath: string): Promise<boolean> {
     this.ensureInitialized();
-    this.checkLock('read');
+    this.checkLock("read");
 
     try {
       const absolutePath = this.getAbsolutePath(itemPath);
@@ -268,9 +289,12 @@ export class FsPromisesAdapter implements FileSystem {
     }
   }
 
-  async deleteItem(itemPath: string, isSyncOperation: boolean = false): Promise<void> {
+  async deleteItem(
+    itemPath: string,
+    isSyncOperation: boolean = false
+  ): Promise<void> {
     this.ensureInitialized();
-    this.checkLock('write', isSyncOperation);
+    this.checkLock("write", isSyncOperation);
 
     const absolutePath = this.getAbsolutePath(itemPath);
 
@@ -311,16 +335,19 @@ export class FsPromisesAdapter implements FileSystem {
     }
   }
 
-  async createDirectory(path: string, isSyncOperation: boolean = false): Promise<void> {
+  async createDirectory(
+    path: string,
+    isSyncOperation: boolean = false
+  ): Promise<void> {
     this.ensureInitialized();
-    this.checkLock('write', isSyncOperation);
+    this.checkLock("write", isSyncOperation);
 
     const absolutePath = this.getAbsolutePath(path);
 
     try {
       await this.options.fs.mkdir(absolutePath, { recursive: true });
     } catch (error: unknown) {
-      if (error instanceof Error && error.message.includes('EEXIST')) {
+      if (error instanceof Error && error.message.includes("EEXIST")) {
         // Directory already exists - that's fine
         return;
       }
@@ -331,7 +358,7 @@ export class FsPromisesAdapter implements FileSystem {
 
   async listDirectory(dirPath: string): Promise<FileSystemItem[]> {
     this.ensureInitialized();
-    this.checkLock('read');
+    this.checkLock("read");
 
     const absolutePath = this.getAbsolutePath(dirPath);
 
@@ -386,7 +413,7 @@ export class FsPromisesAdapter implements FileSystem {
 
   async getMetadata(itemPath: string): Promise<FileMetadata> {
     this.ensureInitialized();
-    this.checkLock('read');
+    this.checkLock("read");
 
     const absolutePath = this.getAbsolutePath(itemPath);
 
@@ -397,8 +424,8 @@ export class FsPromisesAdapter implements FileSystem {
         return {
           path: itemPath,
           type: "directory",
-          hash: "",  // Directories don't have a hash
-          size: 0,   // Directories don't have a size
+          hash: "", // Directories don't have a hash
+          size: 0, // Directories don't have a size
           lastModified: stats.mtimeMs
         };
       }
@@ -457,7 +484,11 @@ export class FsPromisesAdapter implements FileSystem {
     return hash.toString(16);
   }
 
-  async lock(timeoutMs: number, reason: string, mode: LockMode = "external"): Promise<void> {
+  async lock(
+    timeoutMs: number,
+    reason: string,
+    mode: LockMode = "external"
+  ): Promise<void> {
     // If already locked, just update the timeout and reason if needed
     if (this.lockState.isLocked) {
       // Only update if the lock mode matches

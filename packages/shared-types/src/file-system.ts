@@ -111,21 +111,20 @@ export interface LockState {
 export interface FileSystemState {
   lockState: LockState;
   pendingOperations: number;
-  lastOperation?: {
-    type: string;
-    path: string;
-    timestamp: number;
-  } | undefined;
+  lastOperation?:
+    | {
+        type: string;
+        path: string;
+        timestamp: number;
+      }
+    | undefined;
   currentState: FileSystemStateType;
 }
 
 /**
  * Possible states of the file system
  */
-export type FileSystemStateType =
-  | "uninitialized"
-  | "ready"
-  | "error";
+export type FileSystemStateType = "uninitialized" | "ready" | "error";
 
 /**
  * Valid state transitions for the file system
@@ -135,11 +134,12 @@ type FileSystemStateTransition =
   | { from: "ready"; to: "error"; via: "error" }
   | { from: "error"; to: "ready"; via: "recovery" };
 
-export const VALID_FILE_SYSTEM_STATE_TRANSITIONS: FileSystemStateTransition[] = [
-  { from: "uninitialized", to: "ready", via: "initialize" },
-  { from: "ready", to: "error", via: "error" },
-  { from: "error", to: "ready", via: "recovery" }
-];
+export const VALID_FILE_SYSTEM_STATE_TRANSITIONS: FileSystemStateTransition[] =
+  [
+    { from: "uninitialized", to: "ready", via: "initialize" },
+    { from: "ready", to: "error", via: "error" },
+    { from: "error", to: "ready", via: "recovery" }
+  ];
 
 /**
  * Interface for file system operations
@@ -163,7 +163,11 @@ export interface FileSystem {
   /**
    * Write file content
    */
-  writeFile(path: string, content: string, isSyncOperation?: boolean): Promise<void>;
+  writeFile(
+    path: string,
+    content: string,
+    isSyncOperation?: boolean
+  ): Promise<void>;
 
   /**
    * Create directory
@@ -207,7 +211,11 @@ export interface FileSystem {
    * Validate if a state transition is allowed
    * @returns boolean indicating if the transition is valid
    */
-  validateStateTransition(from: FileSystemStateType, to: FileSystemStateType, via: string): boolean;
+  validateStateTransition(
+    from: FileSystemStateType,
+    to: FileSystemStateType,
+    via: string
+  ): boolean;
 
   /**
    * Get current state type

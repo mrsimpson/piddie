@@ -184,7 +184,11 @@ export interface SyncTarget {
    * Validate if a state transition is allowed
    * @returns boolean indicating if the transition is valid
    */
-  validateStateTransition(from: TargetStateType, to: TargetStateType, via: string): boolean;
+  validateStateTransition(
+    from: TargetStateType,
+    to: TargetStateType,
+    via: string
+  ): boolean;
 
   /**
    * Get current state type

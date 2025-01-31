@@ -10,7 +10,10 @@ import type {
   FileSystemStateType,
   LockMode
 } from "@piddie/shared-types";
-import { FileSystemError, VALID_FILE_SYSTEM_STATE_TRANSITIONS } from "@piddie/shared-types";
+import {
+  FileSystemError,
+  VALID_FILE_SYSTEM_STATE_TRANSITIONS
+} from "@piddie/shared-types";
 
 /**
  * Browser-compatible path utilities
@@ -18,27 +21,30 @@ import { FileSystemError, VALID_FILE_SYSTEM_STATE_TRANSITIONS } from "@piddie/sh
 const browserPath = {
   normalize(path: string): string {
     // Remove leading and trailing slashes, collapse multiple slashes
-    return path.replace(/^\/+|\/+$/g, '').replace(/\/+/g, '/');
+    return path.replace(/^\/+|\/+$/g, "").replace(/\/+/g, "/");
   },
 
   dirname(path: string): string {
     const normalized = browserPath.normalize(path);
-    const lastSlash = normalized.lastIndexOf('/');
-    if (lastSlash === -1) return '/';
-    return normalized.slice(0, lastSlash) || '/';
+    const lastSlash = normalized.lastIndexOf("/");
+    if (lastSlash === -1) return "/";
+    return normalized.slice(0, lastSlash) || "/";
   },
 
   basename(path: string): string {
     const normalized = browserPath.normalize(path);
-    const lastSlash = normalized.lastIndexOf('/');
+    const lastSlash = normalized.lastIndexOf("/");
     return lastSlash === -1 ? normalized : normalized.slice(lastSlash + 1);
   },
 
   join(...parts: string[]): string {
-    return '/' + parts
-      .map(part => browserPath.normalize(part))
-      .filter(Boolean)
-      .join('/');
+    return (
+      "/" +
+      parts
+        .map((part) => browserPath.normalize(part))
+        .filter(Boolean)
+        .join("/")
+    );
   }
 };
 
@@ -48,9 +54,11 @@ const browserPath = {
  */
 export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
   protected override currentState: FileSystemStateType = "uninitialized";
-  protected override lockState: FileSystemState["lockState"] = { isLocked: false };
+  protected override lockState: FileSystemState["lockState"] = {
+    isLocked: false
+  };
   protected override pendingOperations = 0;
-  protected declare lastOperation?: FileSystemState["lastOperation"];
+  declare protected lastOperation?: FileSystemState["lastOperation"];
 
   /**
    * Creates a new instance of BrowserFileSystem
@@ -80,12 +88,12 @@ export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
         if (isDir) {
           // For directories, use a fixed timestamp based on the path
           // This ensures consistent timestamps for the same directory
-          const hashCode = path.split('').reduce((a, b) => {
-            a = ((a << 5) - a) + b.charCodeAt(0);
+          const hashCode = path.split("").reduce((a, b) => {
+            a = (a << 5) - a + b.charCodeAt(0);
             return a & a;
           }, 0);
           // Use a fixed base timestamp (e.g., start of 2024) plus the hash
-          const baseTimestamp = new Date('2024-01-01').getTime();
+          const baseTimestamp = new Date("2024-01-01").getTime();
           return {
             isDirectory: () => true,
             isFile: () => false,
@@ -102,9 +110,14 @@ export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
       },
       readFile: (path: string) =>
         fs.promises.readFile(path, { encoding: "utf8" }) as Promise<string>,
-      writeFile: async (path: string, data: string, options?: { encoding?: string; isSyncOperation?: boolean }) => {
+      writeFile: async (
+        path: string,
+        data: string,
+        options?: { encoding?: string; isSyncOperation?: boolean }
+      ) => {
         // Check if we're in a sync operation by checking the lock mode
-        const isInSyncMode = this.lockState.lockMode === "sync" || options?.isSyncOperation;
+        const isInSyncMode =
+          this.lockState.lockMode === "sync" || options?.isSyncOperation;
         if (this.lockState.isLocked && !isInSyncMode) {
           throw new FileSystemError("File system is locked", "LOCKED");
         }
@@ -167,20 +180,27 @@ export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
     });
   }
 
-  override validateStateTransition(from: FileSystemStateType, to: FileSystemStateType, via: string): boolean {
+  override validateStateTransition(
+    from: FileSystemStateType,
+    to: FileSystemStateType,
+    via: string
+  ): boolean {
     // If we're already in error state, only allow transitions from error to ready via initialize
     if (from === "error") {
       return to === "ready" && via === "initialize";
     }
     return VALID_FILE_SYSTEM_STATE_TRANSITIONS.some(
-      t => t.from === from && t.to === to && t.via === via
+      (t) => t.from === from && t.to === to && t.via === via
     );
   }
 
   override async initialize(): Promise<void> {
     // If already in error state, don't try to initialize
     if (this.currentState === "error") {
-      throw new FileSystemError("File system is in error state", "INVALID_OPERATION");
+      throw new FileSystemError(
+        "File system is in error state",
+        "INVALID_OPERATION"
+      );
     }
 
     // If already initialized, don't initialize again
@@ -195,10 +215,15 @@ export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
       } catch {
         // If access fails, try to create the directory
         try {
-          await this.options.fs.mkdir(this.options.rootDir, { recursive: true });
+          await this.options.fs.mkdir(this.options.rootDir, {
+            recursive: true
+          });
         } catch (mkdirError) {
           // If mkdir fails with EEXIST, that's fine - the directory exists
-          if (mkdirError instanceof Error && !mkdirError.message.includes('EEXIST')) {
+          if (
+            mkdirError instanceof Error &&
+            !mkdirError.message.includes("EEXIST")
+          ) {
             throw mkdirError;
           }
         }
@@ -218,7 +243,11 @@ export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
     }
   }
 
-  override async lock(timeoutMs: number, reason: string, mode: LockMode = "external"): Promise<void> {
+  override async lock(
+    timeoutMs: number,
+    reason: string,
+    mode: LockMode = "external"
+  ): Promise<void> {
     if (this.lockState.isLocked) {
       throw new FileSystemError("File system already locked", "LOCKED");
     }
@@ -272,7 +301,7 @@ export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
    * Normalize a path according to the browser file system rules
    */
   protected override normalizePath(path: string): string {
-    return path.replace(/^\/+|\/+$/g, '').replace(/\/+/g, '/');
+    return path.replace(/^\/+|\/+$/g, "").replace(/\/+/g, "/");
   }
 
   /**
@@ -280,9 +309,9 @@ export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
    */
   protected override getDirname(path: string): string {
     const normalized = this.normalizePath(path);
-    const lastSlash = normalized.lastIndexOf('/');
-    if (lastSlash === -1) return '/';
-    return normalized.slice(0, lastSlash) || '/';
+    const lastSlash = normalized.lastIndexOf("/");
+    if (lastSlash === -1) return "/";
+    return normalized.slice(0, lastSlash) || "/";
   }
 
   /**
@@ -290,7 +319,7 @@ export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
    */
   protected override getBasename(path: string): string {
     const normalized = this.normalizePath(path);
-    const lastSlash = normalized.lastIndexOf('/');
+    const lastSlash = normalized.lastIndexOf("/");
     return lastSlash === -1 ? normalized : normalized.slice(lastSlash + 1);
   }
 
@@ -298,9 +327,12 @@ export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
    * Join path segments according to browser file system rules
    */
   protected override joinPaths(...paths: string[]): string {
-    return '/' + paths
-      .map(part => this.normalizePath(part))
-      .filter(Boolean)
-      .join('/');
+    return (
+      "/" +
+      paths
+        .map((part) => this.normalizePath(part))
+        .filter(Boolean)
+        .join("/")
+    );
   }
 }

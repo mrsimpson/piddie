@@ -234,8 +234,8 @@ describe("FileSyncManager", () => {
 
       // When trying to register
       // Then it should throw
-      await expect(
-        () => manager.registerTarget(primaryTarget, { role: "primary" })
+      await expect(() =>
+        manager.registerTarget(primaryTarget, { role: "primary" })
       ).rejects.toThrow(
         new SyncManagerError(
           `Target ${primaryTarget.id} is not initialized`,
@@ -253,8 +253,8 @@ describe("FileSyncManager", () => {
       await manager.registerTarget(primaryTarget, { role: "primary" });
 
       // Then it should throw
-      await expect(
-        () => manager.registerTarget(secondaryTarget1, { role: "secondary" })
+      await expect(() =>
+        manager.registerTarget(secondaryTarget1, { role: "secondary" })
       ).rejects.toThrow(
         new SyncManagerError(
           `Target ${secondaryTarget1.id} is not initialized`,
@@ -271,8 +271,8 @@ describe("FileSyncManager", () => {
 
       // When trying to register another primary
       // Then it should throw
-      await expect(
-        () => manager.registerTarget(secondaryTarget1, { role: "primary" })
+      await expect(() =>
+        manager.registerTarget(secondaryTarget1, { role: "primary" })
       ).rejects.toThrow(
         new SyncManagerError(
           "Primary target already exists",
@@ -291,8 +291,8 @@ describe("FileSyncManager", () => {
 
       // When trying to register another target with same ID
       // Then it should throw
-      await expect(
-        () => manager.registerTarget(target2, { role: "secondary" })
+      await expect(() =>
+        manager.registerTarget(target2, { role: "secondary" })
       ).rejects.toThrow(
         new SyncManagerError(
           `Target with ID ${target2.id} already exists`,
@@ -323,18 +323,46 @@ describe("FileSyncManager", () => {
       expect(manager.getCurrentState()).toBe("uninitialized");
 
       // And valid transitions should be validated correctly
-      expect(manager.validateStateTransition("uninitialized", "ready", "initialize")).toBe(true);
-      expect(manager.validateStateTransition("ready", "syncing", "changesDetected")).toBe(true);
-      expect(manager.validateStateTransition("syncing", "ready", "syncComplete")).toBe(true);
-      expect(manager.validateStateTransition("syncing", "conflict", "conflictDetected")).toBe(true);
-      expect(manager.validateStateTransition("conflict", "ready", "conflictResolved")).toBe(true);
-      expect(manager.validateStateTransition("ready", "error", "error")).toBe(true);
-      expect(manager.validateStateTransition("error", "ready", "recovery")).toBe(true);
+      expect(
+        manager.validateStateTransition("uninitialized", "ready", "initialize")
+      ).toBe(true);
+      expect(
+        manager.validateStateTransition("ready", "syncing", "changesDetected")
+      ).toBe(true);
+      expect(
+        manager.validateStateTransition("syncing", "ready", "syncComplete")
+      ).toBe(true);
+      expect(
+        manager.validateStateTransition(
+          "syncing",
+          "conflict",
+          "conflictDetected"
+        )
+      ).toBe(true);
+      expect(
+        manager.validateStateTransition("conflict", "ready", "conflictResolved")
+      ).toBe(true);
+      expect(manager.validateStateTransition("ready", "error", "error")).toBe(
+        true
+      );
+      expect(
+        manager.validateStateTransition("error", "ready", "recovery")
+      ).toBe(true);
 
       // And invalid transitions should be rejected
-      expect(manager.validateStateTransition("uninitialized", "syncing", "initialize")).toBe(false);
-      expect(manager.validateStateTransition("ready", "ready", "someAction")).toBe(false);
-      expect(manager.validateStateTransition("error", "syncing", "recovery")).toBe(false);
+      expect(
+        manager.validateStateTransition(
+          "uninitialized",
+          "syncing",
+          "initialize"
+        )
+      ).toBe(false);
+      expect(
+        manager.validateStateTransition("ready", "ready", "someAction")
+      ).toBe(false);
+      expect(
+        manager.validateStateTransition("error", "syncing", "recovery")
+      ).toBe(false);
     });
 
     it("should transition through states during initialization", async () => {
@@ -365,7 +393,9 @@ describe("FileSyncManager", () => {
 
       // When primary reports changes
       const { change } = createTestFile();
-      const syncPromise = manager.handleTargetChanges(primaryTarget.id, [change]);
+      const syncPromise = manager.handleTargetChanges(primaryTarget.id, [
+        change
+      ]);
 
       // Then state should be syncing
       expect(manager.getCurrentState()).toBe("syncing");
@@ -436,7 +466,9 @@ describe("FileSyncManager", () => {
         primaryTarget.setMockFile(metadata.path, content, metadata);
 
         // When primary reports changes
-        const syncPromise = manager.handleTargetChanges(primaryTarget.id, [change]);
+        const syncPromise = manager.handleTargetChanges(primaryTarget.id, [
+          change
+        ]);
 
         // Then state should be syncing
         expect(manager.getCurrentState()).toBe("syncing");
@@ -446,7 +478,9 @@ describe("FileSyncManager", () => {
 
         // Then state should be ready
         expect(manager.getCurrentState()).toBe("ready");
-        expect(manager.validateStateTransition("ready", "syncing", "changesDetected")).toBe(true);
+        expect(
+          manager.validateStateTransition("ready", "syncing", "changesDetected")
+        ).toBe(true);
       });
 
       it("should propagate changes from primary to secondaries", async () => {
@@ -520,7 +554,9 @@ describe("FileSyncManager", () => {
         secondaryTarget1.setMockFile(metadata.path, content, metadata);
 
         // When secondary reports changes
-        const syncPromise = manager.handleTargetChanges(secondaryTarget1.id, [change]);
+        const syncPromise = manager.handleTargetChanges(secondaryTarget1.id, [
+          change
+        ]);
 
         // Then state should be syncing
         expect(manager.getCurrentState()).toBe("syncing");
@@ -571,9 +607,15 @@ describe("FileSyncManager", () => {
         const pendingSync = manager.getPendingSync();
         expect(pendingSync).not.toBeNull();
         expect(pendingSync?.sourceTargetId).toBe(secondaryTarget1.id);
-        expect(pendingSync?.pendingByTarget.get(primaryTarget.id)).toBeDefined();
-        expect(pendingSync?.pendingByTarget.get(primaryTarget.id)?.changes).toEqual([change]);
-        expect(pendingSync?.pendingByTarget.get(primaryTarget.id)?.failedSync).toBe(true);
+        expect(
+          pendingSync?.pendingByTarget.get(primaryTarget.id)
+        ).toBeDefined();
+        expect(
+          pendingSync?.pendingByTarget.get(primaryTarget.id)?.changes
+        ).toEqual([change]);
+        expect(
+          pendingSync?.pendingByTarget.get(primaryTarget.id)?.failedSync
+        ).toBe(true);
 
         // And other secondary should not receive changes
         await expect(

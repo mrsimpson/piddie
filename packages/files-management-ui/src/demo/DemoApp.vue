@@ -23,19 +23,19 @@ const syncManager = new FileSyncManager()
 function monitorSync() {
   const status = syncManager.getStatus()
   const pendingSync = syncManager.getPendingSync()
-  
+
   if (status.currentFailure) {
     handleUIError(
       status.currentFailure.error,
       `Sync failed for target ${status.currentFailure.targetId}`,
-      COMPONENT_ID
+      COMPONENT_ID,
     )
   }
-  
+
   if (pendingSync) {
     console.log('Pending sync:', {
       sourceTarget: pendingSync.sourceTargetId,
-      pendingTargets: Array.from(pendingSync.pendingByTarget.keys())
+      pendingTargets: Array.from(pendingSync.pendingByTarget.keys()),
     })
   }
 }
@@ -63,9 +63,9 @@ async function initializeBrowserSystem() {
         priority: WATCHER_PRIORITIES.UI_UPDATES,
         metadata: {
           registeredBy: 'DemoApp',
-          type: 'ui-explorer'
-        }
-      }
+          type: 'ui-explorer',
+        },
+      },
     })
 
     systems.value = [browserSystem]
@@ -99,9 +99,9 @@ async function addNativeSystem() {
         priority: WATCHER_PRIORITIES.UI_UPDATES,
         metadata: {
           registeredBy: 'DemoApp',
-          type: 'ui-explorer'
-        }
-      }
+          type: 'ui-explorer',
+        },
+      },
     })
 
     // Initialize sync manager if this is the second system
@@ -125,21 +125,21 @@ async function initializeSyncManager(primaryTarget: SyncTarget, secondaryTarget:
     await syncManager.initialize({
       maxBatchSize: 10,
       inactivityDelay: 1000,
-      maxRetries: 3
+      maxRetries: 3,
     })
-    
+
     // Register targets for file syncing
     await syncManager.registerTarget(primaryTarget, { role: 'primary' })
     await syncManager.registerTarget(secondaryTarget, { role: 'secondary' })
-    
+
     // Monitor sync status
     const monitorInterval = setInterval(monitorSync, 1000)
-    
+
     // Clean up on component unmount
     onBeforeUnmount(() => {
       clearInterval(monitorInterval)
     })
-    
+
     console.log('Sync manager initialized successfully')
   } catch (err) {
     handleUIError(err, 'Failed to initialize sync manager', COMPONENT_ID)

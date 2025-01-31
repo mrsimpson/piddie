@@ -30,11 +30,15 @@ export class NodeSyncTarget implements SyncTarget {
   constructor(
     public readonly id: string,
     private rootDir: string
-  ) { }
+  ) {}
 
-  validateStateTransition(from: TargetStateType, to: TargetStateType, via: string): boolean {
+  validateStateTransition(
+    from: TargetStateType,
+    to: TargetStateType,
+    via: string
+  ): boolean {
     return VALID_TARGET_STATE_TRANSITIONS.some(
-      t => t.from === from && t.to === to && t.via === via
+      (t) => t.from === from && t.to === to && t.via === via
     );
   }
 

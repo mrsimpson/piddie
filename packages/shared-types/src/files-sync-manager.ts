@@ -230,7 +230,11 @@ export interface SyncManager {
    * Validate if a state transition is allowed
    * @returns boolean indicating if the transition is valid
    */
-  validateStateTransition(from: SyncManagerStateType, to: SyncManagerStateType, via: string): boolean;
+  validateStateTransition(
+    from: SyncManagerStateType,
+    to: SyncManagerStateType,
+    via: string
+  ): boolean;
 
   /**
    * Get current state type

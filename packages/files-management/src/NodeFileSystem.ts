@@ -4,7 +4,10 @@ import type {
   FileSystemStateType,
   LockMode
 } from "@piddie/shared-types";
-import { FileSystemError, VALID_FILE_SYSTEM_STATE_TRANSITIONS } from "@piddie/shared-types";
+import {
+  FileSystemError,
+  VALID_FILE_SYSTEM_STATE_TRANSITIONS
+} from "@piddie/shared-types";
 import { promises as fs } from "fs";
 import { FsPromisesAdapter, MinimalFsPromises } from "./FsPromisesAdapter";
 
@@ -13,7 +16,9 @@ import { FsPromisesAdapter, MinimalFsPromises } from "./FsPromisesAdapter";
  */
 export class NodeFileSystem extends FsPromisesAdapter implements FileSystem {
   protected override currentState: FileSystemStateType = "uninitialized";
-  protected override lockState: FileSystemState["lockState"] = { isLocked: false };
+  protected override lockState: FileSystemState["lockState"] = {
+    isLocked: false
+  };
   protected override pendingOperations = 0;
   declare protected lastOperation?: FileSystemState["lastOperation"];
 
@@ -42,7 +47,11 @@ export class NodeFileSystem extends FsPromisesAdapter implements FileSystem {
     }
   }
 
-  override async lock(timeoutMs: number, reason: string, mode: LockMode = "external"): Promise<void> {
+  override async lock(
+    timeoutMs: number,
+    reason: string,
+    mode: LockMode = "external"
+  ): Promise<void> {
     if (this.lockState.isLocked) {
       throw new FileSystemError("File system already locked", "LOCKED");
     }
