@@ -157,9 +157,22 @@ export interface SyncTarget {
 
   /**
    * Start watching for changes
+   * @param callback - Function to call when changes are detected
+   * @param options - Optional configuration for the watcher
    * @throws {Error} if watching cannot be started
    */
-  watch(callback: (changes: FileChangeInfo[]) => void): Promise<void>;
+  watch(
+    callback: (changes: FileChangeInfo[]) => void,
+    options?: {
+      priority?: number;
+      metadata?: {
+        registeredBy: string;
+        type?: string;
+        [key: string]: any;
+      };
+      filter?: (change: FileChangeInfo) => boolean;
+    }
+  ): Promise<void>;
   unwatch(): Promise<void>;
 
   /**
@@ -202,3 +215,63 @@ export class SyncOperationError extends Error {
     this.name = "SyncOperationError";
   }
 }
+
+/**
+ * Interface for a file watcher registration
+ */
+export interface FileWatcher {
+  /** Unique identifier for this watcher */
+  id: string;
+  /** Callback function to be called when changes occur */
+  callback: (changes: FileChangeInfo[]) => void;
+  /** Priority of the watcher. Higher priority watchers are called first */
+  priority: number;
+  /** Optional filter function to filter changes */
+  filter?: (change: FileChangeInfo) => boolean;
+  /** Metadata about the watcher */
+  metadata?: {
+    /** Component or module that registered the watcher */
+    registeredBy: string;
+    /** When the watcher was registered */
+    registeredAt: number;
+    /** Last time the watcher was executed */
+    lastExecuted?: number;
+    /** Number of times the watcher has been executed */
+    executionCount: number;
+    /** Additional metadata */
+    [key: string]: any;
+  };
+}
+
+/**
+ * Options for registering a new watcher
+ */
+export interface WatcherOptions {
+  /** Callback function to be called when changes occur */
+  callback: (changes: FileChangeInfo[]) => void;
+  /** Priority of the watcher. Higher priority watchers are called first */
+  priority?: number;
+  /** Optional filter function to filter changes */
+  filter?: (change: FileChangeInfo) => boolean;
+  /** Metadata about the watcher */
+  metadata?: {
+    /** Component or module that registered the watcher */
+    registeredBy: string;
+    /** Additional metadata */
+    [key: string]: any;
+  };
+}
+
+/**
+ * Constants for watcher priorities
+ */
+export const WATCHER_PRIORITIES = {
+  /** Sync manager watchers run first */
+  SYNC_MANAGER: 100,
+  /** Error handlers run second */
+  ERROR_HANDLER: 50,
+  /** UI updates run last */
+  UI_UPDATES: 0,
+  /** Default priority for other watchers */
+  OTHER: 0
+} as const;

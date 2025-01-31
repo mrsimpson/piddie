@@ -9,65 +9,70 @@ declare const globalThis: {
 };
 
 /**
- * Browser implementation of the SyncTarget interface using LightningFS.
- * Uses polling to detect file changes since browsers don't provide native file watching.
+ * Browser implementation of the SyncTarget interface
  */
 export class BrowserSyncTarget extends BaseSyncTarget {
   override readonly type = "browser";
+  private changeBuffer: FileChangeInfo[] = [];
+  private changeTimeout: ReturnType<typeof setTimeout> | null = null;
   private watchTimeout: ReturnType<typeof setTimeout> | null = null;
-  private watchCallback: ((changes: FileChangeInfo[]) => void) | null = null;
 
   constructor(targetId: string) {
     super(targetId);
   }
 
   override async initialize(fileSystem: FileSystem, isPrimary: boolean): Promise<void> {
-    if (this.currentState !== "uninitialized" && this.currentState !== "error") {
-      return;
+    if (!(fileSystem instanceof BrowserFileSystem)) {
+      this.transitionTo("error", "initialize");
+      throw new SyncOperationError(
+        "Invalid file system type",
+        "INITIALIZATION_FAILED"
+      );
     }
 
-    try {
-      if (!(fileSystem instanceof BrowserFileSystem)) {
-        throw new SyncOperationError(
-          "BrowserSyncTarget requires BrowserFileSystem",
-          "INITIALIZATION_FAILED"
-        );
-      }
+    this.fileSystem = fileSystem;
+    this.isPrimaryTarget = isPrimary;
+    this.transitionTo("idle", "initialize");
 
-      this.fileSystem = fileSystem;
-      this.isPrimaryTarget = isPrimary;
-      this.isInitialSync = !isPrimary;
-
-      await this.fileSystem.initialize();
-      this.transitionTo("idle", "initialize");
-    } catch (error) {
-      this.currentState = "error";
-      this.error = error instanceof Error ? error.message : "Unknown error";
-      throw error;
+    // Start watching for changes if initialized successfully
+    if (this.getCurrentState() === "idle") {
+      await this.startWatching();
     }
   }
 
-  override async watch(callback: (changes: FileChangeInfo[]) => void): Promise<void> {
-    if (!this.fileSystem) {
-      throw new SyncOperationError("Not initialized", "WATCH_FAILED");
+  private async startWatching(): Promise<void> {
+    if (!this.fileSystem || !(this.fileSystem instanceof BrowserFileSystem)) {
+      throw new SyncOperationError(
+        "FileSystem not initialized",
+        "INITIALIZATION_FAILED"
+      );
     }
-
-    // Store callback for cleanup
-    this.watchCallback = callback;
-    let consecutiveErrors = 0;
-    const MAX_ERRORS = 3;
 
     const checkForChanges = async () => {
       try {
         // Don't check for changes if we're not in idle state
-        if (this.currentState !== "idle") {
+        if (this.getCurrentState() !== "idle") {
           return;
         }
 
         const currentFiles = await this.getCurrentFilesState();
         const changes: FileChangeInfo[] = [];
 
-        // Check for new and modified files
+        // First check for deleted files before updating lastKnownFiles
+        for (const [path] of this.lastKnownFiles) {
+          if (!currentFiles.has(path)) {
+            changes.push({
+              path,
+              type: "delete",
+              hash: "",
+              size: 0,
+              lastModified: Date.now(),
+              sourceTarget: this.id
+            });
+          }
+        }
+
+        // Then check for new and modified files
         for (const [path, currentState] of currentFiles) {
           const knownState = this.lastKnownFiles.get(path);
           if (!knownState) {
@@ -95,51 +100,44 @@ export class BrowserSyncTarget extends BaseSyncTarget {
           }
         }
 
-        // Check for deleted files
-        for (const [path] of this.lastKnownFiles) {
-          if (!currentFiles.has(path)) {
-            changes.push({
-              path,
-              type: "delete",
-              hash: "",
-              size: 0,
-              lastModified: Date.now(),
-              sourceTarget: this.id
-            });
-          }
-        }
-
-        // Notify if changes detected
-        if (changes.length > 0 && this.watchCallback) {
-          this.watchCallback(changes);
-          // Update lastKnownFiles to avoid duplicate notifications
+        // Only update lastKnownFiles after we've detected all changes
+        if (changes.length > 0) {
+          await this.handleFileChanges(changes);
           this.updateLastKnownFiles(currentFiles);
         }
 
-        // Reset error count on successful check
-        consecutiveErrors = 0;
+        // Schedule next check only after current check is complete
+        this.watchTimeout = globalThis.setTimeout(checkForChanges, 1000);
       } catch (error) {
-        consecutiveErrors++;
-        console.warn(`Error during file watch (${consecutiveErrors}/${MAX_ERRORS}):`, error);
-
-        // Stop watching after too many consecutive errors
-        if (consecutiveErrors >= MAX_ERRORS) {
-          console.error("Too many consecutive errors, stopping watch");
-          await this.unwatch();
-          this.currentState = "error";
-          this.error = "Watch failed due to consecutive errors";
-          throw new SyncOperationError("Watch failed due to consecutive errors", "WATCH_FAILED");
-        }
-      }
-
-      // Schedule next check if still watching
-      if (this.watchCallback) {
+        console.warn("Error during file watch:", error);
+        // Even on error, try to schedule next check
         this.watchTimeout = globalThis.setTimeout(checkForChanges, 1000);
       }
     };
 
-    // Start watching
+    // Start with immediate check
     await checkForChanges();
+  }
+
+  protected async handleFileChanges(changes: FileChangeInfo[]): Promise<void> {
+    for (const change of changes) {
+      this.changeBuffer.push(change);
+    }
+
+    // Clear existing timeout if any
+    if (this.changeTimeout !== null) {
+      globalThis.clearTimeout(this.changeTimeout);
+    }
+
+    // Set new timeout to process changes
+    this.changeTimeout = globalThis.setTimeout(async () => {
+      const bufferedChanges = [...this.changeBuffer];
+      this.changeBuffer = [];
+      this.changeTimeout = null;
+
+      // Notify watchers of the changes
+      await this.notifyWatchers(bufferedChanges);
+    }, 100); // 100ms debounce
   }
 
   override async unwatch(): Promise<void> {
@@ -147,6 +145,6 @@ export class BrowserSyncTarget extends BaseSyncTarget {
       globalThis.clearTimeout(this.watchTimeout);
       this.watchTimeout = null;
     }
-    this.watchCallback = null;
+    await super.unwatch();
   }
 }

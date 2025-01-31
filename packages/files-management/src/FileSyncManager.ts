@@ -14,6 +14,7 @@ import type {
   SyncManagerStateType
 } from "@piddie/shared-types";
 import { VALID_SYNC_MANAGER_TRANSITIONS } from "@piddie/shared-types";
+import { WATCHER_PRIORITIES } from "@piddie/shared-types";
 
 /**
  * Result of applying changes to a target
@@ -106,8 +107,17 @@ export class FileSyncManager implements SyncManager {
         return;
       }
 
-      // Start watching the target
-      await target.watch((changes) => this.handleTargetChanges(target.id, changes));
+      // Start watching the target with high priority for sync operations
+      await target.watch(
+        (changes) => this.handleTargetChanges(target.id, changes),
+        {
+          priority: WATCHER_PRIORITIES.SYNC_MANAGER,
+          metadata: {
+            registeredBy: 'FileSyncManager',
+            type: 'sync-watcher'
+          }
+        }
+      );
 
       // Store unwatch function
       this.activeWatchers.set(target.id, () => target.unwatch());

@@ -7,10 +7,13 @@ import type {
     FileConflict,
     FileChangeInfo,
     FileSystemItem,
-    TargetStateType
+    TargetStateType,
+    WatcherOptions
 } from "@piddie/shared-types";
 import { SyncOperationError } from "@piddie/shared-types";
 import { VALID_TARGET_STATE_TRANSITIONS } from "@piddie/shared-types";
+import { WatcherRegistry } from "./WatcherRegistry";
+import { WATCHER_PRIORITIES } from "@piddie/shared-types";
 
 interface KnownFileState {
     lastModified: number;
@@ -31,6 +34,7 @@ export abstract class BaseSyncTarget implements SyncTarget {
     protected isInitialSync = false;
     protected isPrimaryTarget = true;
     protected pendingChanges: FileChangeInfo[] = [];
+    protected watcherRegistry = new WatcherRegistry();
 
     constructor(targetId: string) {
         this.id = targetId;
@@ -394,8 +398,50 @@ export abstract class BaseSyncTarget implements SyncTarget {
         return this.fileSystem.listDirectory(path);
     }
 
-    abstract watch(callback: (changes: FileChangeInfo[]) => void): Promise<void>;
-    abstract unwatch(): Promise<void>;
+    async watch(
+        callback: (changes: FileChangeInfo[]) => void,
+        options: {
+            priority?: number;
+            metadata?: {
+                registeredBy: string;
+                type?: string;
+                [key: string]: any;
+            };
+            filter?: (change: FileChangeInfo) => boolean;
+        } = {
+                priority: WATCHER_PRIORITIES.OTHER,
+                metadata: {
+                    registeredBy: 'external',
+                    type: 'other-watcher'
+                }
+            }
+    ): Promise<void> {
+        const watcherOptions: WatcherOptions = {
+            callback,
+            priority: options.priority ?? WATCHER_PRIORITIES.OTHER,
+            metadata: {
+                registeredBy: options.metadata?.registeredBy ?? 'external',
+                type: options.metadata?.type ?? 'other-watcher',
+                ...options.metadata
+            }
+        };
+
+        if (options.filter) {
+            watcherOptions.filter = options.filter;
+        }
+
+        await this.watcherRegistry.register(watcherOptions);
+    }
+
+    async unwatch(): Promise<void> {
+        this.watcherRegistry.clear();
+    }
+
+    protected async notifyWatchers(changes: FileChangeInfo[]): Promise<void> {
+        if (this.watcherRegistry.hasWatchers()) {
+            await this.watcherRegistry.notify(changes);
+        }
+    }
 
     protected async getCurrentFilesState(): Promise<Map<string, KnownFileState>> {
         if (!this.fileSystem) {
