@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import type { SynchronizedFileSystem } from '../types/file-explorer'
+import type { SyncTarget } from '@piddie/shared-types'
 import { createSynchronizedFileSystem } from '../types/file-explorer'
 import {
   FileSyncManager,
@@ -9,6 +10,7 @@ import {
   BrowserSyncTarget,
   BrowserNativeSyncTarget,
 } from '@piddie/files-management'
+import { WATCHER_PRIORITIES } from '@piddie/shared-types'
 import FileExplorer from '../components/FileExplorer.vue'
 import ErrorDisplay from '../components/ErrorDisplay.vue'
 import { handleUIError } from '../utils/error-handling'
@@ -16,6 +18,27 @@ import { handleUIError } from '../utils/error-handling'
 const COMPONENT_ID = 'DemoApp'
 const systems = ref<SynchronizedFileSystem[]>([])
 const syncManager = new FileSyncManager()
+
+// Monitor sync status
+function monitorSync() {
+  const status = syncManager.getStatus()
+  const pendingSync = syncManager.getPendingSync()
+  
+  if (status.currentFailure) {
+    handleUIError(
+      status.currentFailure.error,
+      `Sync failed for target ${status.currentFailure.targetId}`,
+      COMPONENT_ID
+    )
+  }
+  
+  if (pendingSync) {
+    console.log('Pending sync:', {
+      sourceTarget: pendingSync.sourceTargetId,
+      pendingTargets: Array.from(pendingSync.pendingByTarget.keys())
+    })
+  }
+}
 
 async function initializeBrowserSystem() {
   try {
@@ -36,6 +59,13 @@ async function initializeBrowserSystem() {
       title: 'Browser Storage',
       fileSystem: browserFs,
       syncTarget: browserTarget,
+      watcherOptions: {
+        priority: WATCHER_PRIORITIES.UI_UPDATES,
+        metadata: {
+          registeredBy: 'DemoApp',
+          type: 'ui-explorer'
+        }
+      }
     })
 
     systems.value = [browserSystem]
@@ -65,44 +95,19 @@ async function addNativeSystem() {
       title: 'Local Files',
       fileSystem: nativeFs,
       syncTarget: nativeTarget,
+      watcherOptions: {
+        priority: WATCHER_PRIORITIES.UI_UPDATES,
+        metadata: {
+          registeredBy: 'DemoApp',
+          type: 'ui-explorer'
+        }
+      }
     })
 
     // Initialize sync manager if this is the second system
     if (systems.value.length === 1) {
       try {
-        // Initialize sync manager
-        await syncManager.initialize({
-          maxBatchSize: 10,
-          inactivityDelay: 1000, // Wait 1 second for more changes
-          maxRetries: 3 // Try up to 3 times on failure
-        })
-        
-        await syncManager.registerTarget(systems.value[0].syncTarget, { role: 'primary' })
-        await syncManager.registerTarget(nativeSystem.syncTarget, { role: 'secondary' })
-        
-        // Set up error monitoring
-        const monitorSync = () => {
-          const status = syncManager.getStatus()
-          const pendingSync = syncManager.getPendingSync()
-          
-          if (status.currentFailure) {
-            handleUIError(
-              status.currentFailure.error,
-              `Sync failed for target ${status.currentFailure.targetId}`,
-              COMPONENT_ID
-            )
-          }
-          
-          if (pendingSync) {
-            console.log('Pending sync:', {
-              sourceTarget: pendingSync.sourceTargetId,
-              pendingTargets: Array.from(pendingSync.pendingByTarget.keys())
-            })
-          }
-        }
-
-        // Check sync status every second
-        setInterval(monitorSync, 1000)
+        await initializeSyncManager(systems.value[0].syncTarget, nativeSystem.syncTarget)
       } catch (syncError) {
         handleUIError(syncError, 'Failed to initialize sync', COMPONENT_ID)
       }
@@ -112,6 +117,32 @@ async function addNativeSystem() {
     systems.value = [...systems.value, nativeSystem]
   } catch (err) {
     handleUIError(err, 'Failed to initialize native system', COMPONENT_ID)
+  }
+}
+
+async function initializeSyncManager(primaryTarget: SyncTarget, secondaryTarget: SyncTarget) {
+  try {
+    await syncManager.initialize({
+      maxBatchSize: 10,
+      inactivityDelay: 1000,
+      maxRetries: 3
+    })
+    
+    // Register targets for file syncing
+    await syncManager.registerTarget(primaryTarget, { role: 'primary' })
+    await syncManager.registerTarget(secondaryTarget, { role: 'secondary' })
+    
+    // Monitor sync status
+    const monitorInterval = setInterval(monitorSync, 1000)
+    
+    // Clean up on component unmount
+    onBeforeUnmount(() => {
+      clearInterval(monitorInterval)
+    })
+    
+    console.log('Sync manager initialized successfully')
+  } catch (err) {
+    handleUIError(err, 'Failed to initialize sync manager', COMPONENT_ID)
   }
 }
 

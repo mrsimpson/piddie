@@ -1,4 +1,4 @@
-import type { FileMetadata, FileSystem, SyncTarget } from '@piddie/shared-types'
+import type { FileMetadata, FileSystem, SyncTarget, WatcherOptions } from '@piddie/shared-types'
 
 /**
  * View model for a file or directory in the explorer
@@ -44,6 +44,8 @@ export interface SynchronizedFileSystem {
   title: string
   /** Unique identifier for this synchronized system */
   id: string
+  /** Options for the file watcher */
+  watcherOptions?: Omit<WatcherOptions, 'callback'>
 }
 
 /**
@@ -55,8 +57,8 @@ export async function createSynchronizedFileSystem(params: {
   syncTarget: SyncTarget
   title: string
   id: string
+  watcherOptions?: Omit<WatcherOptions, 'callback'>
 }): Promise<SynchronizedFileSystem> {
-
   return {
     ...params,
     // Freeze the object to prevent accidental modifications

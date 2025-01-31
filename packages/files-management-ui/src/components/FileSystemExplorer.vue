@@ -12,6 +12,14 @@ const props = defineProps<{
 }>()
 
 const currentPath = ref('/')
+
+// Expose methods for parent components
+defineExpose({
+  handleFileChanges,
+  loadDirectory,
+  currentPath
+})
+
 const items = ref<FileViewModel[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
@@ -148,20 +156,34 @@ function formatDate(timestamp: number): string {
   return new Date(timestamp).toLocaleString()
 }
 
-// Load initial directory
-
 // Handle file changes from sync target
-function handleFileChanges(changes: FileChangeInfo[]) {
-  // Check if any of the changes affect the current directory
-  const affectedPaths = changes.map(c => c.path)
+async function handleFileChanges(changes: FileChangeInfo[]) {
+  console.log('FileSystemExplorer: Handling changes:', changes)
   const currentDir = currentPath.value
-  const hasChangesInCurrentDir = affectedPaths.some(path => {
-    const parentDir = path.split('/').slice(0, -1).join('/') || '/'
+
+  // Check if the current directory itself was deleted
+  const currentDirDeleted = changes.some(change => 
+    change.type === 'delete' && (change.path === currentDir || currentDir.startsWith(change.path + '/'))
+  )
+
+  if (currentDirDeleted) {
+    console.log('FileSystemExplorer: Current directory was deleted, navigating up')
+    // Navigate up if current directory was deleted
+    await navigateUp()
+    return
+  }
+
+  // Check if any of the changes affect the current directory
+  const hasChangesInCurrentDir = changes.some(change => {
+    const parentDir = change.path.split('/').slice(0, -1).join('/') || '/'
     return parentDir === currentDir
   })
 
   if (hasChangesInCurrentDir) {
-    loadDirectory(currentDir)
+    console.log('FileSystemExplorer: Changes affect current directory, reloading')
+    await loadDirectory(currentDir)
+  } else {
+    console.log('FileSystemExplorer: Changes do not affect current directory')
   }
 }
 
@@ -169,10 +191,6 @@ function handleFileChanges(changes: FileChangeInfo[]) {
 onMounted(async () => {
   try {
     console.log('FileSystemExplorer mounted, initializing...')
-    console.log('SyncTarget state:', props.syncTarget.getCurrentState())
-    console.log('Setting up file watching...')
-    await props.syncTarget.watch(handleFileChanges)
-    console.log('File watching set up, loading initial directory...')
     await loadDirectory('/')
     console.log('Initial directory loaded')
   } catch (err) {
@@ -185,8 +203,6 @@ onMounted(async () => {
 onUnmounted(async () => {
   try {
     console.log('FileSystemExplorer unmounting, cleaning up...')
-    await props.syncTarget.unwatch()
-    console.log('Cleanup complete')
   } catch (err) {
     console.error('Error during cleanup:', err)
   }
@@ -304,7 +320,6 @@ onUnmounted(async () => {
   grid-template-areas:
     'header header'
     'list editor';
-  height: 100%;
   border: 1px solid var(--sl-color-neutral-200);
   border-radius: var(--sl-border-radius-medium);
 }

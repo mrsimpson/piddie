@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { SynchronizedFileSystem } from '../types/file-explorer'
-import FileSystemPanel from './FileSystemPanel.vue'
+import FileSystem from './FileSystem.vue'
 
 const props = defineProps<{
   systems: SynchronizedFileSystem[]
@@ -9,14 +9,8 @@ const props = defineProps<{
 
 <template>
   <div class="file-explorer">
-    <FileSystemPanel
-      v-for="system in systems"
-      :key="system.id"
-      :file-system="system.fileSystem"
-      :sync-target="system.syncTarget"
-      :title="system.title"
-    />
-    <slot name="after-explorer"></slot>
+    <FileSystem v-for="system in systems" :key="system.id" :system="system" />
+    <slot name="after-explorer" />
   </div>
 </template>
 
@@ -26,6 +20,5 @@ const props = defineProps<{
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: var(--sl-spacing-medium);
   height: 100%;
-  padding: var(--sl-spacing-medium);
 }
 </style>
