@@ -32,36 +32,6 @@ export class NodeFileSystem extends FsPromisesAdapter implements FileSystem {
     super({ rootDir, fs: fsWrapper });
   }
 
-  override validateStateTransition(from: FileSystemStateType, to: FileSystemStateType, via: string): boolean {
-    return VALID_FILE_SYSTEM_STATE_TRANSITIONS.some(
-      t => t.from === from && t.to === to && t.via === via
-    );
-  }
-
-  override getCurrentState(): FileSystemStateType {
-    return this.currentState;
-  }
-
-  override transitionTo(newState: FileSystemStateType, via: string): void {
-    if (!this.validateStateTransition(this.currentState, newState, via)) {
-      this.currentState = "error";
-      throw new FileSystemError(
-        `Invalid state transition from ${this.currentState} to ${newState} via ${via}`,
-        "INVALID_OPERATION"
-      );
-    }
-    this.currentState = newState;
-  }
-
-  override getState(): FileSystemState {
-    return {
-      lockState: this.lockState,
-      pendingOperations: this.pendingOperations,
-      lastOperation: this.lastOperation,
-      currentState: this.currentState
-    };
-  }
-
   override async initialize(): Promise<void> {
     try {
       await super.initialize();

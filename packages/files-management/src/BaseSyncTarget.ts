@@ -44,9 +44,10 @@ export abstract class BaseSyncTarget implements SyncTarget {
 
     transitionTo(newState: TargetStateType, via: string): void {
         if (!this.validateStateTransition(this.currentState, newState, via)) {
+            const fromState = this.currentState
             this.currentState = "error";
             throw new SyncOperationError(
-                `Invalid state transition from ${this.currentState} to ${newState} via ${via}`,
+                `Invalid state transition from ${fromState} to ${newState} via ${via}`,
                 "INITIALIZATION_FAILED"
             );
         }

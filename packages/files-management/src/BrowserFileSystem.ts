@@ -76,6 +76,23 @@ export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
       stat: async (path: string) => {
         const stats = await fs.promises.stat(path);
         // Use the built-in methods from LightningFS stats
+        const isDir = stats.isDirectory();
+        if (isDir) {
+          // For directories, use a fixed timestamp based on the path
+          // This ensures consistent timestamps for the same directory
+          const hashCode = path.split('').reduce((a, b) => {
+            a = ((a << 5) - a) + b.charCodeAt(0);
+            return a & a;
+          }, 0);
+          // Use a fixed base timestamp (e.g., start of 2024) plus the hash
+          const baseTimestamp = new Date('2024-01-01').getTime();
+          return {
+            isDirectory: () => true,
+            isFile: () => false,
+            mtimeMs: baseTimestamp + Math.abs(hashCode),
+            size: 0
+          };
+        }
         return {
           isDirectory: () => stats.isDirectory(),
           isFile: () => stats.isFile(),
@@ -85,11 +102,26 @@ export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
       },
       readFile: (path: string) =>
         fs.promises.readFile(path, { encoding: "utf8" }) as Promise<string>,
-      writeFile: (path: string, data: string) =>
-        fs.promises.writeFile(path, data, {
+      writeFile: async (path: string, data: string, options?: { encoding?: string; isSyncOperation?: boolean }) => {
+        // Check if we're in a sync operation by checking the lock mode
+        const isInSyncMode = this.lockState.lockMode === "sync" || options?.isSyncOperation;
+        if (this.lockState.isLocked && !isInSyncMode) {
+          throw new FileSystemError("File system is locked", "LOCKED");
+        }
+
+        // LightningFS only supports utf8 encoding
+        await fs.promises.writeFile(path, data, {
           mode: 0o666,
           encoding: "utf8"
-        } as WriteFileOptions),
+        });
+
+        // Update the last operation
+        this.lastOperation = {
+          type: "write",
+          path,
+          timestamp: Date.now()
+        };
+      },
       unlink: fs.promises.unlink,
       readdir: async (path: string) => {
         const entries = await fs.promises.readdir(path);
@@ -143,41 +175,6 @@ export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
     return VALID_FILE_SYSTEM_STATE_TRANSITIONS.some(
       t => t.from === from && t.to === to && t.via === via
     );
-  }
-
-  override getCurrentState(): FileSystemStateType {
-    return this.currentState;
-  }
-
-  override transitionTo(newState: FileSystemStateType, via: string): void {
-    // If we're already in error state, don't try to transition again unless it's to ready via initialize
-    if (this.currentState === "error" && !(newState === "ready" && via === "initialize")) {
-      return;
-    }
-
-    if (!this.validateStateTransition(this.currentState, newState, via)) {
-      // Special case: when transitioning to error state, just set it
-      if (newState === "error") {
-        this.currentState = "error";
-        return;
-      }
-
-      this.currentState = "error";
-      throw new FileSystemError(
-        `Invalid state transition from ${this.currentState} to ${newState} via ${via}`,
-        "INVALID_OPERATION"
-      );
-    }
-    this.currentState = newState;
-  }
-
-  override getState(): FileSystemState {
-    return {
-      lockState: this.lockState,
-      pendingOperations: this.pendingOperations,
-      lastOperation: this.lastOperation,
-      currentState: this.currentState
-    };
   }
 
   override async initialize(): Promise<void> {

@@ -54,11 +54,11 @@ export class FileSyncManager implements SyncManager {
   }
 
   transitionTo(newState: SyncManagerStateType, via: string): void {
+    const fromState = this.currentState
     if (!this.validateStateTransition(this.currentState, newState, via)) {
-      debugger;
       this.currentState = "error";
       throw new SyncManagerError(
-        `Invalid state transition from ${this.currentState} to ${newState} via ${via}`,
+        `Invalid state transition from ${fromState} to ${newState} via ${via}`,
         "SYNC_IN_PROGRESS"
       );
     }

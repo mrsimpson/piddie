@@ -123,10 +123,18 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
             size: file.size
           };
         } else {
+          // For directories, use a fixed timestamp based on the path
+          // This ensures consistent timestamps for the same directory
+          const hashCode = filePath.split('').reduce((a, b) => {
+            a = ((a << 5) - a) + b.charCodeAt(0);
+            return a & a;
+          }, 0);
+          // Use a fixed base timestamp (e.g., start of 2024) plus the hash
+          const baseTimestamp = new Date('2024-01-01').getTime();
           return {
             isDirectory: () => true,
             isFile: () => false,
-            mtimeMs: Date.now(), // Directories don't have lastModified in File System Access API
+            mtimeMs: baseTimestamp + Math.abs(hashCode),
             size: 0
           };
         }
@@ -142,7 +150,13 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
         const file = await (handle as FileSystemFileHandle).getFile();
         return await file.text();
       },
-      writeFile: async (filePath: string, content: string) => {
+      writeFile: async (filePath: string, content: string, options?: { encoding?: string; isSyncOperation?: boolean }) => {
+        // Check if we're in a sync operation by checking the lock mode
+        const isInSyncMode = this.lockState.lockMode === "sync" || options?.isSyncOperation;
+        if (this.lockState.isLocked && !isInSyncMode) {
+          throw new FileSystemError("File system is locked", "LOCKED");
+        }
+
         const parentPath = this.getDirname(filePath);
         const fileName = this.getBasename(filePath);
         const parentHandle = await this.getDirectoryHandle(parentPath);
@@ -163,6 +177,13 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
             await writable.close();
           }
         }
+
+        // Update the last operation
+        this.lastOperation = {
+          type: "write",
+          path: filePath,
+          timestamp: Date.now()
+        };
       },
       rm: async (itemPath: string, options?: { recursive?: boolean }) => {
         const parentPath = this.getDirname(itemPath);

@@ -31,7 +31,7 @@ export interface MinimalFsPromises {
     size: number;
   }>;
   readFile(path: string, encoding: string): Promise<string>;
-  writeFile(path: string, data: string, encoding: string): Promise<void>;
+  writeFile(path: string, data: string, options?: { encoding?: string; isSyncOperation?: boolean }): Promise<void>;
   rm?(path: string, options?: { recursive?: boolean }): Promise<void>;
   unlink(path: string): Promise<void>;
   access?(path: string): Promise<void>;
@@ -78,8 +78,10 @@ export class FsPromisesAdapter implements FileSystem {
   }
 
   transitionTo(newState: FileSystemStateType, via: string): void {
+    const fromState = this.currentState
+
     // If we're already in error state, don't try to transition again
-    if (this.currentState === "error") {
+    if (this.currentState === "error" && via !== "recovery") {
       return;
     }
 
@@ -92,7 +94,7 @@ export class FsPromisesAdapter implements FileSystem {
 
       this.currentState = "error";
       throw new FileSystemError(
-        `Invalid state transition from ${this.currentState} to ${newState} via ${via}`,
+        `Invalid state transition from ${fromState} to ${newState} via ${via}`,
         "INVALID_OPERATION"
       );
     }
@@ -227,30 +229,25 @@ export class FsPromisesAdapter implements FileSystem {
     }
   }
 
-  async writeFile(filePath: string, content: string, isSyncOperation: boolean = false): Promise<void> {
-    this.ensureInitialized();
-    this.checkLock('write', isSyncOperation);
-
-    const absolutePath = this.getAbsolutePath(filePath);
-    const parentDir = this.getDirname(absolutePath);
+  async writeFile(path: string, content: string, isSyncOperation = false): Promise<void> {
+    const absolutePath = this.getAbsolutePath(path);
 
     try {
-      // Check if parent directory exists
-      const parentExists = await this.exists(parentDir);
-      if (!parentExists) {
-        throw new FileSystemError(
-          `Parent directory does not exist: ${parentDir}`,
-          "NOT_FOUND"
-        );
+      // Check if we're in a sync operation by checking the lock mode
+      const isInSyncMode = this.lockState.lockMode === "sync" || isSyncOperation;
+      if (this.lockState.isLocked && !isInSyncMode) {
+        throw new FileSystemError("File system is locked", "LOCKED");
       }
 
-      await this.options.fs.writeFile(absolutePath, content, "utf-8");
+      await this.options.fs.writeFile(absolutePath, content, { isSyncOperation });
     } catch (error: unknown) {
       if (error instanceof FileSystemError) {
         throw error;
       }
-      const message = error instanceof Error ? error.message : "Unknown error";
-      throw new FileSystemError(message, "PERMISSION_DENIED");
+      throw new FileSystemError(
+        `Failed to write file ${path}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        "INVALID_OPERATION"
+      );
     }
   }
 
