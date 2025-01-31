@@ -30,7 +30,7 @@ vi.mock("../src/FileSyncManager", () => ({
       getReader: () => ({
         read: async () => ({ done: true, value: undefined })
       }),
-      close: async () => {}
+      close: async () => { }
     });
     handleTargetChanges = vi.fn().mockResolvedValue(undefined);
     getPendingChanges = vi.fn().mockResolvedValue([]);
@@ -39,11 +39,14 @@ vi.mock("../src/FileSyncManager", () => ({
       getReader: () => ({
         read: async () => ({ done: true, value: undefined })
       }),
-      close: async () => {}
+      close: async () => { }
     });
     confirmPrimarySync = vi.fn().mockResolvedValue(undefined);
     rejectPendingSync = vi.fn().mockResolvedValue(undefined);
     reinitializeTarget = vi.fn().mockResolvedValue(undefined);
+    validateStateTransition = vi.fn().mockReturnValue(true);
+    getCurrentState = vi.fn().mockReturnValue({ phase: "idle" });
+    transitionTo = vi.fn().mockResolvedValue(undefined);
   }
 }));
 
@@ -63,7 +66,7 @@ const mockPrimaryTarget: SyncTarget = {
     getReader: () => ({
       read: async () => ({ done: true, value: undefined })
     }),
-    close: async () => {}
+    close: async () => { }
   }),
   applyFileChange: vi.fn().mockResolvedValue(null),
   syncComplete: vi.fn().mockResolvedValue(true),
@@ -75,7 +78,11 @@ const mockPrimaryTarget: SyncTarget = {
     lockState: { isLocked: false },
     pendingChanges: 0,
     status: "idle"
-  })
+  }),
+  listDirectory: vi.fn().mockResolvedValue([]),
+  validateStateTransition: vi.fn().mockReturnValue(true),
+  getCurrentState: vi.fn().mockReturnValue({ status: "idle" }),
+  transitionTo: vi.fn().mockResolvedValue(undefined)
 };
 
 class MockGitOperations implements GitOperations {
@@ -144,7 +151,7 @@ describe("FileManagementService", () => {
       await uninitializedService.initialize(config);
 
       // Then all components should be initialized
-      expect(mockPrimaryTarget.initialize).toHaveBeenCalledWith(mockFileSystem);
+      expect(mockPrimaryTarget.initialize).toHaveBeenCalledWith(mockFileSystem, true);
       expect(mockFileSystem.initialize).toHaveBeenCalled();
     });
 
@@ -153,7 +160,7 @@ describe("FileManagementService", () => {
       await uninitializedService.initialize();
 
       // Then should initialize with defaults
-      expect(mockPrimaryTarget.initialize).toHaveBeenCalledWith(mockFileSystem);
+      expect(mockPrimaryTarget.initialize).toHaveBeenCalledWith(mockFileSystem, true);
       expect(mockFileSystem.initialize).toHaveBeenCalled();
     });
 
