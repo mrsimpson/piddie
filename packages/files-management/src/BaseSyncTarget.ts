@@ -12,6 +12,11 @@ import type {
 import { SyncOperationError } from "@piddie/shared-types";
 import { VALID_TARGET_STATE_TRANSITIONS } from "@piddie/shared-types";
 
+interface KnownFileState {
+    lastModified: number;
+    hash: string;
+}
+
 /**
  * Base class for sync targets implementing common functionality
  */
@@ -22,11 +27,10 @@ export abstract class BaseSyncTarget implements SyncTarget {
     protected fileSystem?: FileSystem;
     protected currentState: TargetStateType = "uninitialized";
     protected error: string | null = null;
-    protected lastKnownFiles = new Map<string, { lastModified: number }>();
+    protected lastKnownFiles = new Map<string, KnownFileState>();
     protected isInitialSync = false;
     protected isPrimaryTarget = true;
     protected pendingChanges: FileChangeInfo[] = [];
-    protected originalLastModified = new Map<string, number>();
 
     constructor(targetId: string) {
         this.id = targetId;
@@ -77,7 +81,7 @@ export abstract class BaseSyncTarget implements SyncTarget {
 
             // Process files in batches to avoid memory issues with large file sets
             const BATCH_SIZE = 50;
-            const currentFiles = new Map<string, { lastModified: number }>();
+            const currentFiles = new Map<string, { lastModified: number; hash: string }>();
             let batchError: Error | null = null;
 
             try {
@@ -87,8 +91,12 @@ export abstract class BaseSyncTarget implements SyncTarget {
                         try {
                             if (await this.fileSystem!.exists(path)) {
                                 const metadata = await this.fileSystem!.getMetadata(path);
-                                const lastModified = this.originalLastModified.get(path) ?? metadata.lastModified;
-                                currentFiles.set(path, { lastModified });
+                                const knownState = this.lastKnownFiles.get(path);
+                                const lastModified = knownState?.lastModified ?? metadata.lastModified;
+                                currentFiles.set(path, {
+                                    lastModified,
+                                    hash: metadata.hash
+                                });
                                 return { path, metadata, exists: true };
                             }
                             return { path, exists: false };
@@ -159,7 +167,7 @@ export abstract class BaseSyncTarget implements SyncTarget {
             if (metadata.type === "file" && metadata.size === 0 && metadata.hash === "") {
                 if (await this.fileSystem.exists(metadata.path)) {
                     await this.fileSystem.deleteItem(metadata.path, true);
-                    this.originalLastModified.delete(metadata.path);
+                    this.lastKnownFiles.delete(metadata.path);
                 }
                 return null;
             }
@@ -170,12 +178,18 @@ export abstract class BaseSyncTarget implements SyncTarget {
                     if (!(await this.fileSystem.exists(metadata.path))) {
                         await this.fileSystem.createDirectory(metadata.path, true);
                         // Store the original timestamp for the directory
-                        this.originalLastModified.set(metadata.path, metadata.lastModified);
+                        this.lastKnownFiles.set(metadata.path, {
+                            lastModified: metadata.lastModified,
+                            hash: ""  // Directories don't have a hash
+                        });
                     } else {
                         // Update timestamp if directory exists
                         const existingMetadata = await this.fileSystem.getMetadata(metadata.path);
                         if (existingMetadata.lastModified !== metadata.lastModified) {
-                            this.originalLastModified.set(metadata.path, metadata.lastModified);
+                            this.lastKnownFiles.set(metadata.path, {
+                                lastModified: metadata.lastModified,
+                                hash: ""  // Directories don't have a hash
+                            });
                         }
                     }
                     return null;
@@ -190,8 +204,24 @@ export abstract class BaseSyncTarget implements SyncTarget {
             const exists = await this.fileSystem.exists(metadata.path);
             if (exists) {
                 const existingMetadata = await this.fileSystem.getMetadata(metadata.path);
-                const existingLastModified = this.originalLastModified.get(metadata.path) ?? existingMetadata.lastModified;
-                if (existingLastModified > metadata.lastModified) {
+                const knownState = this.lastKnownFiles.get(metadata.path);
+
+                // If we have a known state, check both timestamp and hash
+                if (knownState) {
+                    const hasNewerTimestamp = existingMetadata.lastModified > knownState.lastModified;
+                    const hashChanged = existingMetadata.hash !== knownState.hash;
+
+                    // Only consider it a conflict if both timestamp is newer AND hash is different
+                    if (hasNewerTimestamp && hashChanged) {
+                        return {
+                            path: metadata.path,
+                            sourceTarget: this.id,
+                            targetId: this.id,
+                            timestamp: Date.now()
+                        };
+                    }
+                } else if (existingMetadata.lastModified > metadata.lastModified) {
+                    // For unknown files, fall back to timestamp comparison
                     return {
                         path: metadata.path,
                         sourceTarget: this.id,
@@ -208,7 +238,10 @@ export abstract class BaseSyncTarget implements SyncTarget {
                 // Get parent directory metadata from source if available
                 try {
                     const parentMetadata = await this.fileSystem.getMetadata(parentDir);
-                    this.originalLastModified.set(parentDir, parentMetadata.lastModified);
+                    this.lastKnownFiles.set(parentDir, {
+                        lastModified: parentMetadata.lastModified,
+                        hash: ""  // Directories don't have a hash
+                    });
                 } catch (error) {
                     console.warn(`Failed to get metadata for parent directory ${parentDir}:`, error);
                 }
@@ -225,7 +258,10 @@ export abstract class BaseSyncTarget implements SyncTarget {
                 }
 
                 await this.fileSystem.writeFile(metadata.path, content, true);
-                this.originalLastModified.set(metadata.path, metadata.lastModified);
+                this.lastKnownFiles.set(metadata.path, {
+                    lastModified: metadata.lastModified,
+                    hash: metadata.hash
+                });
                 return null;
             } catch (error) {
                 // Ensure we transition to error state on content application failure
@@ -317,10 +353,10 @@ export abstract class BaseSyncTarget implements SyncTarget {
 
         return Promise.all(allPaths.map(async (path) => {
             const metadata = await this.fileSystem!.getMetadata(path);
-            const lastModified = this.originalLastModified.get(path) ?? metadata.lastModified;
+            const knownState = this.lastKnownFiles.get(path);
             return {
                 ...metadata,
-                lastModified
+                lastModified: knownState?.lastModified ?? metadata.lastModified
             };
         }));
     }
@@ -361,12 +397,12 @@ export abstract class BaseSyncTarget implements SyncTarget {
     abstract watch(callback: (changes: FileChangeInfo[]) => void): Promise<void>;
     abstract unwatch(): Promise<void>;
 
-    protected async getCurrentFilesState(): Promise<Map<string, { lastModified: number }>> {
+    protected async getCurrentFilesState(): Promise<Map<string, KnownFileState>> {
         if (!this.fileSystem) {
             throw new SyncOperationError("FileSystem not initialized", "INITIALIZATION_FAILED");
         }
 
-        const currentFiles = new Map<string, { lastModified: number }>();
+        const currentFiles = new Map<string, KnownFileState>();
 
         const scanDirectory = async (path: string): Promise<void> => {
             try {
@@ -374,8 +410,11 @@ export abstract class BaseSyncTarget implements SyncTarget {
                 if (path !== "/") {
                     try {
                         const dirMetadata = await this.fileSystem!.getMetadata(path);
-                        const dirLastModified = this.originalLastModified.get(path) ?? dirMetadata.lastModified;
-                        currentFiles.set(path, { lastModified: dirLastModified });
+                        const knownState = this.lastKnownFiles.get(path);
+                        currentFiles.set(path, {
+                            lastModified: knownState?.lastModified ?? dirMetadata.lastModified,
+                            hash: ""  // Directories don't have a hash
+                        });
                     } catch (error) {
                         console.warn(`Failed to get metadata for directory ${path}:`, error);
                     }
@@ -388,8 +427,11 @@ export abstract class BaseSyncTarget implements SyncTarget {
 
                     try {
                         const metadata = await this.fileSystem!.getMetadata(fullPath);
-                        const lastModified = this.originalLastModified.get(fullPath) ?? metadata.lastModified;
-                        currentFiles.set(fullPath, { lastModified });
+                        const knownState = this.lastKnownFiles.get(fullPath);
+                        currentFiles.set(fullPath, {
+                            lastModified: knownState?.lastModified ?? metadata.lastModified,
+                            hash: metadata.hash
+                        });
 
                         if (item.type === "directory") {
                             await scanDirectory(fullPath);
@@ -409,5 +451,17 @@ export abstract class BaseSyncTarget implements SyncTarget {
 
         await scanDirectory("/");
         return currentFiles;
+    }
+
+    protected updateLastKnownFiles(currentFiles: Map<string, KnownFileState>): void {
+        // Create a new map with the correct type
+        const newKnownFiles = new Map<string, KnownFileState>();
+        for (const [path, state] of currentFiles) {
+            newKnownFiles.set(path, {
+                lastModified: state.lastModified,
+                hash: state.hash
+            });
+        }
+        this.lastKnownFiles = newKnownFiles;
     }
 } 

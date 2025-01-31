@@ -64,13 +64,13 @@ export class BrowserSyncTarget extends BaseSyncTarget {
           return;
         }
 
-        const currentFiles = await super.getCurrentFilesState();
+        const currentFiles = await this.getCurrentFilesState();
         const changes: FileChangeInfo[] = [];
 
         // Check for new and modified files
-        for (const [path, { lastModified }] of currentFiles) {
-          const known = this.lastKnownFiles.get(path);
-          if (!known) {
+        for (const [path, currentState] of currentFiles) {
+          const knownState = this.lastKnownFiles.get(path);
+          if (!knownState) {
             // New file
             const metadata = await this.fileSystem!.getMetadata(path);
             changes.push({
@@ -78,18 +78,18 @@ export class BrowserSyncTarget extends BaseSyncTarget {
               type: "create",
               hash: metadata.hash,
               size: metadata.size,
-              lastModified,
+              lastModified: currentState.lastModified,
               sourceTarget: this.id
             });
-          } else if (lastModified !== known.lastModified) {
-            // Modified file
+          } else if (currentState.lastModified !== knownState.lastModified || currentState.hash !== knownState.hash) {
+            // Modified file - detect changes by either timestamp or hash
             const metadata = await this.fileSystem!.getMetadata(path);
             changes.push({
               path,
               type: "modify",
               hash: metadata.hash,
               size: metadata.size,
-              lastModified,
+              lastModified: currentState.lastModified,
               sourceTarget: this.id
             });
           }
@@ -113,7 +113,7 @@ export class BrowserSyncTarget extends BaseSyncTarget {
         if (changes.length > 0 && this.watchCallback) {
           this.watchCallback(changes);
           // Update lastKnownFiles to avoid duplicate notifications
-          this.lastKnownFiles = currentFiles;
+          this.updateLastKnownFiles(currentFiles);
         }
 
         // Reset error count on successful check
