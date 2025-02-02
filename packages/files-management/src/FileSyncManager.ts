@@ -155,53 +155,26 @@ export class FileSyncManager implements SyncManager {
     try {
       // For deletions, we don't need to get file content
       if (change.type === "delete") {
-        // Check if the path exists and get its type
-        let type: "file" | "directory" = "file";
+        // Check if the file or directory exists
         try {
-          const metadataResult = await target.getMetadata([change.path]);
-          if (metadataResult?.[0]?.type) {
-            type = metadataResult[0].type;
-          }
+          const metadata = await target.getMetadata([change.path]);
+          const conflict = await target.applyFileChange(change);
+          if (conflict) return conflict;
+          return change;
         } catch {
-          // If we can't get metadata, assume it's a file
-          type = "file";
+          const deletionConflict: FileConflict = {
+            targetId: target.id,
+            path: change.path,
+            sourceTarget: sourceTarget.id,
+            timestamp: Date.now()
+          };
+          return deletionConflict;
         }
-
-        const metadata: FileMetadata = {
-          path: change.path,
-          hash: "",
-          size: 0,
-          lastModified: change.lastModified,
-          type
-        };
-        const content: FileContentStream = {
-          metadata,
-          getReader: () => {
-            const stream = new ReadableStream({
-              start(controller) {
-                controller.enqueue({
-                  content: "",
-                  chunkIndex: 0,
-                  totalChunks: 1,
-                  chunkHash: ""
-                });
-                controller.close();
-              }
-            });
-            return stream.getReader();
-          },
-          close: async () => {
-            /* No cleanup needed */
-          }
-        };
-        const conflict = await target.applyFileChange(metadata, content);
-        if (conflict) return conflict;
-        return change;
       }
 
       // For creates and modifications, get the file content and metadata
       const content = await sourceTarget.getFileContent(change.path);
-      const conflict = await target.applyFileChange(content.metadata, content);
+      const conflict = await target.applyFileChange(change, content);
       if (conflict) return conflict;
       return change;
     } catch (error) {

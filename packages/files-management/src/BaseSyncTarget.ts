@@ -171,8 +171,8 @@ export abstract class BaseSyncTarget implements SyncTarget {
   }
 
   protected async doSync(
-    metadata: FileMetadata,
-    contentStream: FileContentStream
+    changeInfo: FileChangeInfo,
+    contentStream?: FileContentStream
   ): Promise<FileConflict | null> {
     if (!this.fileSystem) {
       throw new SyncOperationError("Not initialized", "INITIALIZATION_FAILED");
@@ -190,17 +190,23 @@ export abstract class BaseSyncTarget implements SyncTarget {
       }
 
       // Handle file deletion
-      if (
-        metadata.type === "file" &&
-        metadata.size === 0 &&
-        metadata.hash === ""
-      ) {
-        if (await this.fileSystem.exists(metadata.path)) {
-          await this.fileSystem.deleteItem(metadata.path, {}, true);
-          this.lastKnownFiles.delete(metadata.path);
+      if (changeInfo.type === "delete") {
+        if (await this.fileSystem.exists(changeInfo.path)) {
+          await this.fileSystem.deleteItem(changeInfo.path, {}, true);
+          this.lastKnownFiles.delete(changeInfo.path);
         }
         return null;
       }
+
+      // For creates/updates, we need a content stream
+      if (!contentStream) {
+        throw new SyncOperationError(
+          "Content stream required for create/update operations",
+          "APPLY_FAILED"
+        );
+      }
+
+      const metadata = contentStream.metadata;
 
       // Handle directory creation
       if (metadata.type === "directory") {
@@ -232,41 +238,7 @@ export abstract class BaseSyncTarget implements SyncTarget {
         }
       }
 
-      // Check for conflicts
-      const exists = await this.fileSystem.exists(metadata.path);
-      if (exists) {
-        const existingMetadata = await this.fileSystem.getMetadata(
-          metadata.path
-        );
-        const knownState = this.lastKnownFiles.get(metadata.path);
-
-        // If we have a known state, check both timestamp and hash
-        if (knownState) {
-          const hasNewerTimestamp =
-            existingMetadata.lastModified > knownState.lastModified;
-          const hashChanged = existingMetadata.hash !== knownState.hash;
-
-          // Only consider it a conflict if both timestamp is newer AND hash is different
-          if (hasNewerTimestamp && hashChanged) {
-            return {
-              path: metadata.path,
-              sourceTarget: this.id,
-              targetId: this.id,
-              timestamp: Date.now()
-            };
-          }
-        } else if (existingMetadata.lastModified > metadata.lastModified) {
-          // For unknown files, fall back to timestamp comparison
-          return {
-            path: metadata.path,
-            sourceTarget: this.id,
-            targetId: this.id,
-            timestamp: Date.now()
-          };
-        }
-      }
-
-      // Create parent directory if it doesn't exist
+      // Ensure parent directory exists for files
       const parentDir = metadata.path.split("/").slice(0, -1).join("/") || "/";
       if (!(await this.fileSystem.exists(parentDir))) {
         await this.fileSystem.createDirectory(parentDir, {}, true);
@@ -366,10 +338,10 @@ export abstract class BaseSyncTarget implements SyncTarget {
   }
 
   async applyFileChange(
-    metadata: FileMetadata,
-    contentStream: FileContentStream
+    changeInfo: FileChangeInfo,
+    contentStream?: FileContentStream
   ): Promise<FileConflict | null> {
-    return this.doSync(metadata, contentStream);
+    return this.doSync(changeInfo, contentStream);
   }
 
   async syncComplete(): Promise<boolean> {

@@ -122,13 +122,32 @@ export interface SyncTarget {
   notifyIncomingChanges(paths: string[]): Promise<void>;
 
   /**
-   * Get metadata for specified paths from this target
+   * Apply a file change to this target
+   * @param changeInfo Information about the change to apply
+   * @param contentStream Optional content stream for create/update operations
+   * @returns FileConflict if there is a conflict, null otherwise
+   * @throws {Error} if change cannot be applied
+   */
+  applyFileChange(
+    changeInfo: FileChangeInfo,
+    contentStream?: FileContentStream
+  ): Promise<FileConflict | null>;
+
+  /**
+   * Complete sync operation and unlock target
+   * @returns true if sync completed successfully
+   * @throws {Error} if sync cannot be completed
+   */
+  syncComplete(): Promise<boolean>;
+
+  /**
+   * Get metadata for files
    * @throws {Error} if metadata cannot be retrieved
    */
   getMetadata(paths: string[]): Promise<FileMetadata[]>;
 
   /**
-   * Get content stream for a specific file
+   * Get content stream for a file
    * @throws {Error} if file not found or cannot be read
    */
   getFileContent(path: string): Promise<FileContentStream>;
@@ -140,66 +159,29 @@ export interface SyncTarget {
   listDirectory(path: string): Promise<FileSystemItem[]>;
 
   /**
-   * Apply a single file change using streaming
-   * @returns Conflict if content differs from incoming changes
-   * @throws {Error} if stream operations fail
-   */
-  applyFileChange(
-    metadata: FileMetadata,
-    contentStream: FileContentStream
-  ): Promise<FileConflict | null>;
-
-  /**
-   * Called when sync is complete
-   * @returns true if target can be unlocked (no pending changes)
-   */
-  syncComplete(): Promise<boolean>;
-
-  /**
-   * Start watching for changes
-   * @param callback - Function to call when changes are detected
-   * @param options - Optional configuration for the watcher
-   * @throws {Error} if watching cannot be started
-   */
-  watch(
-    callback: (changes: FileChangeInfo[]) => void,
-    options?: {
-      priority?: number;
-      metadata?: {
-        registeredBy: string;
-        type?: string;
-        [key: string]: any;
-      };
-      filter?: (change: FileChangeInfo) => boolean;
-    }
-  ): Promise<void>;
-  unwatch(): Promise<void>;
-
-  /**
    * Get current target state
    */
   getState(): TargetState;
 
   /**
-   * Validate if a state transition is allowed
-   * @returns boolean indicating if the transition is valid
+   * Watch for changes
+   * @param callback Function to call when changes are detected
+   * @param options Options for the watcher
    */
-  validateStateTransition(
-    from: TargetStateType,
-    to: TargetStateType,
-    via: string
-  ): boolean;
+  watch(
+    callback: (changes: FileChangeInfo[]) => void,
+    options: WatcherOptions
+  ): Promise<void>;
 
   /**
-   * Get current state type
+   * Stop watching for changes
    */
-  getCurrentState(): TargetStateType;
+  unwatch(): Promise<void>;
 
   /**
-   * Transition to a new state
-   * @throws {SyncOperationError} if transition is invalid
+   * Recover from error state
    */
-  transitionTo(newState: TargetStateType, via: string): void;
+  recover(): Promise<void>;
 }
 
 export class SyncOperationError extends Error {
@@ -248,22 +230,39 @@ export interface FileWatcher {
 }
 
 /**
- * Options for registering a new watcher
+ * Options for file system watchers
  */
 export interface WatcherOptions {
-  /** Callback function to be called when changes occur */
-  callback: (changes: FileChangeInfo[]) => void;
-  /** Priority of the watcher. Higher priority watchers are called first */
-  priority?: number;
-  /** Optional filter function to filter changes */
-  filter?: (change: FileChangeInfo) => boolean;
-  /** Metadata about the watcher */
-  metadata?: {
-    /** Component or module that registered the watcher */
+  /**
+   * Priority level for this watcher
+   * Higher priority watchers are notified first
+   */
+  priority: number;
+
+  /**
+   * Metadata about the watcher
+   */
+  metadata: {
+    /**
+     * Component that registered the watcher
+     */
     registeredBy: string;
-    /** Additional metadata */
+
+    /**
+     * Type of watcher
+     */
+    type?: string;
+
+    /**
+     * Additional metadata
+     */
     [key: string]: any;
   };
+
+  /**
+   * Optional filter function to only receive specific changes
+   */
+  filter?: (change: FileChangeInfo) => boolean;
 }
 
 /**
