@@ -1,18 +1,15 @@
 import FS from "@isomorphic-git/lightning-fs";
 import { FsPromisesAdapter, MinimalFsPromises } from "./FsPromisesAdapter";
 import type {
-  MKDirOptions,
-  WriteFileOptions
+  MKDirOptions
 } from "@isomorphic-git/lightning-fs";
 import type {
   FileSystem,
   FileSystemState,
-  FileSystemStateType,
-  LockMode
+  FileSystemStateType
 } from "@piddie/shared-types";
 import {
-  FileSystemError,
-  VALID_FILE_SYSTEM_STATE_TRANSITIONS
+  FileSystemError
 } from "@piddie/shared-types";
 
 /**
@@ -81,26 +78,22 @@ export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
     const fsWrapper: MinimalFsPromises = {
       mkdir: (path: string, options?: { recursive?: boolean }) =>
         fs.promises.mkdir(path, { mode: 0o777, ...options } as MKDirOptions),
+      readdir: async (path: string) => {
+        const entries = await fs.promises.readdir(path);
+        const results = await Promise.all(
+          entries.map(async (name) => {
+            const stats = await fs.promises.stat(browserPath.join(path, name));
+            return {
+              name,
+              isDirectory: () => stats.isDirectory(),
+              isFile: () => stats.isFile()
+            };
+          })
+        );
+        return results;
+      },
       stat: async (path: string) => {
         const stats = await fs.promises.stat(path);
-        // Use the built-in methods from LightningFS stats
-        const isDir = stats.isDirectory();
-        if (isDir) {
-          // For directories, use a fixed timestamp based on the path
-          // This ensures consistent timestamps for the same directory
-          const hashCode = path.split("").reduce((a, b) => {
-            a = (a << 5) - a + b.charCodeAt(0);
-            return a & a;
-          }, 0);
-          // Use a fixed base timestamp (e.g., start of 2024) plus the hash
-          const baseTimestamp = new Date("2024-01-01").getTime();
-          return {
-            isDirectory: () => true,
-            isFile: () => false,
-            mtimeMs: baseTimestamp + Math.abs(hashCode),
-            size: 0
-          };
-        }
         return {
           isDirectory: () => stats.isDirectory(),
           isFile: () => stats.isFile(),
@@ -115,20 +108,10 @@ export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
         data: string,
         options?: { encoding?: string; isSyncOperation?: boolean }
       ) => {
-        // Check if we're in a sync operation by checking the lock mode
-        const isInSyncMode =
-          this.lockState.lockMode === "sync" || options?.isSyncOperation;
-        if (this.lockState.isLocked && !isInSyncMode) {
+        if (this.lockState.isLocked && !options?.isSyncOperation) {
           throw new FileSystemError("File system is locked", "LOCKED");
         }
-
-        // LightningFS only supports utf8 encoding
-        await fs.promises.writeFile(path, data, {
-          mode: 0o666,
-          encoding: "utf8"
-        });
-
-        // Update the last operation
+        await fs.promises.writeFile(path, data, { mode: 0o666, encoding: "utf8" });
         this.lastOperation = {
           type: "write",
           path,
@@ -136,34 +119,29 @@ export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
         };
       },
       unlink: fs.promises.unlink,
-      readdir: async (path: string) => {
-        const entries = await fs.promises.readdir(path);
-        const results = await Promise.all(
-          entries.map(async (name) => {
-            const stats = await fs.promises.stat(`${path}/${name}`);
-            return {
-              name,
-              isDirectory: () => stats.isDirectory(),
-              isFile: () => stats.isFile()
-            };
-          })
-        );
-        return results;
-      },
       rm: async (path: string, options?: { recursive?: boolean }) => {
         const stats = await fs.promises.stat(path);
         if (stats.isDirectory()) {
-          if (options?.recursive) {
-            const entries = await fs.promises.readdir(path);
-            await Promise.all(
-              entries.map((entry) => {
-                const fullPath = `${path}/${entry}`;
-                return stats.isDirectory()
-                  ? fsWrapper.rm!(fullPath, options)
-                  : fs.promises.unlink(fullPath);
-              })
+          const entries = await fs.promises.readdir(path);
+          if (entries.length > 0 && !options?.recursive) {
+            throw new FileSystemError(
+              `Directory not empty: ${path}. Use recursive option to delete non-empty directories.`,
+              "INVALID_OPERATION"
             );
           }
+          if (options?.recursive && entries.length > 0) {
+            // First recursively delete all entries
+            for (const entry of entries) {
+              const entryPath = browserPath.join(path, entry);
+              const entryStats = await fs.promises.stat(entryPath);
+              if (entryStats.isDirectory()) {
+                await fs.promises.rmdir(entryPath);
+              } else {
+                await fs.promises.unlink(entryPath);
+              }
+            }
+          }
+          // Then remove the empty directory
           await fs.promises.rmdir(path);
         } else {
           await fs.promises.unlink(path);
@@ -180,18 +158,20 @@ export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
     });
   }
 
-  override validateStateTransition(
-    from: FileSystemStateType,
-    to: FileSystemStateType,
-    via: string
-  ): boolean {
-    // If we're already in error state, only allow transitions from error to ready via initialize
-    if (from === "error") {
-      return to === "ready" && via === "initialize";
-    }
-    return VALID_FILE_SYSTEM_STATE_TRANSITIONS.some(
-      (t) => t.from === from && t.to === to && t.via === via
-    );
+  protected override normalizePath(filePath: string): string {
+    return browserPath.normalize(filePath);
+  }
+
+  protected override getDirname(filePath: string): string {
+    return browserPath.dirname(filePath);
+  }
+
+  protected override getBasename(filePath: string): string {
+    return browserPath.basename(filePath);
+  }
+
+  protected override joinPaths(...paths: string[]): string {
+    return browserPath.join(...paths);
   }
 
   override async initialize(): Promise<void> {
@@ -241,98 +221,5 @@ export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
       }
       throw error;
     }
-  }
-
-  override async lock(
-    timeoutMs: number,
-    reason: string,
-    mode: LockMode = "external"
-  ): Promise<void> {
-    if (this.lockState.isLocked) {
-      throw new FileSystemError("File system already locked", "LOCKED");
-    }
-
-    this.lockState = {
-      isLocked: true,
-      lockedSince: Date.now(),
-      lockTimeout: timeoutMs,
-      lockReason: reason,
-      lockMode: mode
-    };
-  }
-
-  override async forceUnlock(): Promise<void> {
-    if (!this.lockState.isLocked) {
-      return;
-    }
-    if (this.currentState !== "ready") {
-      this.transitionTo("ready", "unlock");
-    }
-    this.lockState = { isLocked: false };
-  }
-
-  protected async handleOperation<T>(
-    operation: () => Promise<T>,
-    type: string,
-    path: string
-  ): Promise<T> {
-    if (this.lockState.isLocked && this.lockState.lockMode === "external") {
-      throw new FileSystemError("File system is locked", "LOCKED");
-    }
-
-    this.pendingOperations++;
-    this.lastOperation = {
-      type,
-      path,
-      timestamp: Date.now()
-    };
-
-    try {
-      return await operation();
-    } catch (error) {
-      this.transitionTo("error", "error");
-      throw error;
-    } finally {
-      this.pendingOperations--;
-    }
-  }
-
-  /**
-   * Normalize a path according to the browser file system rules
-   */
-  protected override normalizePath(path: string): string {
-    return path.replace(/^\/+|\/+$/g, "").replace(/\/+/g, "/");
-  }
-
-  /**
-   * Get the directory name from a path
-   */
-  protected override getDirname(path: string): string {
-    const normalized = this.normalizePath(path);
-    const lastSlash = normalized.lastIndexOf("/");
-    if (lastSlash === -1) return "/";
-    return normalized.slice(0, lastSlash) || "/";
-  }
-
-  /**
-   * Get the base name from a path
-   */
-  protected override getBasename(path: string): string {
-    const normalized = this.normalizePath(path);
-    const lastSlash = normalized.lastIndexOf("/");
-    return lastSlash === -1 ? normalized : normalized.slice(lastSlash + 1);
-  }
-
-  /**
-   * Join path segments according to browser file system rules
-   */
-  protected override joinPaths(...paths: string[]): string {
-    return (
-      "/" +
-      paths
-        .map((part) => this.normalizePath(part))
-        .filter(Boolean)
-        .join("/")
-    );
   }
 }

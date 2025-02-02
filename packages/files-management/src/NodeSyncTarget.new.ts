@@ -1,12 +1,8 @@
 import type {
   FileSystem,
-  FileMetadata,
-  FileContentStream,
-  FileConflict,
   FileChangeInfo
 } from "@piddie/shared-types";
 import { SyncOperationError } from "@piddie/shared-types";
-import { ReadableStream } from "node:stream/web";
 import { BaseSyncTarget } from "./BaseSyncTarget";
 import { NodeFileSystem } from "./NodeFileSystem";
 import { watch } from "node:fs/promises";

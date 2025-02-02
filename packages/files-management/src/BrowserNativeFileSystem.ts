@@ -88,11 +88,44 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
   constructor(options: { rootHandle: FileSystemDirectoryHandle }) {
     // Create a wrapper that implements MinimalFsPromises using File System Access API
     const fsWrapper: MinimalFsPromises = {
-      mkdir: async (dirPath: string) => {
-        const parentPath = this.getDirname(dirPath);
-        const dirName = this.getBasename(dirPath);
-        const parentHandle = await this.getDirectoryHandle(parentPath);
-        await parentHandle.getDirectoryHandle(dirName, { create: true });
+      mkdir: async (dirPath: string, options?: { recursive?: boolean; isSyncOperation?: boolean }) => {
+        // Check if we're in a sync operation by checking the lock mode
+        const isInSyncMode =
+          this.lockState.lockMode === "sync" || options?.isSyncOperation;
+        if (this.lockState.isLocked && !isInSyncMode) {
+          throw new FileSystemError("File system is locked", "LOCKED");
+        }
+
+        // If the directory already exists, return early
+        try {
+          await fsWrapper.access!(dirPath);
+          return;
+        } catch (error) {
+          // Directory doesn't exist, continue with creation
+        }
+
+        const recursive = options?.recursive ?? false;
+        if (!recursive) {
+          // For non-recursive creation, verify parent directory exists
+          const parentDir = browserPath.dirname(dirPath);
+          if (parentDir !== "/") {
+            try {
+              await fsWrapper.access!(parentDir);
+            } catch (error) {
+              throw new FileSystemError(
+                `Parent directory ${parentDir} does not exist`,
+                "NOT_FOUND"
+              );
+            }
+          }
+        }
+
+        // Create the directory with the isSyncOperation flag
+        const mkdirOptions: { recursive?: boolean; isSyncOperation?: boolean } = { recursive };
+        if (options?.isSyncOperation !== undefined) {
+          mkdirOptions.isSyncOperation = options.isSyncOperation;
+        }
+        await fsWrapper.mkdir(dirPath, mkdirOptions);
       },
       readdir: async (dirPath: string) => {
         const dirHandle = await this.getDirectoryHandle(dirPath);
@@ -193,15 +226,31 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
           timestamp: Date.now()
         };
       },
-      rm: async (itemPath: string, options?: { recursive?: boolean }) => {
+      rm: async (itemPath: string, options?: { recursive?: boolean; isSyncOperation?: boolean }) => {
+        // Check if we're in a sync operation by checking the lock mode
+        const isInSyncMode =
+          this.lockState.lockMode === "sync" || options?.isSyncOperation;
+        if (this.lockState.isLocked && !isInSyncMode) {
+          throw new FileSystemError("File system is locked", "LOCKED");
+        }
+
         const parentPath = this.getDirname(itemPath);
         const itemName = this.getBasename(itemPath);
         const parentHandle = await this.getDirectoryHandle(parentPath);
-        await parentHandle.removeEntry(itemName, options);
+        await parentHandle.removeEntry(itemName, options?.recursive ? { recursive: true } : undefined);
         this.handleCache.delete(itemPath);
       },
-      unlink: async (filePath: string) => {
-        await fsWrapper.rm!(filePath);
+      unlink: async (filePath: string, options?: { isSyncOperation?: boolean }) => {
+        // Check if we're in a sync operation by checking the lock mode
+        const isInSyncMode =
+          this.lockState.lockMode === "sync" || options?.isSyncOperation;
+        if (this.lockState.isLocked && !isInSyncMode) {
+          throw new FileSystemError("File system is locked", "LOCKED");
+        }
+
+        const rmOptions: { recursive?: boolean; isSyncOperation?: boolean } | undefined =
+          options?.isSyncOperation !== undefined ? { isSyncOperation: options.isSyncOperation } : undefined;
+        await fsWrapper.rm!(filePath, rmOptions);
       },
       access: async (itemPath: string) => {
         await this.getHandle(itemPath);
@@ -324,52 +373,5 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
       );
     }
     return handle as FileSystemDirectoryHandle;
-  }
-
-  protected override async calculateHash(content: string): Promise<string> {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(content);
-    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-  }
-
-  /**
-   * Normalize a path according to the browser file system rules
-   */
-  protected override normalizePath(path: string): string {
-    return path.replace(/^\/+|\/+$/g, "").replace(/\/+/g, "/");
-  }
-
-  /**
-   * Get the directory name from a path
-   */
-  protected override getDirname(path: string): string {
-    const normalized = this.normalizePath(path);
-    const lastSlash = normalized.lastIndexOf("/");
-    if (lastSlash === -1) return "/";
-    return normalized.slice(0, lastSlash) || "/";
-  }
-
-  /**
-   * Get the base name from a path
-   */
-  protected override getBasename(path: string): string {
-    const normalized = this.normalizePath(path);
-    const lastSlash = normalized.lastIndexOf("/");
-    return lastSlash === -1 ? normalized : normalized.slice(lastSlash + 1);
-  }
-
-  /**
-   * Join path segments according to browser file system rules
-   */
-  protected override joinPaths(...paths: string[]): string {
-    return (
-      "/" +
-      paths
-        .map((part) => this.normalizePath(part))
-        .filter(Boolean)
-        .join("/")
-    );
   }
 }

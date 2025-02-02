@@ -214,7 +214,6 @@ onUnmounted(async () => {
 <template>
   <div class="file-system-explorer">
     <header class="panel-header">
-      <h2>{{ title }}</h2>
       <div class="toolbar">
         <sl-button size="small" @click="navigateUp">
           <sl-icon name="arrow-up"></sl-icon>

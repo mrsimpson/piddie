@@ -6,9 +6,35 @@ import {
   FileSystemItem,
   LockMode
 } from "@piddie/shared-types";
-import path from "path";
 import type { FileSystemStateType } from "@piddie/shared-types";
 import { VALID_FILE_SYSTEM_STATE_TRANSITIONS } from "@piddie/shared-types";
+
+/**
+ * Browser-compatible path utilities
+ */
+const browserPath = {
+  normalize(path: string): string {
+    // Remove leading and trailing slashes, collapse multiple slashes
+    return path.replace(/^\/+|\/+$/g, "").replace(/\/+/g, "/");
+  },
+
+  dirname(path: string): string {
+    const normalized = browserPath.normalize(path);
+    const lastSlash = normalized.lastIndexOf("/");
+    if (lastSlash === -1) return "/";
+    return normalized.slice(0, lastSlash) || "/";
+  },
+
+  basename(path: string): string {
+    const normalized = browserPath.normalize(path);
+    const lastSlash = normalized.lastIndexOf("/");
+    return lastSlash === -1 ? normalized : normalized.slice(lastSlash + 1);
+  },
+
+  join(...parts: string[]): string {
+    return "/" + parts.map((part) => browserPath.normalize(part)).filter(Boolean).join("/");
+  }
+};
 
 /**
  * Minimum required subset of fs.promises API that we need
@@ -16,7 +42,7 @@ import { VALID_FILE_SYSTEM_STATE_TRANSITIONS } from "@piddie/shared-types";
 export interface MinimalFsPromises {
   mkdir(
     path: string,
-    options?: { recursive?: boolean }
+    options?: { recursive?: boolean; isSyncOperation?: boolean }
   ): Promise<void | string | undefined>;
   readdir(
     path: string,
@@ -34,8 +60,14 @@ export interface MinimalFsPromises {
     data: string,
     options?: { encoding?: string; isSyncOperation?: boolean }
   ): Promise<void>;
-  rm?(path: string, options?: { recursive?: boolean }): Promise<void>;
-  unlink(path: string): Promise<void>;
+  rm?(
+    path: string,
+    options?: { recursive?: boolean; isSyncOperation?: boolean }
+  ): Promise<void>;
+  unlink(
+    path: string,
+    options?: { isSyncOperation?: boolean }
+  ): Promise<void>;
   access?(path: string): Promise<void>;
 }
 
@@ -120,7 +152,7 @@ export class FsPromisesAdapter implements FileSystem {
    * Can be overridden by implementations that can't use Node's path module
    */
   protected normalizePath(filePath: string): string {
-    return path.normalize(filePath).replace(/^\//, "");
+    return browserPath.normalize(filePath);
   }
 
   /**
@@ -128,7 +160,7 @@ export class FsPromisesAdapter implements FileSystem {
    * Can be overridden by implementations that can't use Node's path module
    */
   protected getDirname(filePath: string): string {
-    return path.dirname(filePath);
+    return browserPath.dirname(filePath);
   }
 
   /**
@@ -136,7 +168,7 @@ export class FsPromisesAdapter implements FileSystem {
    * Can be overridden by implementations that can't use Node's path module
    */
   protected getBasename(filePath: string): string {
-    return path.basename(filePath);
+    return browserPath.basename(filePath);
   }
 
   /**
@@ -144,7 +176,7 @@ export class FsPromisesAdapter implements FileSystem {
    * Can be overridden by implementations that can't use Node's path module
    */
   protected joinPaths(...paths: string[]): string {
-    return path.join(...paths);
+    return browserPath.join(...paths);
   }
 
   /**
@@ -246,21 +278,24 @@ export class FsPromisesAdapter implements FileSystem {
   async writeFile(
     path: string,
     content: string,
-    isSyncOperation = false
+    isSyncOperation: boolean = false
   ): Promise<void> {
+    this.ensureInitialized();
+    this.checkLock("write", isSyncOperation);
+
     const absolutePath = this.getAbsolutePath(path);
 
     try {
-      // Check if we're in a sync operation by checking the lock mode
-      const isInSyncMode =
-        this.lockState.lockMode === "sync" || isSyncOperation;
-      if (this.lockState.isLocked && !isInSyncMode) {
-        throw new FileSystemError("File system is locked", "LOCKED");
-      }
-
       await this.options.fs.writeFile(absolutePath, content, {
+        encoding: "utf8",
         isSyncOperation
       });
+
+      this.lastOperation = {
+        type: "write",
+        path,
+        timestamp: Date.now()
+      };
     } catch (error: unknown) {
       if (error instanceof FileSystemError) {
         throw error;
@@ -290,38 +325,50 @@ export class FsPromisesAdapter implements FileSystem {
   }
 
   async deleteItem(
-    itemPath: string,
+    path: string,
+    options?: { recursive?: boolean },
     isSyncOperation: boolean = false
   ): Promise<void> {
     this.ensureInitialized();
     this.checkLock("write", isSyncOperation);
 
-    const absolutePath = this.getAbsolutePath(itemPath);
+    const absolutePath = this.getAbsolutePath(path);
 
     try {
       // First check if item exists
       const exists = await this.exists(absolutePath);
       if (!exists) {
-        throw new FileSystemError(`Path not found: ${itemPath}`, "NOT_FOUND");
+        throw new FileSystemError(`Path not found: ${path}`, "NOT_FOUND");
       }
 
       const stats = await this.options.fs.stat(absolutePath);
       if (stats.isDirectory()) {
         if (this.options.fs.rm) {
-          await this.options.fs.rm(absolutePath, { recursive: true });
+          await this.options.fs.rm(absolutePath, { recursive: !!options?.recursive });
         } else {
           // Fallback implementation if rm is not available
           const entries = await this.options.fs.readdir(absolutePath, {
             withFileTypes: true
           });
-          await Promise.all(
-            entries.map((entry) => {
-              const fullPath = this.joinPaths(absolutePath, entry.name);
-              return entry.isDirectory()
-                ? this.deleteItem(fullPath, isSyncOperation)
-                : this.options.fs.unlink(fullPath);
-            })
-          );
+
+          if (entries.length > 0 && !options?.recursive) {
+            throw new FileSystemError(
+              `Directory not empty: ${path}. Use recursive option to delete non-empty directories.`,
+              "INVALID_OPERATION"
+            );
+          }
+
+          if (options?.recursive && entries.length > 0) {
+            await Promise.all(
+              entries.map((entry) => {
+                const fullPath = this.joinPaths(absolutePath, entry.name);
+                return entry.isDirectory()
+                  ? this.deleteItem(fullPath, { recursive: true }, isSyncOperation)
+                  : this.options.fs.unlink(fullPath);
+              })
+            );
+          }
+          await this.options.fs.unlink(absolutePath);
         }
       } else {
         await this.options.fs.unlink(absolutePath);
@@ -337,6 +384,7 @@ export class FsPromisesAdapter implements FileSystem {
 
   async createDirectory(
     path: string,
+    options?: { recursive?: boolean },
     isSyncOperation: boolean = false
   ): Promise<void> {
     this.ensureInitialized();
@@ -345,11 +393,18 @@ export class FsPromisesAdapter implements FileSystem {
     const absolutePath = this.getAbsolutePath(path);
 
     try {
-      await this.options.fs.mkdir(absolutePath, { recursive: true });
+      await this.options.fs.mkdir(absolutePath, { recursive: !!options?.recursive });
     } catch (error: unknown) {
       if (error instanceof Error && error.message.includes("EEXIST")) {
         // Directory already exists - that's fine
         return;
+      }
+      if (error instanceof Error && error.message.includes("ENOENT")) {
+        // Parent directory doesn't exist and recursive is false
+        throw new FileSystemError(
+          `Cannot create directory '${path}': parent directory does not exist. Use recursive option to create parent directories.`,
+          "INVALID_OPERATION"
+        );
       }
       const message = error instanceof Error ? error.message : "Unknown error";
       throw new FileSystemError(message, "PERMISSION_DENIED");
@@ -507,14 +562,23 @@ export class FsPromisesAdapter implements FileSystem {
       );
     }
 
+    const originalLockedSince = Date.now();
     // Just set the lock state without transitioning state
     this.lockState = {
       isLocked: true,
-      lockedSince: Date.now(),
+      lockedSince: originalLockedSince,
       lockTimeout: timeoutMs,
       lockReason: reason,
       lockMode: mode
     };
+
+    // Set up timeout to automatically unlock
+    setTimeout(() => {
+      if (this.lockState.isLocked &&
+        this.lockState.lockedSince === originalLockedSince) {
+        this.lockState = { isLocked: false };
+      }
+    }, timeoutMs);
   }
 
   async forceUnlock(): Promise<void> {

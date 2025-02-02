@@ -6,7 +6,7 @@ vi.mock("native-file-system-adapter", () => {
   };
 });
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import type { FileSystem } from "@piddie/shared-types";
 import type { WritableStream } from "node:stream/web";
 
@@ -352,6 +352,124 @@ describe("BrowserNativeFileSystem", () => {
           })
         );
       });
+
+      it("should create a new directory", async () => {
+        // Given a path for a new directory
+        const path = "/new-dir";
+
+        // When creating the directory
+        await fileSystem.createDirectory(path);
+
+        // Then the directory should exist
+        const dirHandle = await mockRootHandle.getDirectoryHandle("new-dir");
+        expect(dirHandle.kind).toBe("directory");
+      });
+
+      it("should create nested directories recursively", async () => {
+        // Given a path for nested directories
+        const path = "/parent/child/grandchild";
+
+        // When creating the directory structure with recursive flag
+        await fileSystem.createDirectory(path, false, { recursive: true });
+
+        // Then verify the nested structure exists
+        const parentHandle = await mockRootHandle.getDirectoryHandle("parent");
+        const childHandle = await parentHandle.getDirectoryHandle("child");
+        const grandchildHandle = await childHandle.getDirectoryHandle("grandchild");
+
+        expect(parentHandle.kind).toBe("directory");
+        expect(childHandle.kind).toBe("directory");
+        expect(grandchildHandle.kind).toBe("directory");
+      });
+
+      it("should throw INVALID_OPERATION when creating nested directories without recursive flag", async () => {
+        // Given a path for nested directories
+        const path = "/parent/child/grandchild";
+
+        // When trying to create nested directories without recursive flag
+        const createPromise = fileSystem.createDirectory(path, { recursive: false });
+
+        // Then it should throw INVALID_OPERATION with specific message
+        await expect(createPromise).rejects.toThrow(
+          expect.objectContaining({
+            code: "INVALID_OPERATION",
+            message: expect.stringContaining("parent directory does not exist")
+          })
+        );
+      });
+
+      it("should not throw when creating an existing directory", async () => {
+        // Given an existing directory
+        const path = "/existing-dir";
+        await fileSystem.createDirectory(path);
+
+        // When creating the same directory again
+        const createPromise = fileSystem.createDirectory(path);
+
+        // Then it should not throw
+        await expect(createPromise).resolves.toBeUndefined();
+      });
+
+      it("should delete an empty directory", async () => {
+        // Given an empty directory
+        const path = "/empty-dir";
+        await fileSystem.createDirectory(path);
+
+        // When deleting the directory
+        await fileSystem.deleteItem(path);
+
+        // Then verify the directory is gone
+        const checkPromise = mockRootHandle.getDirectoryHandle("empty-dir");
+        await expect(checkPromise).rejects.toThrow();
+      });
+
+      it("should delete a directory with contents recursively", async () => {
+        // Given a directory with contents
+        const path = "/dir-with-contents";
+        await fileSystem.createDirectory(path);
+        await fileSystem.writeFile(`${path}/file1.txt`, "content1");
+        await fileSystem.createDirectory(`${path}/subdir`);
+        await fileSystem.writeFile(`${path}/subdir/file2.txt`, "content2");
+
+        // When deleting the directory
+        await fileSystem.deleteItem(path);
+
+        // Then verify the directory and its contents are gone
+        const checkPromise = mockRootHandle.getDirectoryHandle("dir-with-contents");
+        await expect(checkPromise).rejects.toThrow();
+      });
+
+      it("should throw NOT_FOUND when deleting non-existent directory", async () => {
+        // Given a non-existent directory
+        const path = "/non-existent-dir";
+
+        // When trying to delete the directory
+        const deletePromise = fileSystem.deleteItem(path);
+
+        // Then it should throw NOT_FOUND
+        await expect(deletePromise).rejects.toThrow(
+          expect.objectContaining({
+            code: "NOT_FOUND"
+          })
+        );
+      });
+
+      it("should throw when deleting a directory while file system is locked", async () => {
+        // Given a locked file system and an existing directory
+        const path = "/locked-dir";
+        await fileSystem.createDirectory(path);
+        await fileSystem.lock(1000, "test lock");
+
+        // When trying to delete the directory
+        const deletePromise = fileSystem.deleteItem(path);
+
+        // Then it should throw LOCKED
+        await expect(deletePromise).rejects.toThrow(
+          expect.objectContaining({
+            code: "LOCKED"
+          })
+        );
+      });
     });
 
     describe("metadata operations", () => {
@@ -378,28 +496,41 @@ describe("BrowserNativeFileSystem", () => {
         });
       });
 
-      it("should throw INVALID_OPERATION for directories", async () => {
+      it("should return directory metadata", async () => {
         // Given a directory exists
         const path = "/test-dir";
         mockFiles.set("test-dir", createMockDirectoryHandle("test-dir"));
 
-        // When getting metadata, it should throw
-        await expect(fileSystem.getMetadata(path)).rejects.toThrow(
-          expect.objectContaining({
-            code: "INVALID_OPERATION",
-            message: "Path is not a file: /test-dir"
-          })
-        );
+        // When getting metadata
+        const meta = await fileSystem.getMetadata(path);
+
+        // Then it should return correct directory metadata
+        expect(meta).toEqual({
+          path,
+          type: "directory",
+          hash: "", // Directories don't have a hash
+          size: 0, // Directories don't have a size
+          lastModified: expect.any(Number)
+        });
       });
     });
 
     describe("locking", () => {
+      beforeEach(() => {
+        vi.useFakeTimers();
+      });
+
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
       it("should respect lock timeout", async () => {
         // Given a short lock
         await fileSystem.lock(100, "short lock");
 
         // When waiting for timeout
-        await new Promise((resolve) => setTimeout(resolve, 150));
+        vi.advanceTimersByTime(150);
+        await Promise.resolve(); // Flush promises
 
         // Then system should be unlocked
         const state = fileSystem.getState();

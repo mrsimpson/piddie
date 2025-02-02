@@ -16,7 +16,7 @@ vi.mock("@isomorphic-git/lightning-fs", () => {
   };
 });
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import type { FileSystem } from "@piddie/shared-types";
 import { BrowserFileSystem } from "../src/BrowserFileSystem";
 import FS from "@isomorphic-git/lightning-fs";
@@ -210,6 +210,152 @@ describe("Browser FileSystem", () => {
           })
         );
       });
+
+      it("should create a new directory", async () => {
+        // Given a path for a new directory
+        const path = "/new-dir";
+        mkdirSpy.mockResolvedValue(undefined);
+        statSpy.mockResolvedValue(createStatsMock({ isDirectory: true }));
+
+        // When creating the directory
+        await fileSystem.createDirectory(path);
+
+        // Then it should call mkdir with correct path and non-recursive by default
+        expect(mkdirSpy).toHaveBeenCalledWith(
+          expect.stringContaining("new-dir"),
+          expect.objectContaining({ recursive: false })
+        );
+      });
+
+      it("should create nested directories when recursive is true", async () => {
+        // Given a path for nested directories
+        const path = "/parent/child/grandchild";
+        mkdirSpy.mockResolvedValue(undefined);
+        statSpy.mockResolvedValue(createStatsMock({ isDirectory: true }));
+
+        // When creating the directory structure with recursive option
+        await fileSystem.createDirectory(path, { recursive: true });
+
+        // Then it should call mkdir with recursive option
+        expect(mkdirSpy).toHaveBeenCalledWith(
+          expect.stringContaining("parent/child/grandchild"),
+          expect.objectContaining({ recursive: true })
+        );
+      });
+
+      it("should throw INVALID_OPERATION when creating nested directories without recursive flag", async () => {
+        // Given a path for nested directories
+        const path = "/parent/child/grandchild";
+        mkdirSpy.mockRejectedValue(new Error("ENOENT"));
+        statSpy.mockRejectedValue(new Error("ENOENT"));
+
+        // When trying to create nested directories without recursive
+        const createPromise = fileSystem.createDirectory(path, { recursive: false });
+
+        // Then it should throw INVALID_OPERATION with specific message
+        await expect(createPromise).rejects.toThrow(
+          expect.objectContaining({
+            code: "INVALID_OPERATION",
+            message: expect.stringContaining("parent directory does not exist")
+          })
+        );
+      });
+
+      it("should not throw when creating an existing directory", async () => {
+        // Given an existing directory
+        const path = "/existing-dir";
+        mkdirSpy.mockRejectedValue(Object.assign(new Error("EEXIST"), { code: "EEXIST" }));
+        statSpy.mockResolvedValue(createStatsMock({ isDirectory: true }));
+
+        // When creating the directory
+        const createPromise = fileSystem.createDirectory(path);
+
+        // Then it should not throw
+        await expect(createPromise).resolves.toBeUndefined();
+      });
+
+      it("should delete an empty directory", async () => {
+        // Given an empty directory
+        const path = "/empty-dir";
+        statSpy.mockResolvedValue(createStatsMock({ isDirectory: true }));
+        readdirSpy.mockResolvedValue([]);
+
+        // When deleting the directory
+        await fileSystem.deleteItem(path);
+
+        // Then it should attempt to remove the directory
+        expect(mockFs.rmdir).toHaveBeenCalledWith(expect.stringContaining("empty-dir"));
+      });
+
+      it("should delete a directory with contents when recursive flag is true", async () => {
+        // Given a directory with contents
+        const path = "/dir-with-contents";
+        statSpy.mockImplementation((filePath: string) => {
+          if (filePath.endsWith(".txt")) {
+            return Promise.resolve(createStatsMock({ isDirectory: false }));
+          }
+          return Promise.resolve(createStatsMock({ isDirectory: true }));
+        });
+        readdirSpy.mockResolvedValue(["file1.txt", "subdir"]);
+
+        // When deleting the directory with recursive flag
+        await fileSystem.deleteItem(path, { recursive: true, });
+
+        // Then it should attempt to remove the directory and its contents
+        expect(mockFs.unlink).toHaveBeenCalled(); // For files
+        expect(mockFs.rmdir).toHaveBeenCalled(); // For directories
+      });
+
+      it("should throw INVALID_OPERATION when deleting non-empty directory without recursive flag", async () => {
+        // Given a directory with contents
+        const path = "/dir-with-contents";
+        statSpy.mockResolvedValue(createStatsMock({ isDirectory: true }));
+        readdirSpy.mockResolvedValue(["file1.txt", "subdir"]);
+
+        // When trying to delete the directory without recursive flag
+        const deletePromise = fileSystem.deleteItem(path, { recursive: false });
+
+        // Then it should throw INVALID_OPERATION
+        await expect(deletePromise).rejects.toThrow(
+          expect.objectContaining({
+            code: "INVALID_OPERATION",
+            message: expect.stringContaining("Directory not empty")
+          })
+        );
+      });
+
+      it("should throw NOT_FOUND when deleting non-existent directory", async () => {
+        // Given a non-existent directory
+        const path = "/non-existent-dir";
+        statSpy.mockRejectedValue(enoentError);
+
+        // When trying to delete the directory
+        const deletePromise = fileSystem.deleteItem(path);
+
+        // Then it should throw NOT_FOUND
+        await expect(deletePromise).rejects.toThrow(
+          expect.objectContaining({
+            code: "NOT_FOUND"
+          })
+        );
+      });
+
+      it("should throw when deleting a directory while file system is locked", async () => {
+        // Given a locked file system and an existing directory
+        const path = "/locked-dir";
+        await fileSystem.lock(1000, "test lock");
+        statSpy.mockResolvedValue(createStatsMock({ isDirectory: true }));
+
+        // When trying to delete the directory
+        const deletePromise = fileSystem.deleteItem(path);
+
+        // Then it should throw LOCKED
+        await expect(deletePromise).rejects.toThrow(
+          expect.objectContaining({
+            code: "LOCKED"
+          })
+        );
+      });
     });
 
     describe("metadata operations", () => {
@@ -237,7 +383,8 @@ describe("Browser FileSystem", () => {
         });
       });
 
-      it("should throw INVALID_OPERATION for directories", async () => {
+
+      it("should return directory metadata", async () => {
         // Given a directory exists
         const path = "/test-dir";
         statSpy.mockResolvedValue(
@@ -245,24 +392,36 @@ describe("Browser FileSystem", () => {
             isDirectory: true
           })
         );
+        // When getting metadata
+        const meta = await fileSystem.getMetadata(path);
 
-        // When getting metadata, it should throw
-        await expect(fileSystem.getMetadata(path)).rejects.toThrow(
-          expect.objectContaining({
-            code: "INVALID_OPERATION",
-            message: "Path is not a file: /test-dir"
-          })
-        );
+        // Then it should return correct directory metadata
+        expect(meta).toEqual({
+          path,
+          type: "directory",
+          hash: "", // Directories don't have a hash
+          size: 0, // Directories don't have a size
+          lastModified: expect.any(Number)
+        });
       });
     });
 
     describe("locking", () => {
+      beforeEach(() => {
+        vi.useFakeTimers();
+      });
+
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
       it("should respect lock timeout", async () => {
         // Given a short lock
         await fileSystem.lock(100, "short lock");
 
         // When waiting for timeout
-        await new Promise((resolve) => setTimeout(resolve, 150));
+        vi.advanceTimersByTime(150);
+        await Promise.resolve(); // Flush promises
 
         // Then system should be unlocked
         const state = fileSystem.getState();
@@ -288,6 +447,169 @@ describe("Browser FileSystem", () => {
 
         // But read operations should succeed
         await expect(readPromise).resolves.not.toThrow();
+      });
+    });
+
+    describe("Empty Filesystem Handling", () => {
+      beforeEach(async () => {
+        await fileSystem.initialize();
+      });
+
+      it("should handle empty root directory", async () => {
+        // Mock empty root directory
+        readdirSpy.mockResolvedValue([]);
+        statSpy.mockResolvedValue(createStatsMock({ isDirectory: true }));
+
+        // List root directory
+        const contents = await fileSystem.listDirectory("/");
+        expect(contents).toEqual([]);
+      });
+
+      it("should create and list empty directories", async () => {
+        const emptyDirPath = "/empty-dir";
+
+        // Mock directory creation
+        mkdirSpy.mockResolvedValue(undefined);
+        statSpy.mockResolvedValue(createStatsMock({ isDirectory: true }));
+        readdirSpy.mockResolvedValue([]);
+
+        // Create empty directory
+        await fileSystem.createDirectory(emptyDirPath);
+
+        // Verify directory exists
+        const exists = await fileSystem.exists(emptyDirPath);
+        expect(exists).toBe(true);
+
+        // List empty directory
+        const contents = await fileSystem.listDirectory(emptyDirPath);
+        expect(contents).toEqual([]);
+
+        // Get metadata for empty directory
+        const metadata = await fileSystem.getMetadata(emptyDirPath);
+        expect(metadata).toEqual({
+          path: emptyDirPath,
+          type: "directory",
+          hash: "",
+          size: 0,
+          lastModified: expect.any(Number)
+        });
+      });
+
+      it("should handle nested empty directories", async () => {
+        const paths = ["/parent", "/parent/child", "/parent/child/grandchild"];
+
+        // Mock directory operations
+        mkdirSpy.mockResolvedValue(undefined);
+        statSpy.mockResolvedValue(createStatsMock({ isDirectory: true }));
+        readdirSpy.mockImplementation(async (path) => {
+          if (path.includes("/parent/child/grandchild")) return [];
+          if (path.includes("/parent/child")) return ["grandchild"];
+          if (path.includes("/parent")) return ["child"];
+          return [];
+        });
+
+        // Create nested empty directories
+        for (const path of paths) {
+          await fileSystem.createDirectory(path, { recursive: true });
+        }
+
+        // Verify all directories exist
+        for (const path of paths) {
+          const exists = await fileSystem.exists(path);
+          expect(exists).toBe(true);
+        }
+
+        // Verify directory contents
+        const parentContents = await fileSystem.listDirectory("/parent");
+        expect(parentContents).toEqual([
+          expect.objectContaining({
+            path: "/parent/child",
+            type: "directory"
+          })
+        ]);
+
+        const childContents = await fileSystem.listDirectory("/parent/child");
+        expect(childContents).toEqual([
+          expect.objectContaining({
+            path: "/parent/child/grandchild",
+            type: "directory"
+          })
+        ]);
+
+        const grandchildContents = await fileSystem.listDirectory("/parent/child/grandchild");
+        expect(grandchildContents).toEqual([]);
+      });
+
+      it("should delete empty directories", async () => {
+        const emptyDirPath = "/empty-dir";
+
+        // Mock directory operations
+        mkdirSpy.mockResolvedValue(undefined);
+        statSpy.mockResolvedValue(createStatsMock({ isDirectory: true }));
+        readdirSpy.mockResolvedValue([]);
+
+        // Create and verify empty directory
+        await fileSystem.createDirectory(emptyDirPath);
+        expect(await fileSystem.exists(emptyDirPath)).toBe(true);
+
+        // Delete empty directory
+        await fileSystem.deleteItem(emptyDirPath);
+
+        // Verify directory is deleted
+        statSpy.mockRejectedValue(enoentError);
+        expect(await fileSystem.exists(emptyDirPath)).toBe(false);
+      });
+
+      it("should handle concurrent operations on empty directories", async () => {
+        const paths = ["/dir1", "/dir2", "/dir3"];
+
+        // Mock directory operations
+        mkdirSpy.mockResolvedValue(undefined);
+        statSpy.mockResolvedValue(createStatsMock({ isDirectory: true }));
+        readdirSpy.mockResolvedValue([]);
+
+        // Create multiple empty directories concurrently
+        await Promise.all(paths.map(path => fileSystem.createDirectory(path)));
+
+        // Verify all directories exist
+        for (const path of paths) {
+          const exists = await fileSystem.exists(path);
+          expect(exists).toBe(true);
+        }
+
+        // List all directories concurrently
+        const results = await Promise.all(paths.map(path => fileSystem.listDirectory(path)));
+        results.forEach(contents => {
+          expect(contents).toEqual([]);
+        });
+      });
+
+      it("should maintain empty directory state during lock/unlock", async () => {
+        const emptyDirPath = "/empty-dir";
+
+        // Mock directory operations
+        mkdirSpy.mockResolvedValue(undefined);
+        statSpy.mockResolvedValue(createStatsMock({ isDirectory: true }));
+        readdirSpy.mockResolvedValue([]);
+
+        // Create empty directory
+        await fileSystem.createDirectory(emptyDirPath);
+
+        // Lock filesystem
+        await fileSystem.lock(1000, "test lock");
+
+        // Verify directory still exists and is empty during lock
+        expect(await fileSystem.exists(emptyDirPath)).toBe(true);
+        const contents = await fileSystem.listDirectory(emptyDirPath);
+        expect(contents).toEqual([]);
+
+        // Unlock filesystem
+        await fileSystem.forceUnlock();
+
+        // Verify directory state persists after unlock
+        expect(await fileSystem.exists(emptyDirPath)).toBe(true);
+        const contentsAfterUnlock = await fileSystem.listDirectory(emptyDirPath);
+        expect(contentsAfterUnlock).toEqual([]);
       });
     });
   });

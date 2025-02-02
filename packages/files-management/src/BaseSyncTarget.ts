@@ -196,7 +196,7 @@ export abstract class BaseSyncTarget implements SyncTarget {
         metadata.hash === ""
       ) {
         if (await this.fileSystem.exists(metadata.path)) {
-          await this.fileSystem.deleteItem(metadata.path, true);
+          await this.fileSystem.deleteItem(metadata.path, {}, true);
           this.lastKnownFiles.delete(metadata.path);
         }
         return null;
@@ -206,7 +206,7 @@ export abstract class BaseSyncTarget implements SyncTarget {
       if (metadata.type === "directory") {
         try {
           if (!(await this.fileSystem.exists(metadata.path))) {
-            await this.fileSystem.createDirectory(metadata.path, true);
+            await this.fileSystem.createDirectory(metadata.path, {}, true);
             // Store the original timestamp for the directory
             this.lastKnownFiles.set(metadata.path, {
               lastModified: metadata.lastModified,
@@ -269,7 +269,7 @@ export abstract class BaseSyncTarget implements SyncTarget {
       // Create parent directory if it doesn't exist
       const parentDir = metadata.path.split("/").slice(0, -1).join("/") || "/";
       if (!(await this.fileSystem.exists(parentDir))) {
-        await this.fileSystem.createDirectory(parentDir, true);
+        await this.fileSystem.createDirectory(parentDir, {}, true);
         // Get parent directory metadata from source if available
         try {
           const parentMetadata = await this.fileSystem.getMetadata(parentDir);
@@ -456,12 +456,12 @@ export abstract class BaseSyncTarget implements SyncTarget {
       };
       filter?: (change: FileChangeInfo) => boolean;
     } = {
-      priority: WATCHER_PRIORITIES.OTHER,
-      metadata: {
-        registeredBy: "external",
-        type: "other-watcher"
+        priority: WATCHER_PRIORITIES.OTHER,
+        metadata: {
+          registeredBy: "external",
+          type: "other-watcher"
+        }
       }
-    }
   ): Promise<void> {
     const watcherOptions: WatcherOptions = {
       callback,

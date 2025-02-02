@@ -501,6 +501,241 @@ describe("BrowserNativeSyncTarget", () => {
       expect(target.getState().status).toBe("idle");
     });
   });
+
+  describe("Empty Filesystem Handling", () => {
+    beforeEach(async () => {
+      // Setup root directory handle with proper mock implementation
+      mockFiles = new Map();
+      mockRootHandle = createMockDirectoryHandle("root", mockFiles);
+
+      // Mock getHandle method for BrowserNativeFileSystem
+      const getHandleSpy = vi.spyOn(BrowserNativeFileSystem.prototype as any, "getHandle");
+      getHandleSpy.mockImplementation(function (this: any, ...args: any[]) {
+        const path = args[0] as string;
+        if (path === "/") return Promise.resolve(mockRootHandle);
+        const segments = path.split("/").filter(Boolean);
+        let currentHandle: ReturnType<typeof createMockDirectoryHandle> = mockRootHandle;
+
+        for (const segment of segments) {
+          const handle = mockFiles.get(segment);
+          if (!handle || handle.kind !== "directory") {
+            return Promise.reject(new Error("NotFoundError"));
+          }
+          currentHandle = handle as ReturnType<typeof createMockDirectoryHandle>;
+        }
+
+        return Promise.resolve(currentHandle);
+      });
+
+      // Mock getDirectoryHandle for root and directories
+      mockRootHandle.getDirectoryHandle = vi.fn().mockImplementation(async (name, options) => {
+        const existingHandle = mockFiles.get(name);
+        if (existingHandle) {
+          if (existingHandle.kind !== "directory") {
+            throw new Error("TypeMismatchError");
+          }
+          return existingHandle as ReturnType<typeof createMockDirectoryHandle>;
+        }
+        if (options?.create) {
+          const newHandle = createMockDirectoryHandle(name, new Map());
+          mockFiles.set(name, newHandle);
+          return newHandle;
+        }
+        throw new Error("NotFoundError");
+      });
+
+      fileSystem = new BrowserNativeFileSystem({ rootHandle: mockRootHandle });
+      target = new BrowserNativeSyncTarget("test-target");
+
+      // Initialize with proper mocks
+      spies.exists.mockResolvedValue(true);
+      spies.getMetadata.mockImplementation(async (path) => ({
+        path,
+        type: "directory",
+        hash: "",
+        size: 0,
+        lastModified: Date.now()
+      }));
+      spies.listDirectory.mockResolvedValue([]);
+
+      await target.initialize(fileSystem, true);
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("should handle empty filesystem sync correctly", async () => {
+      // Mock an empty filesystem
+      spies.listDirectory.mockResolvedValue([]);
+
+      // Start sync process
+      await target.notifyIncomingChanges(["/"]); // Include root directory
+      expect(target.getState().status).toBe("collecting");
+
+      // Should transition to syncing even with no files
+      await target.applyFileChange(
+        {
+          path: "/",
+          type: "directory",
+          hash: "",
+          size: 0,
+          lastModified: Date.now()
+        },
+        {
+          metadata: {
+            path: "/",
+            type: "directory",
+            hash: "",
+            size: 0,
+            lastModified: Date.now()
+          },
+          getReader: () => new ReadableStream().getReader(),
+          close: async () => { }
+        }
+      );
+      expect(target.getState().status).toBe("syncing");
+
+      // Should complete sync successfully
+      await target.syncComplete();
+      expect(target.getState().status).toBe("idle");
+    });
+
+    it("should handle empty directory sync correctly", async () => {
+      const emptyDirPath = "/empty-dir";
+      const timestamp = Date.now();
+
+      // Setup mock directory in the file system
+      const emptyDirHandle = createMockDirectoryHandle("empty-dir", new Map());
+      mockFiles.set("empty-dir", emptyDirHandle);
+
+      spies.exists.mockImplementation(async (path) =>
+        path === emptyDirPath || path === "/"
+      );
+
+      spies.getMetadata.mockImplementation(async (path) => ({
+        path,
+        type: "directory",
+        hash: "",
+        size: 0,
+        lastModified: timestamp
+      }));
+
+      spies.listDirectory.mockImplementation(async (path) =>
+        path === emptyDirPath ? [] : [{ path: emptyDirPath, type: "directory" }]
+      );
+
+      // Start sync process
+      await target.notifyIncomingChanges([emptyDirPath]);
+      expect(target.getState().status).toBe("collecting");
+
+      // Apply directory change
+      await target.applyFileChange(
+        {
+          path: emptyDirPath,
+          type: "directory",
+          hash: "",
+          size: 0,
+          lastModified: timestamp
+        },
+        {
+          metadata: {
+            path: emptyDirPath,
+            type: "directory",
+            hash: "",
+            size: 0,
+            lastModified: timestamp
+          },
+          getReader: () => new ReadableStream().getReader(),
+          close: async () => { }
+        }
+      );
+      expect(target.getState().status).toBe("syncing");
+
+      // Should complete sync successfully
+      await target.syncComplete();
+      expect(target.getState().status).toBe("idle");
+    });
+
+    it("should maintain state transitions with multiple empty directories", async () => {
+      const emptyDirs = ["/empty1", "/empty2", "/empty1/sub"];
+      const timestamp = Date.now();
+
+      // Setup mock directories in the file system
+      const dirHandles = new Map();
+      emptyDirs.forEach(dir => {
+        const name = dir.split("/").pop()!;
+        const handle = createMockDirectoryHandle(name, new Map());
+        dirHandles.set(name, handle);
+        mockFiles.set(name, handle);
+
+        // Setup getDirectoryHandle for each directory
+        handle.getDirectoryHandle = vi.fn().mockImplementation(async (subName, options) => {
+          const subHandle = dirHandles.get(subName);
+          if (subHandle && subHandle.kind === "directory") return subHandle;
+          if (options?.create) {
+            const newHandle = createMockDirectoryHandle(subName, new Map());
+            dirHandles.set(subName, newHandle);
+            return newHandle;
+          }
+          throw new Error("NotFoundError");
+        });
+      });
+
+      spies.exists.mockImplementation(async (path) =>
+        path === "/" || emptyDirs.includes(path)
+      );
+
+      spies.getMetadata.mockImplementation(async (path) => ({
+        path,
+        type: "directory",
+        hash: "",
+        size: 0,
+        lastModified: timestamp
+      }));
+
+      spies.listDirectory.mockImplementation(async (path) => {
+        if (path === "/empty1") return [{ path: "/empty1/sub", type: "directory" }];
+        if (emptyDirs.includes(path)) return [];
+        return emptyDirs
+          .filter(dir => dir.split("/").length === 2) // Only direct children of root
+          .map(dir => ({ path: dir, type: "directory" }));
+      });
+
+      // Start sync process
+      await target.notifyIncomingChanges(emptyDirs);
+      expect(target.getState().status).toBe("collecting");
+
+      // Apply changes for each directory
+      for (const dirPath of emptyDirs) {
+        await target.applyFileChange(
+          {
+            path: dirPath,
+            type: "directory",
+            hash: "",
+            size: 0,
+            lastModified: timestamp
+          },
+          {
+            metadata: {
+              path: dirPath,
+              type: "directory",
+              hash: "",
+              size: 0,
+              lastModified: timestamp
+            },
+            getReader: () => new ReadableStream().getReader(),
+            close: async () => { }
+          }
+        );
+      }
+      expect(target.getState().status).toBe("syncing");
+
+      // Should complete sync successfully
+      await target.syncComplete();
+      expect(target.getState().status).toBe("idle");
+    });
+  });
 });
 
 // Helper functions for test setup

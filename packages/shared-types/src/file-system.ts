@@ -112,12 +112,12 @@ export interface FileSystemState {
   lockState: LockState;
   pendingOperations: number;
   lastOperation?:
-    | {
-        type: string;
-        path: string;
-        timestamp: number;
-      }
-    | undefined;
+  | {
+    type: string;
+    path: string;
+    timestamp: number;
+  }
+  | undefined;
   currentState: FileSystemStateType;
 }
 
@@ -171,13 +171,29 @@ export interface FileSystem {
 
   /**
    * Create directory
+   * @param path Path to create
+   * @param options Optional creation options
+   * @param options.recursive Whether to create parent directories if they don't exist (default: false)
+   * @param isSyncOperation Whether this is part of a sync operation
    */
-  createDirectory(path: string, isSyncOperation?: boolean): Promise<void>;
+  createDirectory(
+    path: string,
+    options?: { recursive?: boolean },
+    isSyncOperation?: boolean
+  ): Promise<void>;
 
   /**
    * Delete file or directory
+   * @param path Path to the file or directory to delete
+   * @param options Optional deletion options
+   * @param options.recursive Whether to recursively delete directories (default: false)
+   * @param isSyncOperation Whether this is part of a sync operation
    */
-  deleteItem(path: string, isSyncOperation?: boolean): Promise<void>;
+  deleteItem(
+    path: string,
+    options?: { recursive?: boolean },
+    isSyncOperation?: boolean
+  ): Promise<void>;
 
   /**
    * Check if path exists

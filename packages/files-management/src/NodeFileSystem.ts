@@ -5,8 +5,7 @@ import type {
   LockMode
 } from "@piddie/shared-types";
 import {
-  FileSystemError,
-  VALID_FILE_SYSTEM_STATE_TRANSITIONS
+  FileSystemError
 } from "@piddie/shared-types";
 import { promises as fs } from "fs";
 import { FsPromisesAdapter, MinimalFsPromises } from "./FsPromisesAdapter";
