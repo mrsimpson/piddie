@@ -214,64 +214,88 @@ describe("Browser FileSystem", () => {
       it("should create a new directory", async () => {
         // Given a path for a new directory
         const path = "/new-dir";
+        statSpy.mockRejectedValueOnce(enoentError); // Directory doesn't exist yet
         mkdirSpy.mockResolvedValue(undefined);
-        statSpy.mockResolvedValue(createStatsMock({ isDirectory: true }));
+        statSpy.mockResolvedValueOnce(createStatsMock({ isDirectory: true }));
 
         // When creating the directory
         await fileSystem.createDirectory(path);
 
-        // Then it should call mkdir with correct path and non-recursive by default
+        // Then verify mkdir was called correctly
         expect(mkdirSpy).toHaveBeenCalledWith(
-          expect.stringContaining("new-dir"),
-          expect.objectContaining({ recursive: false })
+          expect.stringContaining("/new-dir"),
+          expect.any(Object)
         );
       });
 
-      it("should create nested directories when recursive is true", async () => {
-        // Given a path for nested directories
-        const path = "/parent/child/grandchild";
-        mkdirSpy.mockResolvedValue(undefined);
-        statSpy.mockResolvedValue(createStatsMock({ isDirectory: true }));
+      it("should throw ALREADY_EXISTS when creating an existing directory without recursive flag", async () => {
+        // Given an existing directory
+        const path = "/existing-dir";
+        // First check should show directory exists
+        statSpy.mockResolvedValueOnce(createStatsMock({ isDirectory: true }));
+        // Second check (if it gets there) should also show directory exists
+        statSpy.mockResolvedValueOnce(createStatsMock({ isDirectory: true }));
+        // mkdir should not be called, but mock it just in case
+        mkdirSpy.mockRejectedValueOnce(Object.assign(new Error("EEXIST"), { code: "EEXIST" }));
 
-        // When creating the directory structure with recursive option
-        await fileSystem.createDirectory(path, { recursive: true });
+        // When creating the same directory again without recursive flag
+        const createPromise = fileSystem.createDirectory(path);
 
-        // Then it should call mkdir with recursive option
-        expect(mkdirSpy).toHaveBeenCalledWith(
-          expect.stringContaining("parent/child/grandchild"),
-          expect.objectContaining({ recursive: true })
-        );
-      });
-
-      it("should throw INVALID_OPERATION when creating nested directories without recursive flag", async () => {
-        // Given a path for nested directories
-        const path = "/parent/child/grandchild";
-        mkdirSpy.mockRejectedValue(new Error("ENOENT"));
-        statSpy.mockRejectedValue(new Error("ENOENT"));
-
-        // When trying to create nested directories without recursive
-        const createPromise = fileSystem.createDirectory(path, { recursive: false });
-
-        // Then it should throw INVALID_OPERATION with specific message
+        // Then it should throw ALREADY_EXISTS
         await expect(createPromise).rejects.toThrow(
           expect.objectContaining({
-            code: "INVALID_OPERATION",
-            message: expect.stringContaining("parent directory does not exist")
+            code: "ALREADY_EXISTS"
+          })
+        );
+
+        // Verify mkdir was not called
+        expect(mkdirSpy).not.toHaveBeenCalled();
+      });
+
+      it("should succeed silently when creating an existing directory with recursive flag", async () => {
+        // Given an existing directory
+        const path = "/existing-dir";
+        statSpy.mockResolvedValue(createStatsMock({ isDirectory: true }));
+
+        // When creating the same directory again with recursive flag
+        const createPromise = fileSystem.createDirectory(path, { recursive: true });
+
+        // Then it should succeed silently
+        await expect(createPromise).resolves.toBeUndefined();
+      });
+
+      it("should throw NOT_FOUND when parent directory doesn't exist without recursive flag", async () => {
+        // Given a path with non-existent parent
+        const path = "/non-existent-parent/new-dir";
+        statSpy.mockRejectedValue(enoentError); // Parent doesn't exist
+        mkdirSpy.mockRejectedValue(enoentError); // mkdir fails because parent missing
+
+        // When trying to create directory without recursive flag
+        const createPromise = fileSystem.createDirectory(path);
+
+        // Then it should throw NOT_FOUND
+        await expect(createPromise).rejects.toThrow(
+          expect.objectContaining({
+            code: "NOT_FOUND"
           })
         );
       });
 
-      it("should not throw when creating an existing directory", async () => {
-        // Given an existing directory
-        const path = "/existing-dir";
-        mkdirSpy.mockRejectedValue(Object.assign(new Error("EEXIST"), { code: "EEXIST" }));
+      it("should create parent directories when using recursive flag", async () => {
+        // Given a path with non-existent parent
+        const path = "/parent/child/grandchild";
+        statSpy.mockRejectedValue(enoentError); // No directories exist yet
+        mkdirSpy.mockResolvedValue(undefined);
         statSpy.mockResolvedValue(createStatsMock({ isDirectory: true }));
 
-        // When creating the directory
-        const createPromise = fileSystem.createDirectory(path);
+        // When creating directory with recursive flag
+        await fileSystem.createDirectory(path, { recursive: true });
 
-        // Then it should not throw
-        await expect(createPromise).resolves.toBeUndefined();
+        // Then verify mkdir was called with recursive flag
+        expect(mkdirSpy).toHaveBeenCalledWith(
+          expect.stringContaining("/parent/child/grandchild"),
+          expect.objectContaining({ recursive: true })
+        );
       });
 
       it("should delete an empty directory", async () => {

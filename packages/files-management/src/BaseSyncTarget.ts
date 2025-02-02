@@ -436,7 +436,6 @@ export abstract class BaseSyncTarget implements SyncTarget {
       }
   ): Promise<void> {
     const watcherOptions: WatcherOptions = {
-      callback,
       priority: options.priority ?? WATCHER_PRIORITIES.OTHER,
       metadata: {
         registeredBy: options.metadata?.registeredBy ?? "external",
@@ -449,7 +448,8 @@ export abstract class BaseSyncTarget implements SyncTarget {
       watcherOptions.filter = options.filter;
     }
 
-    await this.watcherRegistry.register(watcherOptions);
+    // Register the watcher with both options and callback
+    await this.watcherRegistry.register(watcherOptions, callback);
   }
 
   async unwatch(): Promise<void> {

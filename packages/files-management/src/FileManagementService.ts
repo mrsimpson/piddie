@@ -87,7 +87,6 @@ export class FileManagementService implements IFileManagementService {
     // Initialize sync manager with config
     await this._syncManager.initialize({
       inactivityDelay: config?.sync?.inactivityDelay ?? 1000,
-      maxBatchSize: config?.sync?.maxBatchSize ?? 50,
       maxRetries: 3
     });
 

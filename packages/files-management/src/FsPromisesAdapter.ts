@@ -395,19 +395,37 @@ export class FsPromisesAdapter implements FileSystem {
     try {
       await this.options.fs.mkdir(absolutePath, { recursive: !!options?.recursive });
     } catch (error: unknown) {
-      if (error instanceof Error && error.message.includes("EEXIST")) {
-        // Directory already exists - that's fine
-        return;
+      // If it's already our error type, rethrow it
+      if (error instanceof FileSystemError) {
+        throw error;
       }
-      if (error instanceof Error && error.message.includes("ENOENT")) {
-        // Parent directory doesn't exist and recursive is false
-        throw new FileSystemError(
-          `Cannot create directory '${path}': parent directory does not exist. Use recursive option to create parent directories.`,
-          "INVALID_OPERATION"
-        );
+      // Handle native filesystem errors
+      if (error instanceof Error) {
+        if (error.message.includes("EEXIST")) {
+          // Directory already exists - throw ALREADY_EXISTS if not recursive
+          if (!options?.recursive) {
+            throw new FileSystemError(
+              `Directory already exists: ${path}`,
+              "ALREADY_EXISTS"
+            );
+          }
+          // With recursive=true, silently succeed
+          return;
+        }
+        if (error.message.includes("ENOENT")) {
+          // Parent directory doesn't exist and recursive is false
+          throw new FileSystemError(
+            `Cannot create directory '${path}': parent directory does not exist. Use recursive option to create parent directories.`,
+            "NOT_FOUND"
+          );
+        }
       }
+      // For any other error, wrap as INVALID_OPERATION
       const message = error instanceof Error ? error.message : "Unknown error";
-      throw new FileSystemError(message, "PERMISSION_DENIED");
+      throw new FileSystemError(
+        `Failed to create directory: ${message}`,
+        "INVALID_OPERATION"
+      );
     }
   }
 

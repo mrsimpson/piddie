@@ -360,54 +360,76 @@ describe("BrowserNativeFileSystem", () => {
         // When creating the directory
         await fileSystem.createDirectory(path);
 
-        // Then the directory should exist
+        // Then verify the directory exists
         const dirHandle = await mockRootHandle.getDirectoryHandle("new-dir");
         expect(dirHandle.kind).toBe("directory");
       });
 
-      it("should create nested directories recursively", async () => {
-        // Given a path for nested directories
-        const path = "/parent/child/grandchild";
+      it("should throw ALREADY_EXISTS when creating an existing directory without recursive flag", async () => {
+        // Given an existing directory
+        const path = "/existing-dir";
+        // Create the directory first to set up the mock state
+        mockFiles.set("existing-dir", createMockDirectoryHandle("existing-dir"));
 
-        // When creating the directory structure with recursive flag
-        await fileSystem.createDirectory(path, false, { recursive: true });
+        // When creating the same directory again without recursive flag
+        const createPromise = fileSystem.createDirectory(path);
 
-        // Then verify the nested structure exists
-        const parentHandle = await mockRootHandle.getDirectoryHandle("parent");
-        const childHandle = await parentHandle.getDirectoryHandle("child");
-        const grandchildHandle = await childHandle.getDirectoryHandle("grandchild");
-
-        expect(parentHandle.kind).toBe("directory");
-        expect(childHandle.kind).toBe("directory");
-        expect(grandchildHandle.kind).toBe("directory");
-      });
-
-      it("should throw INVALID_OPERATION when creating nested directories without recursive flag", async () => {
-        // Given a path for nested directories
-        const path = "/parent/child/grandchild";
-
-        // When trying to create nested directories without recursive flag
-        const createPromise = fileSystem.createDirectory(path, { recursive: false });
-
-        // Then it should throw INVALID_OPERATION with specific message
+        // Then it should throw ALREADY_EXISTS
         await expect(createPromise).rejects.toThrow(
           expect.objectContaining({
-            code: "INVALID_OPERATION",
-            message: expect.stringContaining("parent directory does not exist")
+            code: "ALREADY_EXISTS"
           })
+        );
+
+        // Verify getDirectoryHandle was called only for checking existence
+        expect(mockRootHandle.getDirectoryHandle).toHaveBeenCalledWith(
+          "existing-dir"
         );
       });
 
-      it("should not throw when creating an existing directory", async () => {
+      it("should succeed silently when creating an existing directory with recursive flag", async () => {
         // Given an existing directory
         const path = "/existing-dir";
         await fileSystem.createDirectory(path);
 
-        // When creating the same directory again
+        // When creating the same directory again with recursive flag
+        const createPromise = fileSystem.createDirectory(path, { recursive: true });
+
+        // Then it should succeed silently
+        await expect(createPromise).resolves.toBeUndefined();
+      });
+
+      it("should throw NOT_FOUND when parent directory doesn't exist without recursive flag", async () => {
+        // Given a path with non-existent parent
+        const path = "/non-existent-parent/new-dir";
+
+        // When trying to create directory without recursive flag
         const createPromise = fileSystem.createDirectory(path);
 
-        // Then it should not throw
-        await expect(createPromise).resolves.toBeUndefined();
+        // Then it should throw NOT_FOUND
+        await expect(createPromise).rejects.toThrow(
+          expect.objectContaining({
+            code: "NOT_FOUND"
+          })
+        );
+      });
+
+      it("should create parent directories when using recursive flag", async () => {
+        // Given a path with non-existent parent
+        const path = "/parent/child/grandchild";
+
+        // When creating directory with recursive flag
+        await fileSystem.createDirectory(path, { recursive: true });
+
+        // Then verify all directories in the path exist
+        const parentHandle = await mockRootHandle.getDirectoryHandle("parent");
+        expect(parentHandle.kind).toBe("directory");
+
+        const childHandle = await parentHandle.getDirectoryHandle("child");
+        expect(childHandle.kind).toBe("directory");
+
+        const grandchildHandle = await childHandle.getDirectoryHandle("grandchild");
+        expect(grandchildHandle.kind).toBe("directory");
       });
 
       it("should delete an empty directory", async () => {

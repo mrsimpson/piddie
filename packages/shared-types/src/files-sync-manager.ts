@@ -54,11 +54,6 @@ export interface SyncManagerConfig {
   inactivityDelay: number;
 
   /**
-   * Maximum number of changes to process in one sync operation
-   */
-  maxBatchSize: number;
-
-  /**
    * Maximum number of retries for failed sync operations
    */
   maxRetries: number;

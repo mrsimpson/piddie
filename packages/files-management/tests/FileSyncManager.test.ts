@@ -9,7 +9,8 @@ import type {
   FileChunk,
   FileSystem,
   FileSystemItem,
-  SyncManager
+  SyncManager,
+  FileConflict
 } from "@piddie/shared-types";
 import { SyncManagerError, SyncManagerStateType } from "@piddie/shared-types";
 import { ReadableStream, ReadableStreamDefaultReader } from "node:stream/web";
@@ -66,7 +67,25 @@ class MockSyncTarget implements SyncTarget {
   }
 
   async listDirectory(path: string): Promise<FileSystemItem[]> {
-    return [];
+    const result: FileSystemItem[] = [];
+    const prefix = path === "/" ? "" : path + "/";
+
+    // Get all files/directories that are direct children of this path
+    for (const [filePath, file] of this.mockFiles.entries()) {
+      if (filePath.startsWith(prefix)) {
+        const relativePath = filePath.slice(prefix.length);
+        // Only include direct children (no nested paths)
+        if (!relativePath.includes("/")) {
+          result.push({
+            path: filePath,
+            type: file.metadata.type,
+            lastModified: file.metadata.lastModified
+          });
+        }
+      }
+    }
+
+    return result;
   }
 
   async initialize(): Promise<void> {
@@ -74,7 +93,7 @@ class MockSyncTarget implements SyncTarget {
   }
 
   async notifyIncomingChanges(): Promise<void> {
-    this.state.status = "notifying";
+    this.state.status = "syncing";
   }
 
   async getMetadata(paths: string[]): Promise<FileMetadata[]> {
@@ -98,12 +117,20 @@ class MockSyncTarget implements SyncTarget {
   }
 
   async applyFileChange(
-    metadata: FileMetadata,
-    contentStream: FileContentStream
-  ): Promise<null> {
-    const reader = contentStream.getReader();
-    let content = "";
+    changeInfo: FileChangeInfo,
+    contentStream?: FileContentStream
+  ): Promise<FileConflict | null> {
+    if (changeInfo.type === "delete") {
+      this.mockFiles.delete(changeInfo.path);
+      return null;
+    }
 
+    if (!contentStream) {
+      throw new Error("Content stream required for create/modify operations");
+    }
+
+    let content = "";
+    const reader = contentStream.getReader();
     try {
       while (true) {
         const { done, value } = await reader.read();
@@ -114,9 +141,15 @@ class MockSyncTarget implements SyncTarget {
       reader.releaseLock();
     }
 
-    this.mockFiles.set(metadata.path, {
+    this.mockFiles.set(changeInfo.path, {
       content,
-      metadata
+      metadata: {
+        path: changeInfo.path,
+        type: changeInfo.hash === "" && changeInfo.size === 0 ? "directory" : "file",
+        hash: changeInfo.hash,
+        size: changeInfo.size,
+        lastModified: changeInfo.lastModified
+      }
     });
     return null;
   }
@@ -139,6 +172,10 @@ class MockSyncTarget implements SyncTarget {
 
   getState(): TargetState {
     return this.state;
+  }
+
+  async recover(): Promise<void> {
+    this.state.status = "idle";
   }
 
   // Test helper methods
@@ -189,7 +226,6 @@ describe("FileSyncManager", () => {
 
     config = {
       inactivityDelay: 100,
-      maxBatchSize: 10,
       maxRetries: 3
     };
 
@@ -643,6 +679,273 @@ describe("FileSyncManager", () => {
           metadata.path
         );
         expect(secondary2Content.metadata.hash).toBe(metadata.hash);
+      });
+    });
+  });
+
+  describe("Hierarchical Operations", () => {
+    beforeEach(async () => {
+      await manager.registerTarget(primaryTarget, { role: "primary" });
+      await manager.registerTarget(secondaryTarget1, { role: "secondary" });
+      await manager.registerTarget(secondaryTarget2, { role: "secondary" });
+      await manager.initialize(config);
+      expect(manager.getCurrentState()).toBe("ready");
+    });
+
+    describe("Full Sync with Hierarchical Structure", () => {
+      it("should create directories before files during full sync", async () => {
+        // Given a hierarchical structure in primary
+        const dirMetadata: FileMetadata = {
+          path: "parent/child",
+          type: "directory",
+          hash: "",
+          size: 0,
+          lastModified: Date.now()
+        };
+        const fileMetadata: FileMetadata = {
+          path: "parent/child/test.txt",
+          type: "file",
+          hash: "testhash",
+          size: 100,
+          lastModified: Date.now()
+        };
+
+        // Set up the structure in primary
+        primaryTarget.setMockFile(dirMetadata.path, "", dirMetadata);
+        primaryTarget.setMockFile(fileMetadata.path, "test content", fileMetadata);
+
+        // When reinitializing a secondary target
+        await manager.reinitializeTarget(secondaryTarget1.id);
+
+        // Then the directory should be created before the file
+        const dirContent = await secondaryTarget1.getFileContent(dirMetadata.path);
+        const fileContent = await secondaryTarget1.getFileContent(fileMetadata.path);
+        expect(dirContent.metadata.type).toBe("directory");
+        expect(fileContent.metadata.type).toBe("file");
+      });
+
+      it("should handle empty directories", async () => {
+        // Given empty directories in primary
+        const emptyDirs = ["empty1", "empty2/nested"];
+        emptyDirs.forEach(path => {
+          const metadata: FileMetadata = {
+            path,
+            type: "directory",
+            hash: "",
+            size: 0,
+            lastModified: Date.now()
+          };
+          primaryTarget.setMockFile(path, "", metadata);
+        });
+
+        // When reinitializing a secondary target
+        await manager.reinitializeTarget(secondaryTarget1.id);
+
+        // Then empty directories should be created
+        for (const path of emptyDirs) {
+          const content = await secondaryTarget1.getFileContent(path);
+          expect(content.metadata.type).toBe("directory");
+        }
+      });
+
+      it("should handle multiple levels of directory hierarchy", async () => {
+        // Given a deep directory structure
+        const paths = [
+          "level1",
+          "level1/level2",
+          "level1/level2/level3",
+          "level1/level2/level3/file.txt"
+        ];
+
+        // Create directories and file in primary
+        paths.forEach((path, index) => {
+          const isFile = index === paths.length - 1;
+          const metadata: FileMetadata = {
+            path,
+            type: isFile ? "file" : "directory",
+            hash: isFile ? "filehash" : "",
+            size: isFile ? 100 : 0,
+            lastModified: Date.now()
+          };
+          primaryTarget.setMockFile(path, isFile ? "content" : "", metadata);
+        });
+
+        // When reinitializing a secondary target
+        await manager.reinitializeTarget(secondaryTarget1.id);
+
+        // Then all directories and file should be created in correct order
+        for (const path of paths) {
+          const content = await secondaryTarget1.getFileContent(path);
+          const isFile = path === paths[paths.length - 1];
+          expect(content.metadata.type).toBe(isFile ? "file" : "directory");
+        }
+      });
+    });
+
+    describe("Hierarchical Change Handling", () => {
+      it("should handle creation of nested structure in correct order", async () => {
+        // Given changes for nested structure
+        const changes: FileChangeInfo[] = [
+          {
+            path: "nested/file.txt",
+            type: "create",
+            hash: "filehash",
+            size: 100,
+            lastModified: Date.now(),
+            sourceTarget: primaryTarget.id
+          },
+          {
+            path: "nested",
+            type: "create",
+            hash: "",
+            size: 0,
+            lastModified: Date.now(),
+            sourceTarget: primaryTarget.id
+          }
+        ];
+
+        // Set up content in primary
+        primaryTarget.setMockFile("nested", "", {
+          path: "nested",
+          type: "directory",
+          hash: "",
+          size: 0,
+          lastModified: Date.now()
+        });
+        primaryTarget.setMockFile("nested/file.txt", "content", {
+          path: "nested/file.txt",
+          type: "file",
+          hash: "filehash",
+          size: 100,
+          lastModified: Date.now()
+        });
+
+        // When primary reports changes
+        await manager.handleTargetChanges(primaryTarget.id, changes);
+
+        // Then directory should be created before file in secondary
+        const dirContent = await secondaryTarget1.getFileContent("nested");
+        const fileContent = await secondaryTarget1.getFileContent("nested/file.txt");
+        expect(dirContent.metadata.type).toBe("directory");
+        expect(fileContent.metadata.type).toBe("file");
+      });
+
+      it("should handle deletion of nested structure in correct order", async () => {
+        // Given an existing nested structure
+        const paths = ["nested", "nested/file.txt"];
+        paths.forEach((path, index) => {
+          const isFile = index === 1;
+          const metadata: FileMetadata = {
+            path,
+            type: isFile ? "file" : "directory",
+            hash: isFile ? "filehash" : "",
+            size: isFile ? 100 : 0,
+            lastModified: Date.now()
+          };
+          primaryTarget.setMockFile(path, isFile ? "content" : "", metadata);
+          secondaryTarget1.setMockFile(path, isFile ? "content" : "", metadata);
+        });
+
+        // When deleting the structure
+        const deleteChanges: FileChangeInfo[] = paths.map(path => ({
+          path,
+          type: "delete",
+          hash: "",
+          size: 0,
+          lastModified: Date.now(),
+          sourceTarget: primaryTarget.id
+        }));
+
+        await manager.handleTargetChanges(primaryTarget.id, deleteChanges);
+
+        // Then file should be deleted before directory
+        await expect(secondaryTarget1.getFileContent("nested/file.txt")).rejects.toThrow();
+        await expect(secondaryTarget1.getFileContent("nested")).rejects.toThrow();
+      });
+
+      it("should handle mixed create and delete operations", async () => {
+        // Given an existing structure and changes that modify it
+        const initialPaths = ["dir1/file1.txt", "dir2/file2.txt"];
+        initialPaths.forEach(path => {
+          const metadata: FileMetadata = {
+            path,
+            type: "file",
+            hash: "hash",
+            size: 100,
+            lastModified: Date.now()
+          };
+          primaryTarget.setMockFile(path, "content", metadata);
+          secondaryTarget1.setMockFile(path, "content", metadata);
+        });
+
+        // When applying mixed changes
+        const changes: FileChangeInfo[] = [
+          {
+            path: "dir1/file1.txt",
+            type: "delete",
+            hash: "",
+            size: 0,
+            lastModified: Date.now(),
+            sourceTarget: primaryTarget.id
+          },
+          {
+            path: "dir1",
+            type: "delete",
+            hash: "",
+            size: 0,
+            lastModified: Date.now(),
+            sourceTarget: primaryTarget.id
+          },
+          {
+            path: "dir3",
+            type: "create",
+            hash: "",
+            size: 0,
+            lastModified: Date.now(),
+            sourceTarget: primaryTarget.id
+          },
+          {
+            path: "dir3/newfile.txt",
+            type: "create",
+            hash: "newhash",
+            size: 100,
+            lastModified: Date.now(),
+            sourceTarget: primaryTarget.id
+          }
+        ];
+
+        // Set up new content in primary
+        primaryTarget.setMockFile("dir3", "", {
+          path: "dir3",
+          type: "directory",
+          hash: "",
+          size: 0,
+          lastModified: Date.now()
+        });
+        primaryTarget.setMockFile("dir3/newfile.txt", "new content", {
+          path: "dir3/newfile.txt",
+          type: "file",
+          hash: "newhash",
+          size: 100,
+          lastModified: Date.now()
+        });
+
+        await manager.handleTargetChanges(primaryTarget.id, changes);
+
+        // Then changes should be applied in correct order
+        // Deletions
+        await expect(secondaryTarget1.getFileContent("dir1/file1.txt")).rejects.toThrow();
+        await expect(secondaryTarget1.getFileContent("dir1")).rejects.toThrow();
+
+        // Creations
+        const dirContent = await secondaryTarget1.getFileContent("dir3");
+        const fileContent = await secondaryTarget1.getFileContent("dir3/newfile.txt");
+        expect(dirContent.metadata.type).toBe("directory");
+        expect(fileContent.metadata.type).toBe("file");
+
+        // Unchanged files should remain
+        const unchangedContent = await secondaryTarget1.getFileContent("dir2/file2.txt");
+        expect(unchangedContent.metadata.hash).toBe("hash");
       });
     });
   });

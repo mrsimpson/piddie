@@ -96,22 +96,32 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
           throw new FileSystemError("File system is locked", "LOCKED");
         }
 
-        // If the directory already exists, return early
+        // First check if directory exists
         try {
           await fsWrapper.access!(dirPath);
+          // Directory exists
+          if (!options?.recursive) {
+            throw new FileSystemError(
+              `Directory already exists: ${dirPath}`,
+              "ALREADY_EXISTS"
+            );
+          }
+          // With recursive=true, silently succeed
           return;
         } catch (error) {
           // Directory doesn't exist, continue with creation
+          if (!(error instanceof FileSystemError && error.code === "NOT_FOUND")) {
+            throw error;
+          }
         }
 
-        const recursive = options?.recursive ?? false;
-        if (!recursive) {
-          // For non-recursive creation, verify parent directory exists
+        // For non-recursive creation, verify parent exists
+        if (!options?.recursive) {
           const parentDir = browserPath.dirname(dirPath);
           if (parentDir !== "/") {
             try {
               await fsWrapper.access!(parentDir);
-            } catch (error) {
+            } catch {
               throw new FileSystemError(
                 `Parent directory ${parentDir} does not exist`,
                 "NOT_FOUND"
@@ -120,12 +130,26 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
           }
         }
 
-        // Create the directory with the isSyncOperation flag
-        const mkdirOptions: { recursive?: boolean; isSyncOperation?: boolean } = { recursive };
-        if (options?.isSyncOperation !== undefined) {
-          mkdirOptions.isSyncOperation = options.isSyncOperation;
+        // Create the directory (and parents if recursive)
+        const components = dirPath.split("/").filter(Boolean);
+        let currentHandle = this.rootHandle;
+
+        for (const component of components) {
+          try {
+            currentHandle = await currentHandle.getDirectoryHandle(component, { create: true });
+            const fullPath = this.joinPaths(
+              ...dirPath
+                .split("/")
+                .slice(0, dirPath.split("/").indexOf(component) + 1)
+            );
+            this.handleCache.set(fullPath, currentHandle);
+          } catch (error) {
+            throw new FileSystemError(
+              `Failed to create directory: ${dirPath}`,
+              "INVALID_OPERATION"
+            );
+          }
         }
-        await fsWrapper.mkdir(dirPath, mkdirOptions);
       },
       readdir: async (dirPath: string) => {
         const dirHandle = await this.getDirectoryHandle(dirPath);
@@ -311,7 +335,8 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
   }
 
   /**
-   * Get a handle for a path, optionally creating parent directories
+   * Get a handle for a path. Will throw if the path or any of its parent directories don't exist.
+   * This method is strictly for retrieving existing handles, not creating new ones.
    */
   private async getHandle(itemPath: string): Promise<FileSystemHandle> {
     // Normalize path
@@ -327,44 +352,54 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
     const components = normalizedPath.split("/").filter(Boolean);
     let currentHandle: FileSystemDirectoryHandle = this.rootHandle;
 
-    // Traverse path
-    for (let i = 0; i < components.length; i++) {
+    // First verify all parent directories exist
+    for (let i = 0; i < components.length - 1; i++) {
       const component = components[i];
-      if (!component) continue; // Skip empty components
+      if (!component) continue;
 
-      const isLast = i === components.length - 1;
       const fullPath = this.joinPaths(...components.slice(0, i + 1));
 
       try {
-        if (isLast) {
-          // Try file first, then directory
-          try {
-            const fileHandle = await currentHandle.getFileHandle(component);
-            this.handleCache.set(fullPath, fileHandle);
-            return fileHandle;
-          } catch {
-            const dirHandle = await currentHandle.getDirectoryHandle(component);
-            this.handleCache.set(fullPath, dirHandle);
-            return dirHandle;
-          }
-        } else {
-          currentHandle = await currentHandle.getDirectoryHandle(component);
-          this.handleCache.set(fullPath, currentHandle);
-        }
-      } catch {
-        throw new FileSystemError(`Path not found: ${itemPath}`, "NOT_FOUND");
+        currentHandle = await currentHandle.getDirectoryHandle(component);
+        this.handleCache.set(fullPath, currentHandle);
+      } catch (error) {
+        throw new FileSystemError(
+          `Parent directory not found: ${fullPath}`,
+          "NOT_FOUND"
+        );
       }
     }
 
-    throw new FileSystemError(`Invalid path: ${itemPath}`, "NOT_FOUND");
+    // Now get the final component
+    const lastComponent = components[components.length - 1];
+    if (!lastComponent) {
+      throw new FileSystemError(`Invalid path: ${itemPath}`, "INVALID_OPERATION");
+    }
+
+    try {
+      // Try as file first
+      const fileHandle = await currentHandle.getFileHandle(lastComponent);
+      this.handleCache.set(normalizedPath, fileHandle);
+      return fileHandle;
+    } catch {
+      try {
+        // Then try as directory
+        const dirHandle = await currentHandle.getDirectoryHandle(lastComponent);
+        this.handleCache.set(normalizedPath, dirHandle);
+        return dirHandle;
+      } catch {
+        throw new FileSystemError(
+          `Item not found: ${itemPath}`,
+          "NOT_FOUND"
+        );
+      }
+    }
   }
 
   /**
-   * Get a directory handle for a path, optionally creating it
+   * Get a directory handle for a path. Will throw if the path doesn't exist or is not a directory.
    */
-  private async getDirectoryHandle(
-    dirPath: string
-  ): Promise<FileSystemDirectoryHandle> {
+  private async getDirectoryHandle(dirPath: string): Promise<FileSystemDirectoryHandle> {
     const handle = await this.getHandle(dirPath);
     if (handle.kind !== "directory") {
       throw new FileSystemError(

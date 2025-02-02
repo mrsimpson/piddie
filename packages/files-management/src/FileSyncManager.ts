@@ -157,7 +157,6 @@ export class FileSyncManager implements SyncManager {
       if (change.type === "delete") {
         // Check if the file or directory exists
         try {
-          const metadata = await target.getMetadata([change.path]);
           const conflict = await target.applyFileChange(change);
           if (conflict) return conflict;
           return change;
@@ -185,6 +184,44 @@ export class FileSyncManager implements SyncManager {
     }
   }
 
+  /**
+   * Prepare changes for hierarchical operations
+   * Orders changes so that:
+   * - For creations: Parent directories are created before children
+   * - For deletions: Children are deleted before parents
+   * - Mixed operations: Deletions are processed before creations/modifications
+   */
+  private prepareChangesForHierarchy(changes: FileChangeInfo[]): FileChangeInfo[] {
+    // First separate deletions and creations/modifications
+    const deletions = changes.filter(c => c.type === "delete");
+    const creations = changes.filter(c => c.type !== "delete");
+
+    // Sort deletions by path depth (deepest first)
+    const sortedDeletions = [...deletions].sort((a, b) => {
+      const depthA = a.path.split("/").length;
+      const depthB = b.path.split("/").length;
+      return depthB - depthA; // Deepest first
+    });
+
+    // Sort creations by path depth (shallowest first) and ensure directories come before files
+    const sortedCreations = [...creations].sort((a, b) => {
+      const depthA = a.path.split("/").length;
+      const depthB = b.path.split("/").length;
+      if (depthA !== depthB) {
+        return depthA - depthB; // Shallowest first
+      }
+      // At same depth, directories before files
+      const aIsDir = a.hash === "" && a.size === 0;
+      const bIsDir = b.hash === "" && b.size === 0;
+      if (aIsDir && !bIsDir) return -1;
+      if (!aIsDir && bIsDir) return 1;
+      return a.path.localeCompare(b.path);
+    });
+
+    // Return deletions first, then creations
+    return [...sortedDeletions, ...sortedCreations];
+  }
+
   private async applyChangesToTarget(
     target: SyncTarget,
     sourceTarget: SyncTarget,
@@ -197,52 +234,31 @@ export class FileSyncManager implements SyncManager {
     };
 
     try {
-      // Split changes into batches
-      const batchSize = this.config?.maxBatchSize ?? 10;
-      const batches = Array.from(
-        { length: Math.ceil(changes.length / batchSize) },
-        (_, i) => changes.slice(i * batchSize, (i + 1) * batchSize)
-      );
+      // Order changes for hierarchical operations
+      const orderedChanges = this.prepareChangesForHierarchy(changes);
 
-      // Process each batch sequentially
-      for (const batch of batches) {
-        // Process all changes in the batch concurrently
-        const batchResults = await Promise.allSettled(
-          batch.map(async (change) => {
-            const result = await this.applyChangeToTarget(
-              change,
-              sourceTarget,
-              target
-            );
-            if ("targetId" in result) {
-              // This is a FileConflict
-              return result;
-            }
-            return result as FileChangeInfo;
-          })
-        );
-
-        // Check for failures in the batch
-        const failedResults = batchResults.filter(
-          (r): r is PromiseRejectedResult => r.status === "rejected"
-        );
-
-        if (failedResults.length > 0) {
-          // At least one change in the batch failed
+      // Process changes sequentially to maintain hierarchy
+      for (const change of orderedChanges) {
+        try {
+          const changeResult = await this.applyChangeToTarget(
+            change,
+            sourceTarget,
+            target
+          );
+          if ("targetId" in changeResult) {
+            // This is a FileConflict
+            result.success = false;
+            result.error = new Error(`Conflict detected for ${change.path}`);
+            target.getState().status = "error";
+            return result;
+          }
+          result.appliedChanges.push(changeResult);
+        } catch (error) {
           result.success = false;
-          result.error = failedResults[0]!.reason;
+          result.error = error as Error;
           target.getState().status = "error";
           return result;
         }
-
-        // Add successfully applied changes
-        const succeededChanges = batchResults
-          .filter(
-            (r): r is PromiseFulfilledResult<FileChangeInfo> =>
-              r.status === "fulfilled"
-          )
-          .map((r) => r.value);
-        result.appliedChanges.push(...succeededChanges);
       }
     } catch (error) {
       result.success = false;
@@ -296,15 +312,6 @@ export class FileSyncManager implements SyncManager {
         lastModified: file.lastModified,
         sourceTarget: this.primaryTarget!.id
       }));
-
-      // Sort changes so directories are created before their contents
-      changes.sort((a, b) => {
-        const aIsDir = a.hash === "" && a.size === 0;
-        const bIsDir = b.hash === "" && b.size === 0;
-        if (aIsDir && !bIsDir) return -1;
-        if (!aIsDir && bIsDir) return 1;
-        return a.path.localeCompare(b.path);
-      });
 
       // Apply changes to target
       await this.applyChangesToTarget(target, this.primaryTarget, changes);
@@ -647,13 +654,23 @@ export class FileSyncManager implements SyncManager {
     // Recursive function to process directories
     const processDirectory = async (dirPath: string) => {
       try {
+        // Add the directory itself first (except root)
+        if (dirPath !== "/") {
+          if (!seenPaths.has(dirPath)) {
+            result.push(dirPath);
+            seenPaths.add(dirPath);
+          }
+        }
+
         const entries = await target.listDirectory(dirPath);
         for (const entry of entries) {
           if (!seenPaths.has(entry.path)) {
-            seenPaths.add(entry.path);
             if (entry.type === "file") {
               result.push(entry.path);
+              seenPaths.add(entry.path);
             } else if (entry.type === "directory") {
+              // Don't mark directory as seen yet - it will be handled at the start
+              // of its own processDirectory call
               await processDirectory(entry.path);
             }
           }
@@ -737,15 +754,6 @@ export class FileSyncManager implements SyncManager {
         sourceTarget: this.primaryTarget!.id
       }));
 
-      // Sort changes so directories are created before their contents
-      changes.sort((a, b) => {
-        const aIsDir = a.hash === "" && a.size === 0;
-        const bIsDir = b.hash === "" && b.size === 0;
-        if (aIsDir && !bIsDir) return -1;
-        if (!aIsDir && bIsDir) return 1;
-        return a.path.localeCompare(b.path);
-      });
-
       // Apply changes to target
       await this.applyChangesToTarget(target, this.primaryTarget, changes);
 
@@ -761,6 +769,7 @@ export class FileSyncManager implements SyncManager {
 
   async initialize(config: SyncManagerConfig): Promise<void> {
     this.config = config;
+    console.log("initialize", this.config);
 
     // Verify all targets are initialized
     if (

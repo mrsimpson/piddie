@@ -30,7 +30,10 @@ export class NodeSyncTarget implements SyncTarget {
   constructor(
     public readonly id: string,
     private rootDir: string
-  ) {}
+  ) { }
+  recover(): Promise<void> {
+    throw new Error("Method not implemented.");
+  }
 
   validateStateTransition(
     from: TargetStateType,
@@ -216,7 +219,7 @@ export class NodeSyncTarget implements SyncTarget {
   }
 
   async applyFileChange(
-    metadata: FileMetadata,
+    metadata: FileChangeInfo,
     contentStream: FileContentStream
   ): Promise<FileConflict | null> {
     if (!this.fileSystem) {

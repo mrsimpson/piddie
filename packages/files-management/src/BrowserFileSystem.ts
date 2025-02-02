@@ -76,8 +76,62 @@ export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
 
     // Create a wrapper that adds missing methods
     const fsWrapper: MinimalFsPromises = {
-      mkdir: (path: string, options?: { recursive?: boolean }) =>
-        fs.promises.mkdir(path, { mode: 0o777, ...options } as MKDirOptions),
+      mkdir: async (path: string, options?: { recursive?: boolean }) => {
+        try {
+          // First check if directory exists
+          const stats = await fs.promises.stat(path);
+          if (stats.isDirectory()) {
+            if (!options?.recursive) {
+              throw new FileSystemError(
+                `Directory already exists: ${path}`,
+                "ALREADY_EXISTS"
+              );
+            }
+            // With recursive=true, silently succeed
+            return;
+          }
+          throw new FileSystemError(
+            `Path exists but is not a directory: ${path}`,
+            "INVALID_OPERATION"
+          );
+        } catch (error) {
+          // If error is ENOENT (not found), proceed with creation
+          if (error instanceof Error && error.message.includes("ENOENT")) {
+            if (!options?.recursive) {
+              // For non-recursive, verify parent exists
+              const parentPath = browserPath.dirname(path);
+              try {
+                const parentStats = await fs.promises.stat(parentPath);
+                if (!parentStats.isDirectory()) {
+                  throw new FileSystemError(
+                    `Parent path exists but is not a directory: ${parentPath}`,
+                    "INVALID_OPERATION"
+                  );
+                }
+              } catch (parentError) {
+                if (parentError instanceof Error && parentError.message.includes("ENOENT")) {
+                  throw new FileSystemError(
+                    `Parent directory does not exist: ${parentPath}`,
+                    "NOT_FOUND"
+                  );
+                }
+                throw parentError;
+              }
+            }
+            // Create the directory
+            return fs.promises.mkdir(path, { mode: 0o777, ...options } as MKDirOptions);
+          }
+          // If it's our error type, rethrow it
+          if (error instanceof FileSystemError) {
+            throw error;
+          }
+          // Otherwise wrap in a FileSystemError
+          throw new FileSystemError(
+            `Failed to create directory: ${path}`,
+            "INVALID_OPERATION"
+          );
+        }
+      },
       readdir: async (path: string) => {
         const entries = await fs.promises.readdir(path);
         const results = await Promise.all(

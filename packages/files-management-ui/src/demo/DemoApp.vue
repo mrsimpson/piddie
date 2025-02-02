@@ -123,7 +123,6 @@ async function addNativeSystem() {
 async function initializeSyncManager(primaryTarget: SyncTarget, secondaryTarget: SyncTarget) {
   try {
     await syncManager.initialize({
-      maxBatchSize: 10,
       inactivityDelay: 1000,
       maxRetries: 3,
     })

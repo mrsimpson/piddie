@@ -14,27 +14,28 @@ export class WatcherRegistry {
   /**
    * Register a new watcher
    * @param options - Options for the watcher registration
+   * @param callback - Callback function to be called when changes occur
    * @returns Promise resolving to the watcher ID
    */
-  async register(options: WatcherOptions): Promise<string> {
+  async register(
+    options: WatcherOptions,
+    callback: (changes: FileChangeInfo[]) => void
+  ): Promise<string> {
     const id = `watcher_${this.nextWatcherId++}`;
 
     if (!options.metadata?.registeredBy) {
       throw new Error("Watcher registration requires metadata.registeredBy");
     }
 
-    const { registeredBy, ...otherMetadata } = options.metadata;
-
     const watcher: FileWatcher = {
       id,
-      callback: options.callback,
-      priority: options.priority ?? 0,
+      callback,
+      priority: options.priority,
       ...(options.filter && { filter: options.filter }),
       metadata: {
-        registeredBy,
         registeredAt: Date.now(),
         executionCount: 0,
-        ...otherMetadata
+        ...options.metadata
       }
     };
 
