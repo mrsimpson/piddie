@@ -4,6 +4,8 @@
 
 Provides a robust file management system that works across browser and local file systems with comprehensive synchronization capabilities and integrated version control.
 
+![Demo of browser and local fs](./docs/demo-two-way-sync.gif)
+
 ## System Architecture
 
 ```mermaid
