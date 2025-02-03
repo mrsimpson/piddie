@@ -191,10 +191,12 @@ export class FileSyncManager implements SyncManager {
    * - For deletions: Children are deleted before parents
    * - Mixed operations: Deletions are processed before creations/modifications
    */
-  private prepareChangesForHierarchy(changes: FileChangeInfo[]): FileChangeInfo[] {
+  private prepareChangesForHierarchy(
+    changes: FileChangeInfo[]
+  ): FileChangeInfo[] {
     // First separate deletions and creations/modifications
-    const deletions = changes.filter(c => c.type === "delete");
-    const creations = changes.filter(c => c.type !== "delete");
+    const deletions = changes.filter((c) => c.type === "delete");
+    const creations = changes.filter((c) => c.type !== "delete");
 
     // Sort deletions by path depth (deepest first)
     const sortedDeletions = [...deletions].sort((a, b) => {

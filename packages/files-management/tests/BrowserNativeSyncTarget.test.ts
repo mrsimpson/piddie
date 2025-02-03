@@ -509,40 +509,50 @@ describe("BrowserNativeSyncTarget", () => {
       mockRootHandle = createMockDirectoryHandle("root", mockFiles);
 
       // Mock getHandle method for BrowserNativeFileSystem
-      const getHandleSpy = vi.spyOn(BrowserNativeFileSystem.prototype as any, "getHandle");
+      const getHandleSpy = vi.spyOn(
+        BrowserNativeFileSystem.prototype as any,
+        "getHandle"
+      );
       getHandleSpy.mockImplementation(function (this: any, ...args: any[]) {
         const path = args[0] as string;
         if (path === "/") return Promise.resolve(mockRootHandle);
         const segments = path.split("/").filter(Boolean);
-        let currentHandle: ReturnType<typeof createMockDirectoryHandle> = mockRootHandle;
+        let currentHandle: ReturnType<typeof createMockDirectoryHandle> =
+          mockRootHandle;
 
         for (const segment of segments) {
           const handle = mockFiles.get(segment);
           if (!handle || handle.kind !== "directory") {
             return Promise.reject(new Error("NotFoundError"));
           }
-          currentHandle = handle as ReturnType<typeof createMockDirectoryHandle>;
+          currentHandle = handle as ReturnType<
+            typeof createMockDirectoryHandle
+          >;
         }
 
         return Promise.resolve(currentHandle);
       });
 
       // Mock getDirectoryHandle for root and directories
-      mockRootHandle.getDirectoryHandle = vi.fn().mockImplementation(async (name, options) => {
-        const existingHandle = mockFiles.get(name);
-        if (existingHandle) {
-          if (existingHandle.kind !== "directory") {
-            throw new Error("TypeMismatchError");
+      mockRootHandle.getDirectoryHandle = vi
+        .fn()
+        .mockImplementation(async (name, options) => {
+          const existingHandle = mockFiles.get(name);
+          if (existingHandle) {
+            if (existingHandle.kind !== "directory") {
+              throw new Error("TypeMismatchError");
+            }
+            return existingHandle as ReturnType<
+              typeof createMockDirectoryHandle
+            >;
           }
-          return existingHandle as ReturnType<typeof createMockDirectoryHandle>;
-        }
-        if (options?.create) {
-          const newHandle = createMockDirectoryHandle(name, new Map());
-          mockFiles.set(name, newHandle);
-          return newHandle;
-        }
-        throw new Error("NotFoundError");
-      });
+          if (options?.create) {
+            const newHandle = createMockDirectoryHandle(name, new Map());
+            mockFiles.set(name, newHandle);
+            return newHandle;
+          }
+          throw new Error("NotFoundError");
+        });
 
       fileSystem = new BrowserNativeFileSystem({ rootHandle: mockRootHandle });
       target = new BrowserNativeSyncTarget("test-target");
@@ -591,7 +601,7 @@ describe("BrowserNativeSyncTarget", () => {
             lastModified: Date.now()
           },
           getReader: () => new ReadableStream().getReader(),
-          close: async () => { }
+          close: async () => {}
         }
       );
       expect(target.getState().status).toBe("syncing");
@@ -609,8 +619,8 @@ describe("BrowserNativeSyncTarget", () => {
       const emptyDirHandle = createMockDirectoryHandle("empty-dir", new Map());
       mockFiles.set("empty-dir", emptyDirHandle);
 
-      spies.exists.mockImplementation(async (path) =>
-        path === emptyDirPath || path === "/"
+      spies.exists.mockImplementation(
+        async (path) => path === emptyDirPath || path === "/"
       );
 
       spies.getMetadata.mockImplementation(async (path) => ({
@@ -647,7 +657,7 @@ describe("BrowserNativeSyncTarget", () => {
             lastModified: timestamp
           },
           getReader: () => new ReadableStream().getReader(),
-          close: async () => { }
+          close: async () => {}
         }
       );
       expect(target.getState().status).toBe("syncing");
@@ -663,27 +673,29 @@ describe("BrowserNativeSyncTarget", () => {
 
       // Setup mock directories in the file system
       const dirHandles = new Map();
-      emptyDirs.forEach(dir => {
+      emptyDirs.forEach((dir) => {
         const name = dir.split("/").pop()!;
         const handle = createMockDirectoryHandle(name, new Map());
         dirHandles.set(name, handle);
         mockFiles.set(name, handle);
 
         // Setup getDirectoryHandle for each directory
-        handle.getDirectoryHandle = vi.fn().mockImplementation(async (subName, options) => {
-          const subHandle = dirHandles.get(subName);
-          if (subHandle && subHandle.kind === "directory") return subHandle;
-          if (options?.create) {
-            const newHandle = createMockDirectoryHandle(subName, new Map());
-            dirHandles.set(subName, newHandle);
-            return newHandle;
-          }
-          throw new Error("NotFoundError");
-        });
+        handle.getDirectoryHandle = vi
+          .fn()
+          .mockImplementation(async (subName, options) => {
+            const subHandle = dirHandles.get(subName);
+            if (subHandle && subHandle.kind === "directory") return subHandle;
+            if (options?.create) {
+              const newHandle = createMockDirectoryHandle(subName, new Map());
+              dirHandles.set(subName, newHandle);
+              return newHandle;
+            }
+            throw new Error("NotFoundError");
+          });
       });
 
-      spies.exists.mockImplementation(async (path) =>
-        path === "/" || emptyDirs.includes(path)
+      spies.exists.mockImplementation(
+        async (path) => path === "/" || emptyDirs.includes(path)
       );
 
       spies.getMetadata.mockImplementation(async (path) => ({
@@ -695,11 +707,12 @@ describe("BrowserNativeSyncTarget", () => {
       }));
 
       spies.listDirectory.mockImplementation(async (path) => {
-        if (path === "/empty1") return [{ path: "/empty1/sub", type: "directory" }];
+        if (path === "/empty1")
+          return [{ path: "/empty1/sub", type: "directory" }];
         if (emptyDirs.includes(path)) return [];
         return emptyDirs
-          .filter(dir => dir.split("/").length === 2) // Only direct children of root
-          .map(dir => ({ path: dir, type: "directory" }));
+          .filter((dir) => dir.split("/").length === 2) // Only direct children of root
+          .map((dir) => ({ path: dir, type: "directory" }));
       });
 
       // Start sync process
@@ -725,7 +738,7 @@ describe("BrowserNativeSyncTarget", () => {
               lastModified: timestamp
             },
             getReader: () => new ReadableStream().getReader(),
-            close: async () => { }
+            close: async () => {}
           }
         );
       }

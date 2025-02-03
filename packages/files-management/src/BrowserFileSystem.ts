@@ -1,16 +1,12 @@
 import FS from "@isomorphic-git/lightning-fs";
 import { FsPromisesAdapter, MinimalFsPromises } from "./FsPromisesAdapter";
-import type {
-  MKDirOptions
-} from "@isomorphic-git/lightning-fs";
+import type { MKDirOptions } from "@isomorphic-git/lightning-fs";
 import type {
   FileSystem,
   FileSystemState,
   FileSystemStateType
 } from "@piddie/shared-types";
-import {
-  FileSystemError
-} from "@piddie/shared-types";
+import { FileSystemError } from "@piddie/shared-types";
 
 /**
  * Browser-compatible path utilities
@@ -109,7 +105,10 @@ export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
                   );
                 }
               } catch (parentError) {
-                if (parentError instanceof Error && parentError.message.includes("ENOENT")) {
+                if (
+                  parentError instanceof Error &&
+                  parentError.message.includes("ENOENT")
+                ) {
                   throw new FileSystemError(
                     `Parent directory does not exist: ${parentPath}`,
                     "NOT_FOUND"
@@ -119,7 +118,10 @@ export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
               }
             }
             // Create the directory
-            return fs.promises.mkdir(path, { mode: 0o777, ...options } as MKDirOptions);
+            return fs.promises.mkdir(path, {
+              mode: 0o777,
+              ...options
+            } as MKDirOptions);
           }
           // If it's our error type, rethrow it
           if (error instanceof FileSystemError) {
@@ -165,7 +167,10 @@ export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
         if (this.lockState.isLocked && !options?.isSyncOperation) {
           throw new FileSystemError("File system is locked", "LOCKED");
         }
-        await fs.promises.writeFile(path, data, { mode: 0o666, encoding: "utf8" });
+        await fs.promises.writeFile(path, data, {
+          mode: 0o666,
+          encoding: "utf8"
+        });
         this.lastOperation = {
           type: "write",
           path,

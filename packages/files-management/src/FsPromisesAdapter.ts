@@ -32,7 +32,13 @@ const browserPath = {
   },
 
   join(...parts: string[]): string {
-    return "/" + parts.map((part) => browserPath.normalize(part)).filter(Boolean).join("/");
+    return (
+      "/" +
+      parts
+        .map((part) => browserPath.normalize(part))
+        .filter(Boolean)
+        .join("/")
+    );
   }
 };
 
@@ -64,10 +70,7 @@ export interface MinimalFsPromises {
     path: string,
     options?: { recursive?: boolean; isSyncOperation?: boolean }
   ): Promise<void>;
-  unlink(
-    path: string,
-    options?: { isSyncOperation?: boolean }
-  ): Promise<void>;
+  unlink(path: string, options?: { isSyncOperation?: boolean }): Promise<void>;
   access?(path: string): Promise<void>;
 }
 
@@ -344,7 +347,9 @@ export class FsPromisesAdapter implements FileSystem {
       const stats = await this.options.fs.stat(absolutePath);
       if (stats.isDirectory()) {
         if (this.options.fs.rm) {
-          await this.options.fs.rm(absolutePath, { recursive: !!options?.recursive });
+          await this.options.fs.rm(absolutePath, {
+            recursive: !!options?.recursive
+          });
         } else {
           // Fallback implementation if rm is not available
           const entries = await this.options.fs.readdir(absolutePath, {
@@ -363,7 +368,11 @@ export class FsPromisesAdapter implements FileSystem {
               entries.map((entry) => {
                 const fullPath = this.joinPaths(absolutePath, entry.name);
                 return entry.isDirectory()
-                  ? this.deleteItem(fullPath, { recursive: true }, isSyncOperation)
+                  ? this.deleteItem(
+                      fullPath,
+                      { recursive: true },
+                      isSyncOperation
+                    )
                   : this.options.fs.unlink(fullPath);
               })
             );
@@ -393,7 +402,9 @@ export class FsPromisesAdapter implements FileSystem {
     const absolutePath = this.getAbsolutePath(path);
 
     try {
-      await this.options.fs.mkdir(absolutePath, { recursive: !!options?.recursive });
+      await this.options.fs.mkdir(absolutePath, {
+        recursive: !!options?.recursive
+      });
     } catch (error: unknown) {
       // If it's already our error type, rethrow it
       if (error instanceof FileSystemError) {
@@ -592,8 +603,10 @@ export class FsPromisesAdapter implements FileSystem {
 
     // Set up timeout to automatically unlock
     setTimeout(() => {
-      if (this.lockState.isLocked &&
-        this.lockState.lockedSince === originalLockedSince) {
+      if (
+        this.lockState.isLocked &&
+        this.lockState.lockedSince === originalLockedSince
+      ) {
         this.lockState = { isLocked: false };
       }
     }, timeoutMs);

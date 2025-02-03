@@ -112,12 +112,12 @@ export interface FileSystemState {
   lockState: LockState;
   pendingOperations: number;
   lastOperation?:
-  | {
-    type: string;
-    path: string;
-    timestamp: number;
-  }
-  | undefined;
+    | {
+        type: string;
+        path: string;
+        timestamp: number;
+      }
+    | undefined;
   currentState: FileSystemStateType;
 }
 

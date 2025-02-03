@@ -236,7 +236,9 @@ describe("Browser FileSystem", () => {
         // Second check (if it gets there) should also show directory exists
         statSpy.mockResolvedValueOnce(createStatsMock({ isDirectory: true }));
         // mkdir should not be called, but mock it just in case
-        mkdirSpy.mockRejectedValueOnce(Object.assign(new Error("EEXIST"), { code: "EEXIST" }));
+        mkdirSpy.mockRejectedValueOnce(
+          Object.assign(new Error("EEXIST"), { code: "EEXIST" })
+        );
 
         // When creating the same directory again without recursive flag
         const createPromise = fileSystem.createDirectory(path);
@@ -258,7 +260,9 @@ describe("Browser FileSystem", () => {
         statSpy.mockResolvedValue(createStatsMock({ isDirectory: true }));
 
         // When creating the same directory again with recursive flag
-        const createPromise = fileSystem.createDirectory(path, { recursive: true });
+        const createPromise = fileSystem.createDirectory(path, {
+          recursive: true
+        });
 
         // Then it should succeed silently
         await expect(createPromise).resolves.toBeUndefined();
@@ -308,7 +312,9 @@ describe("Browser FileSystem", () => {
         await fileSystem.deleteItem(path);
 
         // Then it should attempt to remove the directory
-        expect(mockFs.rmdir).toHaveBeenCalledWith(expect.stringContaining("empty-dir"));
+        expect(mockFs.rmdir).toHaveBeenCalledWith(
+          expect.stringContaining("empty-dir")
+        );
       });
 
       it("should delete a directory with contents when recursive flag is true", async () => {
@@ -323,7 +329,7 @@ describe("Browser FileSystem", () => {
         readdirSpy.mockResolvedValue(["file1.txt", "subdir"]);
 
         // When deleting the directory with recursive flag
-        await fileSystem.deleteItem(path, { recursive: true, });
+        await fileSystem.deleteItem(path, { recursive: true });
 
         // Then it should attempt to remove the directory and its contents
         expect(mockFs.unlink).toHaveBeenCalled(); // For files
@@ -406,7 +412,6 @@ describe("Browser FileSystem", () => {
           lastModified: expect.any(Number)
         });
       });
-
 
       it("should return directory metadata", async () => {
         // Given a directory exists
@@ -560,7 +565,9 @@ describe("Browser FileSystem", () => {
           })
         ]);
 
-        const grandchildContents = await fileSystem.listDirectory("/parent/child/grandchild");
+        const grandchildContents = await fileSystem.listDirectory(
+          "/parent/child/grandchild"
+        );
         expect(grandchildContents).toEqual([]);
       });
 
@@ -593,7 +600,9 @@ describe("Browser FileSystem", () => {
         readdirSpy.mockResolvedValue([]);
 
         // Create multiple empty directories concurrently
-        await Promise.all(paths.map(path => fileSystem.createDirectory(path)));
+        await Promise.all(
+          paths.map((path) => fileSystem.createDirectory(path))
+        );
 
         // Verify all directories exist
         for (const path of paths) {
@@ -602,8 +611,10 @@ describe("Browser FileSystem", () => {
         }
 
         // List all directories concurrently
-        const results = await Promise.all(paths.map(path => fileSystem.listDirectory(path)));
-        results.forEach(contents => {
+        const results = await Promise.all(
+          paths.map((path) => fileSystem.listDirectory(path))
+        );
+        results.forEach((contents) => {
           expect(contents).toEqual([]);
         });
       });
@@ -632,7 +643,8 @@ describe("Browser FileSystem", () => {
 
         // Verify directory state persists after unlock
         expect(await fileSystem.exists(emptyDirPath)).toBe(true);
-        const contentsAfterUnlock = await fileSystem.listDirectory(emptyDirPath);
+        const contentsAfterUnlock =
+          await fileSystem.listDirectory(emptyDirPath);
         expect(contentsAfterUnlock).toEqual([]);
       });
     });

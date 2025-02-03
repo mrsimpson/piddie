@@ -1,7 +1,4 @@
-import type {
-  FileSystem,
-  FileChangeInfo
-} from "@piddie/shared-types";
+import type { FileSystem, FileChangeInfo } from "@piddie/shared-types";
 import { SyncOperationError } from "@piddie/shared-types";
 import { BaseSyncTarget } from "./BaseSyncTarget";
 import { NodeFileSystem } from "./NodeFileSystem";

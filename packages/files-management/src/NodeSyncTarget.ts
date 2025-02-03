@@ -30,7 +30,7 @@ export class NodeSyncTarget implements SyncTarget {
   constructor(
     public readonly id: string,
     private rootDir: string
-  ) { }
+  ) {}
   recover(): Promise<void> {
     throw new Error("Method not implemented.");
   }

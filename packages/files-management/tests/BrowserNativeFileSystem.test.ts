@@ -369,7 +369,10 @@ describe("BrowserNativeFileSystem", () => {
         // Given an existing directory
         const path = "/existing-dir";
         // Create the directory first to set up the mock state
-        mockFiles.set("existing-dir", createMockDirectoryHandle("existing-dir"));
+        mockFiles.set(
+          "existing-dir",
+          createMockDirectoryHandle("existing-dir")
+        );
 
         // When creating the same directory again without recursive flag
         const createPromise = fileSystem.createDirectory(path);
@@ -393,7 +396,9 @@ describe("BrowserNativeFileSystem", () => {
         await fileSystem.createDirectory(path);
 
         // When creating the same directory again with recursive flag
-        const createPromise = fileSystem.createDirectory(path, { recursive: true });
+        const createPromise = fileSystem.createDirectory(path, {
+          recursive: true
+        });
 
         // Then it should succeed silently
         await expect(createPromise).resolves.toBeUndefined();
@@ -428,7 +433,8 @@ describe("BrowserNativeFileSystem", () => {
         const childHandle = await parentHandle.getDirectoryHandle("child");
         expect(childHandle.kind).toBe("directory");
 
-        const grandchildHandle = await childHandle.getDirectoryHandle("grandchild");
+        const grandchildHandle =
+          await childHandle.getDirectoryHandle("grandchild");
         expect(grandchildHandle.kind).toBe("directory");
       });
 
@@ -457,7 +463,8 @@ describe("BrowserNativeFileSystem", () => {
         await fileSystem.deleteItem(path);
 
         // Then verify the directory and its contents are gone
-        const checkPromise = mockRootHandle.getDirectoryHandle("dir-with-contents");
+        const checkPromise =
+          mockRootHandle.getDirectoryHandle("dir-with-contents");
         await expect(checkPromise).rejects.toThrow();
       });
 

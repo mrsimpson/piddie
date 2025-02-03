@@ -88,7 +88,10 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
   constructor(options: { rootHandle: FileSystemDirectoryHandle }) {
     // Create a wrapper that implements MinimalFsPromises using File System Access API
     const fsWrapper: MinimalFsPromises = {
-      mkdir: async (dirPath: string, options?: { recursive?: boolean; isSyncOperation?: boolean }) => {
+      mkdir: async (
+        dirPath: string,
+        options?: { recursive?: boolean; isSyncOperation?: boolean }
+      ) => {
         // Check if we're in a sync operation by checking the lock mode
         const isInSyncMode =
           this.lockState.lockMode === "sync" || options?.isSyncOperation;
@@ -110,7 +113,9 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
           return;
         } catch (error) {
           // Directory doesn't exist, continue with creation
-          if (!(error instanceof FileSystemError && error.code === "NOT_FOUND")) {
+          if (
+            !(error instanceof FileSystemError && error.code === "NOT_FOUND")
+          ) {
             throw error;
           }
         }
@@ -136,7 +141,9 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
 
         for (const component of components) {
           try {
-            currentHandle = await currentHandle.getDirectoryHandle(component, { create: true });
+            currentHandle = await currentHandle.getDirectoryHandle(component, {
+              create: true
+            });
             const fullPath = this.joinPaths(
               ...dirPath
                 .split("/")
@@ -250,7 +257,10 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
           timestamp: Date.now()
         };
       },
-      rm: async (itemPath: string, options?: { recursive?: boolean; isSyncOperation?: boolean }) => {
+      rm: async (
+        itemPath: string,
+        options?: { recursive?: boolean; isSyncOperation?: boolean }
+      ) => {
         // Check if we're in a sync operation by checking the lock mode
         const isInSyncMode =
           this.lockState.lockMode === "sync" || options?.isSyncOperation;
@@ -261,10 +271,16 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
         const parentPath = this.getDirname(itemPath);
         const itemName = this.getBasename(itemPath);
         const parentHandle = await this.getDirectoryHandle(parentPath);
-        await parentHandle.removeEntry(itemName, options?.recursive ? { recursive: true } : undefined);
+        await parentHandle.removeEntry(
+          itemName,
+          options?.recursive ? { recursive: true } : undefined
+        );
         this.handleCache.delete(itemPath);
       },
-      unlink: async (filePath: string, options?: { isSyncOperation?: boolean }) => {
+      unlink: async (
+        filePath: string,
+        options?: { isSyncOperation?: boolean }
+      ) => {
         // Check if we're in a sync operation by checking the lock mode
         const isInSyncMode =
           this.lockState.lockMode === "sync" || options?.isSyncOperation;
@@ -272,8 +288,12 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
           throw new FileSystemError("File system is locked", "LOCKED");
         }
 
-        const rmOptions: { recursive?: boolean; isSyncOperation?: boolean } | undefined =
-          options?.isSyncOperation !== undefined ? { isSyncOperation: options.isSyncOperation } : undefined;
+        const rmOptions:
+          | { recursive?: boolean; isSyncOperation?: boolean }
+          | undefined =
+          options?.isSyncOperation !== undefined
+            ? { isSyncOperation: options.isSyncOperation }
+            : undefined;
         await fsWrapper.rm!(filePath, rmOptions);
       },
       access: async (itemPath: string) => {
@@ -373,7 +393,10 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
     // Now get the final component
     const lastComponent = components[components.length - 1];
     if (!lastComponent) {
-      throw new FileSystemError(`Invalid path: ${itemPath}`, "INVALID_OPERATION");
+      throw new FileSystemError(
+        `Invalid path: ${itemPath}`,
+        "INVALID_OPERATION"
+      );
     }
 
     try {
@@ -388,10 +411,7 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
         this.handleCache.set(normalizedPath, dirHandle);
         return dirHandle;
       } catch {
-        throw new FileSystemError(
-          `Item not found: ${itemPath}`,
-          "NOT_FOUND"
-        );
+        throw new FileSystemError(`Item not found: ${itemPath}`, "NOT_FOUND");
       }
     }
   }
@@ -399,7 +419,9 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
   /**
    * Get a directory handle for a path. Will throw if the path doesn't exist or is not a directory.
    */
-  private async getDirectoryHandle(dirPath: string): Promise<FileSystemDirectoryHandle> {
+  private async getDirectoryHandle(
+    dirPath: string
+  ): Promise<FileSystemDirectoryHandle> {
     const handle = await this.getHandle(dirPath);
     if (handle.kind !== "directory") {
       throw new FileSystemError(
