@@ -563,7 +563,6 @@ describe("Browser FileSystem", () => {
 
         const createdDirs = new Set<string>();
 
-
         beforeEach(() => {
           // Mock filesystem state for nested directories
           // Start of Selection
@@ -582,9 +581,11 @@ describe("Browser FileSystem", () => {
             // Start of Selection
             // Return appropriate children for each directory based on createdDirs
             const children = Array.from(createdDirs)
-              .filter(dir => dir.startsWith(`${path}/`) && dir !== path)
-              .map(dir => dir.slice(path.length + 1).split('/')[0])
-              .filter((child, index, self) => child && self.indexOf(child) === index);
+              .filter((dir) => dir.startsWith(`${path}/`) && dir !== path)
+              .map((dir) => dir.slice(path.length + 1).split("/")[0])
+              .filter(
+                (child, index, self) => child && self.indexOf(child) === index
+              );
             return Promise.resolve(children);
           });
         });
@@ -602,10 +603,12 @@ describe("Browser FileSystem", () => {
           }
 
           // And verify directory contents match expected structure
-          for (const [dir, expectedChildren] of Object.entries(nestedStructure)) {
+          for (const [dir, expectedChildren] of Object.entries(
+            nestedStructure
+          )) {
             const contents = await fileSystem.listDirectory(dir);
             expect(contents).toHaveLength(expectedChildren.length);
-            expectedChildren.forEach(child => {
+            expectedChildren.forEach((child) => {
               expect(contents).toContainEqual(
                 expect.objectContaining({
                   path: expect.stringContaining(child),
@@ -652,8 +655,12 @@ describe("Browser FileSystem", () => {
           expect(await fileSystem.listDirectory(emptyDir)).toEqual([]);
 
           // And verify our mocks were called as expected
-          expect(statSpy).toHaveBeenCalledWith(expect.stringContaining(emptyDir));
-          expect(readdirSpy).toHaveBeenCalledWith(expect.stringContaining(emptyDir));
+          expect(statSpy).toHaveBeenCalledWith(
+            expect.stringContaining(emptyDir)
+          );
+          expect(readdirSpy).toHaveBeenCalledWith(
+            expect.stringContaining(emptyDir)
+          );
         });
 
         it("should prevent modifications to empty directories while locked", async () => {
@@ -661,10 +668,12 @@ describe("Browser FileSystem", () => {
           await fileSystem.lock(1000, "test lock");
 
           // Then write operations should be rejected
-          await expect(fileSystem.createDirectory(`${emptyDir}/new`))
-            .rejects.toThrow(expect.objectContaining({ code: "LOCKED" }));
-          await expect(fileSystem.deleteItem(emptyDir))
-            .rejects.toThrow(expect.objectContaining({ code: "LOCKED" }));
+          await expect(
+            fileSystem.createDirectory(`${emptyDir}/new`)
+          ).rejects.toThrow(expect.objectContaining({ code: "LOCKED" }));
+          await expect(fileSystem.deleteItem(emptyDir)).rejects.toThrow(
+            expect.objectContaining({ code: "LOCKED" })
+          );
 
           // But read operations should still work
           await expect(fileSystem.exists(emptyDir)).resolves.toBe(true);

@@ -500,8 +500,15 @@ export abstract class BaseSyncTarget implements SyncTarget {
           try {
             const metadata = await this.fileSystem!.getMetadata(fullPath);
             const knownState = this.lastKnownFiles.get(fullPath);
+
+            // we need to forward the lastModified only if the file actually has got a new contents.
+            // some filesystems (like S3) do not allow to update the lastModified timestamp, so we need to keep this a separate information
+            const lastModified =
+              knownState?.lastModified && knownState?.hash === metadata.hash
+                ? knownState.lastModified
+                : metadata.lastModified;
             currentFiles.set(fullPath, {
-              lastModified: knownState?.lastModified ?? metadata.lastModified,
+              lastModified,
               hash: metadata.hash
             });
 

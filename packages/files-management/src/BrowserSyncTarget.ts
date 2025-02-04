@@ -13,7 +13,7 @@ declare const globalThis: {
  */
 export class BrowserSyncTarget extends BaseSyncTarget {
   override readonly type = "browser";
-  private changeBuffer: FileChangeInfo[] = [];
+  private changeBuffer = new Map<string, FileChangeInfo>();
   private changeTimeout: ReturnType<typeof setTimeout> | null = null;
   private watchTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -127,7 +127,7 @@ export class BrowserSyncTarget extends BaseSyncTarget {
 
   protected async handleFileChanges(changes: FileChangeInfo[]): Promise<void> {
     for (const change of changes) {
-      this.changeBuffer.push(change);
+      this.changeBuffer.set(change.path, change);
     }
 
     // Clear existing timeout if any
@@ -137,8 +137,8 @@ export class BrowserSyncTarget extends BaseSyncTarget {
 
     // Set new timeout to process changes
     this.changeTimeout = globalThis.setTimeout(async () => {
-      const bufferedChanges = [...this.changeBuffer];
-      this.changeBuffer = [];
+      const bufferedChanges = Array.from(this.changeBuffer.values());
+      this.changeBuffer.clear();
       this.changeTimeout = null;
 
       // Notify watchers of the changes

@@ -19,7 +19,8 @@ import { ReadableStream } from "node:stream/web";
 // Helper to create a mock watcher that emits specified events
 class MockFsWatcher
   implements
-  AsyncIterable<{ eventType: "rename" | "change"; filename: string | null }> {
+    AsyncIterable<{ eventType: "rename" | "change"; filename: string | null }>
+{
   private events: Array<{
     eventType: "rename" | "change";
     filename: string | null;

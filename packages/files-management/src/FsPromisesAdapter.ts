@@ -369,10 +369,10 @@ export class FsPromisesAdapter implements FileSystem {
                 const fullPath = this.joinPaths(absolutePath, entry.name);
                 return entry.isDirectory()
                   ? this.deleteItem(
-                    fullPath,
-                    { recursive: true },
-                    isSyncOperation
-                  )
+                      fullPath,
+                      { recursive: true },
+                      isSyncOperation
+                    )
                   : this.options.fs.unlink(fullPath);
               })
             );

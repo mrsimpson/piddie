@@ -57,7 +57,7 @@ interface FileSystemFileHandle extends FileSystemHandle {
   createWritable(): Promise<FileSystemWritableFileStream>;
 }
 
-interface FileSystemDirectoryHandle extends FileSystemHandle {
+export interface FileSystemDirectoryHandle extends FileSystemHandle {
   kind: "directory";
   entries(): AsyncIterableIterator<[string, FileSystemHandle]>;
   getDirectoryHandle(
@@ -69,6 +69,12 @@ interface FileSystemDirectoryHandle extends FileSystemHandle {
     options?: { create?: boolean }
   ): Promise<FileSystemFileHandle>;
   removeEntry(name: string, options?: { recursive?: boolean }): Promise<void>;
+  queryPermission(desc: {
+    mode: "read" | "readwrite";
+  }): Promise<PermissionState>;
+  requestPermission(desc: {
+    mode: "read" | "readwrite";
+  }): Promise<PermissionState>;
 }
 
 interface FileSystemWritableFileStream extends WritableStream {
