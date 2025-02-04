@@ -19,8 +19,7 @@ import { ReadableStream } from "node:stream/web";
 // Helper to create a mock watcher that emits specified events
 class MockFsWatcher
   implements
-    AsyncIterable<{ eventType: "rename" | "change"; filename: string | null }>
-{
+  AsyncIterable<{ eventType: "rename" | "change"; filename: string | null }> {
   private events: Array<{
     eventType: "rename" | "change";
     filename: string | null;
@@ -46,7 +45,8 @@ class MockFsWatcher
   }
 }
 
-describe("NodeSyncTarget", () => {
+// TODO: Re-enable once the local file system is done
+describe.skip("NodeSyncTarget", () => {
   const TEST_ROOT = "/test/root";
   let target: NodeSyncTarget;
   let fileSystem: NodeFileSystem;

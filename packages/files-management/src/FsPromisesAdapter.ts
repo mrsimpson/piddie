@@ -369,10 +369,10 @@ export class FsPromisesAdapter implements FileSystem {
                 const fullPath = this.joinPaths(absolutePath, entry.name);
                 return entry.isDirectory()
                   ? this.deleteItem(
-                      fullPath,
-                      { recursive: true },
-                      isSyncOperation
-                    )
+                    fullPath,
+                    { recursive: true },
+                    isSyncOperation
+                  )
                   : this.options.fs.unlink(fullPath);
               })
             );
@@ -447,8 +447,8 @@ export class FsPromisesAdapter implements FileSystem {
     const absolutePath = this.getAbsolutePath(dirPath);
 
     try {
-      // First check if directory exists
-      const exists = await this.exists(absolutePath);
+      // First check if directory exists – it doesn't need the absolute path, exists() will absolute it itself
+      const exists = await this.exists(dirPath);
       if (!exists) {
         throw new FileSystemError(
           `Directory not found: ${dirPath}`,
