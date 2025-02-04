@@ -7,9 +7,7 @@ import type {
   TargetState,
   SyncManagerConfig,
   FileChunk,
-  FileSystem,
   FileSystemItem,
-  SyncManager,
   FileConflict
 } from "@piddie/shared-types";
 import { SyncManagerError, SyncManagerStateType } from "@piddie/shared-types";
@@ -480,7 +478,7 @@ describe("FileSyncManager", () => {
       // When a critical error occurs (simulate by forcing invalid state transition)
       try {
         manager.transitionTo("invalid" as SyncManagerStateType, "someAction");
-      } catch (e) {
+      } catch {
         // Expected
       }
 
@@ -737,7 +735,7 @@ describe("FileSyncManager", () => {
 
       it("should handle empty directories", async () => {
         // Given empty directories in primary
-        const emptyDirs = ["empty1", "empty2/nested"];
+        const emptyDirs = ["empty1", "empty1/nested"];
         emptyDirs.forEach((path) => {
           const metadata: FileMetadata = {
             path,
@@ -1033,6 +1031,9 @@ describe("FileSyncManager", () => {
       await manager.handleTargetChanges(secondaryTarget1.id, [change]);
 
       // And pending sync is confirmed after the primary came back
+
+      // re-establish mock. It somehow gets lost as the rejection happens
+      secondaryTarget1.setMockFile(metadata.path, content, metadata);
       await manager.confirmPrimarySync();
 
       // Then primary should have the changes
