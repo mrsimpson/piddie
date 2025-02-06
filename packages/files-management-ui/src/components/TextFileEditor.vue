@@ -182,7 +182,9 @@ async function handleReload() {
       ></sl-textarea>
       <div v-if="hasExternalChanges" class="external-changes-warning">
         <sl-alert variant="warning" open>
-          <sl-icon slot="icon" name="exclamation-triangle"></sl-icon>
+          <template v-slot:icon>
+            <sl-icon name="exclamation-triangle"></sl-icon>
+          </template>
           This file has been modified externally. Click 'Reload' to load the latest version (your
           changes will be lost).
         </sl-alert>

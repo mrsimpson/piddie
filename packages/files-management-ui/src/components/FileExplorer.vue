@@ -2,7 +2,7 @@
 import type { SynchronizedFileSystem } from '../types/file-explorer'
 import FileSystem from './FileSystem.vue'
 
-const props = defineProps<{
+defineProps<{
   systems: SynchronizedFileSystem[]
 }>()
 </script>

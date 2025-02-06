@@ -165,7 +165,9 @@ onMounted(initializeBrowserSystem)
           <div class="empty-panel">
             <div class="empty-state">
               <sl-button variant="primary" size="large" @click="addNativeSystem">
-                <sl-icon slot="prefix" name="folder"></sl-icon>
+                <template v-slot:prefix>
+                  <sl-icon name="folder"></sl-icon>
+                </template>
                 Add Local Directory
               </sl-button>
               <p class="hint">Add a local directory to enable file synchronization</p>
