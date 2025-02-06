@@ -1,440 +1,370 @@
-import { FsPromisesAdapter, MinimalFsPromises } from "./FsPromisesAdapter";
 import { FileSystemError } from "@piddie/shared-types";
+import { FsPromisesAdapter } from "./FsPromisesAdapter";
+import {
+  FileSystemDirectoryHandle,
+  FileSystemFileHandle,
+  FileSystemHandle
+} from "native-file-system-adapter";
 
 /**
- * Browser-compatible path utilities
- */
-const browserPath = {
-  normalize(path: string): string {
-    // Remove leading and trailing slashes, collapse multiple slashes
-    return path.replace(/^\/+|\/+$/g, "").replace(/\/+/g, "/");
-  },
-
-  dirname(path: string): string {
-    const normalized = browserPath.normalize(path);
-    const lastSlash = normalized.lastIndexOf("/");
-    if (lastSlash === -1) return "/";
-    return normalized.slice(0, lastSlash) || "/";
-  },
-
-  basename(path: string): string {
-    const normalized = browserPath.normalize(path);
-    const lastSlash = normalized.lastIndexOf("/");
-    return lastSlash === -1 ? normalized : normalized.slice(lastSlash + 1);
-  },
-
-  join(...parts: string[]): string {
-    return (
-      "/" +
-      parts
-        .map((part) => browserPath.normalize(part))
-        .filter(Boolean)
-        .join("/")
-    );
-  }
-};
-
-// File System Access API types
-type PermissionState = "granted" | "denied" | "prompt";
-
-// BufferSource is a union of ArrayBuffer and ArrayBufferView
-type BufferSource = ArrayBuffer | ArrayBufferView;
-
-interface FileSystemHandle {
-  kind: "file" | "directory";
-  name: string;
-  queryPermission(desc: {
-    mode: "read" | "readwrite";
-  }): Promise<PermissionState>;
-  requestPermission(desc: {
-    mode: "read" | "readwrite";
-  }): Promise<PermissionState>;
-}
-
-interface FileSystemFileHandle extends FileSystemHandle {
-  kind: "file";
-  getFile(): Promise<File>;
-  createWritable(): Promise<FileSystemWritableFileStream>;
-}
-
-export interface FileSystemDirectoryHandle extends FileSystemHandle {
-  kind: "directory";
-  entries(): AsyncIterableIterator<[string, FileSystemHandle]>;
-  getDirectoryHandle(
-    name: string,
-    options?: { create?: boolean }
-  ): Promise<FileSystemDirectoryHandle>;
-  getFileHandle(
-    name: string,
-    options?: { create?: boolean }
-  ): Promise<FileSystemFileHandle>;
-  removeEntry(name: string, options?: { recursive?: boolean }): Promise<void>;
-  queryPermission(desc: {
-    mode: "read" | "readwrite";
-  }): Promise<PermissionState>;
-  requestPermission(desc: {
-    mode: "read" | "readwrite";
-  }): Promise<PermissionState>;
-}
-
-interface FileSystemWritableFileStream extends WritableStream {
-  write(data: string | BufferSource | Blob): Promise<void>;
-  seek(position: number): Promise<void>;
-  truncate(size: number): Promise<void>;
-}
-
-/**
- * Browser implementation of the FileSystem interface using the File System Access API.
- * This implementation provides direct access to the native file system through browser APIs.
+ * Implementation of the FileSystem interface using the Browser's File System Access API.
+ * Extends FsPromisesAdapter to provide a consistent interface while using browser-native file handles.
  */
 export class BrowserNativeFileSystem extends FsPromisesAdapter {
   private rootHandle: FileSystemDirectoryHandle;
-  private handleCache = new Map<string, FileSystemHandle>();
 
   constructor(options: { rootHandle: FileSystemDirectoryHandle }) {
-    // Create a wrapper that implements MinimalFsPromises using File System Access API
-    const fsWrapper: MinimalFsPromises = {
-      mkdir: async (
-        dirPath: string,
-        options?: { recursive?: boolean; isSyncOperation?: boolean }
-      ) => {
-        // Check if we're in a sync operation by checking the lock mode
-        const isInSyncMode =
-          this.lockState.lockMode === "sync" || options?.isSyncOperation;
-        if (this.lockState.isLocked && !isInSyncMode) {
-          throw new FileSystemError("File system is locked", "LOCKED");
-        }
+    super({
+      rootDir: "/",
+      fs: {
+        mkdir: async (dirPath: string, options = {}) => {
+          const components = this.normalizePath(dirPath)
+            .split("/")
+            .filter(Boolean);
+          let currentHandle = this.rootHandle;
 
-        // First check if directory exists
-        try {
-          await fsWrapper.access!(dirPath);
-          // Directory exists
-          if (!options?.recursive) {
+          // For recursive creation, create each directory in the path
+          if (options.recursive) {
+            for (const component of components) {
+              try {
+                currentHandle = await currentHandle.getDirectoryHandle(
+                  component,
+                  { create: true }
+                );
+              } catch (error) {
+                if ((error as any)?.name === "NotFoundError") {
+                  throw new FileSystemError(
+                    `Parent directory not found: ${dirPath}`,
+                    "NOT_FOUND"
+                  );
+                }
+                throw new FileSystemError(
+                  `Failed to create directory ${component} in ${dirPath}: ${error}`,
+                  "INVALID_OPERATION"
+                );
+              }
+            }
+            return;
+          }
+
+          // Non-recursive: parent must exist and target must not exist
+          const parentPath = this.getDirname(dirPath);
+          const dirName = this.getBasename(dirPath);
+
+          // Step 1: Get parent directory handle
+          let parentHandle: FileSystemDirectoryHandle;
+          try {
+            parentHandle = await this.traverseToDirectory(parentPath);
+          } catch (error) {
+            if (
+              (error as any)?.name === "NotFoundError" ||
+              (error instanceof FileSystemError && error.code === "NOT_FOUND")
+            ) {
+              throw new FileSystemError(
+                `Parent directory not found: ${parentPath}`,
+                "NOT_FOUND"
+              );
+            }
+            throw error;
+          }
+
+          // Step 2: Check if directory exists
+          let exists = false;
+          try {
+            await parentHandle.getDirectoryHandle(dirName, { create: false });
+            exists = true;
+          } catch {
+            // Any error means directory doesn't exist, which is what we want
+          }
+
+          if (exists) {
             throw new FileSystemError(
               `Directory already exists: ${dirPath}`,
               "ALREADY_EXISTS"
             );
           }
-          // With recursive=true, silently succeed
-          return;
-        } catch (error) {
-          // Directory doesn't exist, continue with creation
-          if (
-            !(error instanceof FileSystemError && error.code === "NOT_FOUND")
-          ) {
-            throw error;
-          }
-        }
 
-        // For non-recursive creation, verify parent exists
-        if (!options?.recursive) {
-          const parentDir = browserPath.dirname(dirPath);
-          if (parentDir !== "/") {
-            try {
-              await fsWrapper.access!(parentDir);
-            } catch {
-              throw new FileSystemError(
-                `Parent directory ${parentDir} does not exist`,
-                "NOT_FOUND"
-              );
-            }
-          }
-        }
-
-        // Create the directory (and parents if recursive)
-        const components = dirPath.split("/").filter(Boolean);
-        let currentHandle = this.rootHandle;
-
-        for (const component of components) {
+          // Step 3: Create the directory
           try {
-            currentHandle = await currentHandle.getDirectoryHandle(component, {
-              create: true
-            });
-            const fullPath = this.joinPaths(
-              ...dirPath
-                .split("/")
-                .slice(0, dirPath.split("/").indexOf(component) + 1)
-            );
-            this.handleCache.set(fullPath, currentHandle);
+            await parentHandle.getDirectoryHandle(dirName, { create: true });
           } catch (error) {
             throw new FileSystemError(
-              `Failed to create directory: ${dirPath}`,
+              `Failed to create directory ${dirPath}: ${error}`,
               "INVALID_OPERATION"
             );
           }
-        }
-      },
-      readdir: async (dirPath: string) => {
-        const dirHandle = await this.getDirectoryHandle(dirPath);
-        const entries: {
-          name: string;
-          isDirectory(): boolean;
-          isFile(): boolean;
-        }[] = [];
+        },
 
-        for await (const [name, handle] of dirHandle.entries()) {
-          // Skip the root directory itself
-          if (dirPath === "/" && name === "") continue;
+        readdir: async (dirPath: string) => {
+          const dirHandle = await this.traverseToDirectory(dirPath);
+          const entries = [];
 
-          entries.push({
-            name,
-            isDirectory: () => handle.kind === "directory",
-            isFile: () => handle.kind === "file"
-          });
-        }
-
-        return entries;
-      },
-      stat: async (filePath: string) => {
-        const handle = await this.getHandle(filePath);
-        if (handle.kind === "file") {
-          const file = await (handle as FileSystemFileHandle).getFile();
-          return {
-            isDirectory: () => false,
-            isFile: () => true,
-            mtimeMs: file.lastModified,
-            size: file.size
-          };
-        } else {
-          // For directories, use a fixed timestamp based on the path
-          // This ensures consistent timestamps for the same directory
-          const hashCode = filePath.split("").reduce((a, b) => {
-            a = (a << 5) - a + b.charCodeAt(0);
-            return a & a;
-          }, 0);
-          // Use a fixed base timestamp (e.g., start of 2024) plus the hash
-          const baseTimestamp = new Date("2024-01-01").getTime();
-          return {
-            isDirectory: () => true,
-            isFile: () => false,
-            mtimeMs: baseTimestamp + Math.abs(hashCode),
-            size: 0
-          };
-        }
-      },
-      readFile: async (filePath: string) => {
-        const handle = await this.getHandle(filePath);
-        if (handle.kind !== "file") {
-          throw new FileSystemError(
-            `Not a file: ${filePath}`,
-            "INVALID_OPERATION"
-          );
-        }
-        const file = await (handle as FileSystemFileHandle).getFile();
-        return await file.text();
-      },
-      writeFile: async (
-        filePath: string,
-        content: string,
-        options?: { encoding?: string; isSyncOperation?: boolean }
-      ) => {
-        // Check if we're in a sync operation by checking the lock mode
-        const isInSyncMode =
-          this.lockState.lockMode === "sync" || options?.isSyncOperation;
-        if (this.lockState.isLocked && !isInSyncMode) {
-          throw new FileSystemError("File system is locked", "LOCKED");
-        }
-
-        const parentPath = this.getDirname(filePath);
-        const fileName = this.getBasename(filePath);
-        const parentHandle = await this.getDirectoryHandle(parentPath);
-        const fileHandle = await parentHandle.getFileHandle(fileName, {
-          create: true
-        });
-
-        let writable: FileSystemWritableFileStream | null = null;
-        try {
-          writable = await fileHandle.createWritable();
-          // Truncate the file first to ensure we start fresh
-          await writable.truncate(0);
-          // Write the content
-          await writable.write(content);
-        } finally {
-          // Ensure we always close the stream
-          if (writable) {
-            await writable.close();
+          for await (const [name, handle] of dirHandle.entries()) {
+            entries.push({
+              name,
+              isDirectory: () => handle.kind === "directory",
+              isFile: () => handle.kind === "file"
+            });
           }
-        }
 
-        // Update the last operation
-        this.lastOperation = {
-          type: "write",
-          path: filePath,
-          timestamp: Date.now()
-        };
-      },
-      rm: async (
-        itemPath: string,
-        options?: { recursive?: boolean; isSyncOperation?: boolean }
-      ) => {
-        // Check if we're in a sync operation by checking the lock mode
-        const isInSyncMode =
-          this.lockState.lockMode === "sync" || options?.isSyncOperation;
-        if (this.lockState.isLocked && !isInSyncMode) {
-          throw new FileSystemError("File system is locked", "LOCKED");
-        }
+          return entries;
+        },
 
-        const parentPath = this.getDirname(itemPath);
-        const itemName = this.getBasename(itemPath);
-        const parentHandle = await this.getDirectoryHandle(parentPath);
-        await parentHandle.removeEntry(
-          itemName,
-          options?.recursive ? { recursive: true } : undefined
-        );
-        this.handleCache.delete(itemPath);
-      },
-      unlink: async (
-        filePath: string,
-        options?: { isSyncOperation?: boolean }
-      ) => {
-        // Check if we're in a sync operation by checking the lock mode
-        const isInSyncMode =
-          this.lockState.lockMode === "sync" || options?.isSyncOperation;
-        if (this.lockState.isLocked && !isInSyncMode) {
-          throw new FileSystemError("File system is locked", "LOCKED");
-        }
+        stat: async (path: string) => {
+          const { handle } = await this.traverseToHandle(path);
 
-        const rmOptions:
-          | { recursive?: boolean; isSyncOperation?: boolean }
-          | undefined =
-          options?.isSyncOperation !== undefined
-            ? { isSyncOperation: options.isSyncOperation }
-            : undefined;
-        await fsWrapper.rm!(filePath, rmOptions);
-      },
-      access: async (itemPath: string) => {
-        await this.getHandle(itemPath);
+          if (handle.kind === "file") {
+            const file = await (handle as FileSystemFileHandle).getFile();
+            return {
+              isDirectory: () => false,
+              isFile: () => true,
+              mtimeMs: file.lastModified,
+              size: file.size
+            };
+          } else {
+            return {
+              isDirectory: () => true,
+              isFile: () => false,
+              mtimeMs: Date.now(), // Directories don't have modification time in browser API
+              size: 0 // Directories don't have size in browser API
+            };
+          }
+        },
+
+        readFile: async (path: string) => {
+          const { handle } = await this.traverseToHandle(path);
+
+          if (handle.kind !== "file") {
+            throw new FileSystemError(`Not a file: ${path}`, "INVALID_TYPE");
+          }
+
+          const file = await (handle as FileSystemFileHandle).getFile();
+          return await file.text();
+        },
+
+        writeFile: async (path: string, data: string) => {
+          const parentPath = this.getDirname(path);
+          const fileName = this.getBasename(path);
+          const parentHandle = await this.traverseToDirectory(parentPath);
+
+          const fileHandle = await parentHandle.getFileHandle(fileName, {
+            create: true
+          });
+          const writable = await fileHandle.createWritable();
+          await writable.write(data);
+          await writable.close();
+        },
+
+        rm: async (path: string, options = {}) => {
+          const parentPath = this.getDirname(path);
+          const itemName = this.getBasename(path);
+
+          // Step 1: Get parent directory handle
+          let parentHandle: FileSystemDirectoryHandle;
+          try {
+            parentHandle = await this.traverseToDirectory(parentPath);
+          } catch (error) {
+            if (
+              (error as any)?.name === "NotFoundError" ||
+              (error instanceof FileSystemError && error.code === "NOT_FOUND")
+            ) {
+              throw new FileSystemError(
+                `Parent directory not found: ${parentPath}`,
+                "NOT_FOUND"
+              );
+            }
+            throw error;
+          }
+
+          // Step 2: Check if target exists and get its handle
+          let targetHandle: FileSystemHandle;
+          try {
+            try {
+              targetHandle = await parentHandle.getDirectoryHandle(itemName, {
+                create: false
+              });
+            } catch {
+              targetHandle = await parentHandle.getFileHandle(itemName, {
+                create: false
+              });
+            }
+          } catch (error) {
+            if ((error as any)?.name === "NotFoundError") {
+              throw new FileSystemError(`Item not found: ${path}`, "NOT_FOUND");
+            }
+            throw new FileSystemError(
+              `Failed to access item ${path}: ${error}`,
+              "INVALID_OPERATION"
+            );
+          }
+
+          // Step 3: If it's a directory and not recursive, check if it's empty
+          if (targetHandle.kind === "directory" && !options.recursive) {
+            const dirHandle = targetHandle as FileSystemDirectoryHandle;
+            for await (const [_] of dirHandle.entries()) {
+              throw new FileSystemError(
+                `Directory not empty: ${path}`,
+                "INVALID_OPERATION"
+              );
+            }
+          }
+
+          // Step 4: Remove the item
+          try {
+            await parentHandle.removeEntry(itemName, {
+              recursive: options?.recursive ?? false
+            });
+          } catch (error) {
+            throw new FileSystemError(
+              `Failed to remove item ${path}: ${error}`,
+              "INVALID_OPERATION"
+            );
+          }
+        },
+
+        unlink: async (path: string) => {
+          await this.options.fs.rm!(path);
+        },
+
+        access: async (path: string) => {
+          await this.traverseToHandle(path);
+        }
       }
-    };
-
-    super({
-      rootDir: "/",
-      fs: fsWrapper
     });
 
     this.rootHandle = options.rootHandle;
   }
 
   /**
-   * Initialize the file system and verify permissions
+   * Initialize the file system by verifying access to the root handle
    */
   override async initialize(): Promise<void> {
-    // Check if already initialized by checking the current state
-    if (this.currentState !== "uninitialized") {
-      return;
-    }
-
-    // First verify we have the necessary permissions
-    const permissionState = await this.rootHandle.queryPermission({
-      mode: "readwrite"
-    });
-
-    if (permissionState === "prompt") {
-      // Request permission from user
-      const newState = await this.rootHandle.requestPermission({
-        mode: "readwrite"
-      });
-
-      if (newState !== "granted") {
-        this.transitionTo("error", "initialize");
-        throw new FileSystemError(
-          "Permission denied for readwrite access to directory",
-          "PERMISSION_DENIED"
-        );
-      }
-    } else if (permissionState === "denied") {
-      this.transitionTo("error", "initialize");
+    // If already in error state, don't try to initialize
+    if (this.getCurrentState() === "error") {
       throw new FileSystemError(
-        "Permission denied for readwrite access to directory",
-        "PERMISSION_DENIED"
+        "File system is in error state",
+        "INVALID_OPERATION"
       );
     }
 
+    // If already initialized, don't initialize again
+    if (this.getCurrentState() === "ready") {
+      return;
+    }
+
     try {
-      // Initialize parent class
+      // Verify we can access the root handle by trying to list its contents
+      const entries = this.rootHandle.entries();
+      await entries[Symbol.asyncIterator]().next();
+
+      // Call parent's initialize to properly set up the state
       await super.initialize();
-      // State transition is handled in super.initialize()
     } catch (error) {
       this.transitionTo("error", "initialize");
+      if (error instanceof Error) {
+        throw new FileSystemError(
+          `Failed to initialize file system: ${error.message}`,
+          "INVALID_OPERATION"
+        );
+      }
       throw error;
     }
   }
 
   /**
-   * Get a handle for a path. Will throw if the path or any of its parent directories don't exist.
-   * This method is strictly for retrieving existing handles, not creating new ones.
+   * Traverse the file system to find a directory handle at the given path
    */
-  private async getHandle(itemPath: string): Promise<FileSystemHandle> {
-    // Normalize path
-    const normalizedPath = this.normalizePath(itemPath);
-    if (!normalizedPath) return this.rootHandle;
+  private async traverseToDirectory(
+    path: string
+  ): Promise<FileSystemDirectoryHandle> {
+    const { handle } = await this.traverseToHandle(path);
 
-    // Check cache first
-    if (this.handleCache.has(normalizedPath)) {
-      return this.handleCache.get(normalizedPath)!;
+    if (handle.kind !== "directory") {
+      throw new FileSystemError(`Not a directory: ${path}`, "INVALID_TYPE");
     }
 
-    // Split path into components and filter out empty segments
-    const components = normalizedPath.split("/").filter(Boolean);
-    let currentHandle: FileSystemDirectoryHandle = this.rootHandle;
+    return handle as FileSystemDirectoryHandle;
+  }
 
-    // First verify all parent directories exist
+  /**
+   * Traverse the file system to find any handle at the given path
+   */
+  private async traverseToHandle(
+    path: string
+  ): Promise<{ handle: FileSystemHandle; name: string }> {
+    const components = this.normalizePath(path).split("/").filter(Boolean);
+    let currentHandle: FileSystemHandle = this.rootHandle;
+    let currentPath = "";
+
+    // Special case: root directory
+    if (components.length === 0) {
+      return { handle: currentHandle, name: "/" };
+    }
+
+    // Traverse the path components
     for (let i = 0; i < components.length - 1; i++) {
       const component = components[i];
-      if (!component) continue;
+      currentPath = `${currentPath}/${component}`;
 
-      const fullPath = this.joinPaths(...components.slice(0, i + 1));
+      if (currentHandle.kind !== "directory") {
+        throw new FileSystemError(
+          `Cannot traverse through file: ${currentPath}`,
+          "INVALID_TYPE"
+        );
+      }
 
       try {
-        currentHandle = await currentHandle.getDirectoryHandle(component);
-        this.handleCache.set(fullPath, currentHandle);
-      } catch (error) {
+        currentHandle = await (
+          currentHandle as FileSystemDirectoryHandle
+        ).getDirectoryHandle(component!);
+      } catch {
         throw new FileSystemError(
-          `Parent directory not found: ${fullPath}`,
+          `Directory not found: ${currentPath}`,
           "NOT_FOUND"
         );
       }
     }
 
-    // Now get the final component
+    // Handle the last component - could be file or directory
     const lastComponent = components[components.length - 1];
-    if (!lastComponent) {
+    if (currentHandle.kind !== "directory") {
       throw new FileSystemError(
-        `Invalid path: ${itemPath}`,
-        "INVALID_OPERATION"
+        `Cannot access items in a file: ${currentPath}`,
+        "INVALID_TYPE"
       );
     }
 
     try {
       // Try as file first
-      const fileHandle = await currentHandle.getFileHandle(lastComponent);
-      this.handleCache.set(normalizedPath, fileHandle);
-      return fileHandle;
-    } catch {
       try {
-        // Then try as directory
-        const dirHandle = await currentHandle.getDirectoryHandle(lastComponent);
-        this.handleCache.set(normalizedPath, dirHandle);
-        return dirHandle;
+        currentHandle = await (
+          currentHandle as FileSystemDirectoryHandle
+        ).getFileHandle(lastComponent!);
       } catch {
-        throw new FileSystemError(`Item not found: ${itemPath}`, "NOT_FOUND");
+        // If not a file, try as directory
+        currentHandle = await (
+          currentHandle as FileSystemDirectoryHandle
+        ).getDirectoryHandle(lastComponent!);
       }
+      return { handle: currentHandle, name: lastComponent! };
+    } catch {
+      throw new FileSystemError(`Item not found: ${path}`, "NOT_FOUND");
     }
   }
 
-  /**
-   * Get a directory handle for a path. Will throw if the path doesn't exist or is not a directory.
-   */
-  private async getDirectoryHandle(
-    dirPath: string
-  ): Promise<FileSystemDirectoryHandle> {
-    const handle = await this.getHandle(dirPath);
-    if (handle.kind !== "directory") {
-      throw new FileSystemError(
-        `Not a directory: ${dirPath}`,
-        "INVALID_OPERATION"
-      );
-    }
-    return handle as FileSystemDirectoryHandle;
+  override normalizePath(path: string): string {
+    return path.replace(/^\/+|\/+$/g, "").replace(/\/+/g, "/");
+  }
+
+  override getDirname(path: string): string {
+    const normalized = this.normalizePath(path);
+    const lastSlash = normalized.lastIndexOf("/");
+    return lastSlash === -1 ? "/" : normalized.slice(0, lastSlash) || "/";
+  }
+
+  override getBasename(path: string): string {
+    const normalized = this.normalizePath(path);
+    const lastSlash = normalized.lastIndexOf("/");
+    return lastSlash === -1 ? normalized : normalized.slice(lastSlash + 1);
   }
 }

@@ -257,6 +257,7 @@ export class FileSystemError extends Error {
       | "LOCKED"
       | "ALREADY_EXISTS"
       | "INVALID_OPERATION"
+      | "INVALID_TYPE"
   ) {
     super(message);
     this.name = "FileSystemError";

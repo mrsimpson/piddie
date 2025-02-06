@@ -18,7 +18,8 @@
   },
   "dependencies": {
     "@isomorphic-git/lightning-fs": "4.6.0",
-    "@piddie/shared-types": "workspace:*"
+    "@piddie/shared-types": "workspace:*",
+    "native-file-system-adapter": "3.0.1"
   },
   "devDependencies": {
     "typescript": "~5.3.3"

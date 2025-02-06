@@ -225,7 +225,7 @@ export interface FileWatcher {
     /** Number of times the watcher has been executed */
     executionCount: number;
     /** Additional metadata */
-    [key: string]: any;
+    [key: string]: unknown;
   };
 }
 
@@ -256,7 +256,7 @@ export interface WatcherOptions {
     /**
      * Additional metadata
      */
-    [key: string]: any;
+    [key: string]: unknown;
   };
 
   /**

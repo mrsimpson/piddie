@@ -5,7 +5,7 @@ import type { FileMetadata, FileContentStream } from "@piddie/shared-types";
 import {
   createSyncTargetTests,
   type SyncTargetTestContext
-} from "./suites/syncTargetTests";
+} from "./suites/SyncTargetTests";
 import {
   createMockDirectoryHandle,
   createMockFileHandle,
