@@ -122,10 +122,7 @@ async function addNativeSystem() {
 
 async function initializeSyncManager(primaryTarget: SyncTarget, secondaryTarget: SyncTarget) {
   try {
-    await syncManager.initialize({
-      inactivityDelay: 1000,
-      maxRetries: 3
-    });
+    await syncManager.initialize();
 
     // Register targets for file syncing
     await syncManager.registerTarget(primaryTarget, { role: "primary" });

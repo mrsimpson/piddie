@@ -59,7 +59,7 @@ export class FileSyncManager implements SyncManager {
   transitionTo(newState: SyncManagerStateType, via: string): void {
     const fromState = this.currentState;
     if (!this.validateStateTransition(this.currentState, newState, via)) {
-      console.log(
+      console.error(
         "Invalid state transition from",
         fromState,
         "to",
@@ -114,9 +114,12 @@ export class FileSyncManager implements SyncManager {
   }
 
   private async startWatching(target: SyncTarget): Promise<void> {
+    console.info(`[FileSyncManager] Starting to watch target: ${target.id}`);
+
     try {
-      // Don't start watching if already watching
+      // First check if we're already watching this target
       if (this.activeWatchers.has(target.id)) {
+        console.debug(`[FileSyncManager] Already watching target: ${target.id}`);
         return;
       }
 
@@ -136,6 +139,7 @@ export class FileSyncManager implements SyncManager {
       this.activeWatchers.set(target.id, () => target.unwatch());
     } catch (error) {
       this.transitionTo("error", "error");
+      console.error(`[FileSyncManager] Failed to set up watcher for ${target.id}:`, error);
       throw error;
     }
   }
@@ -339,12 +343,19 @@ export class FileSyncManager implements SyncManager {
     target: SyncTarget,
     options: TargetRegistrationOptions
   ): Promise<void> {
+    console.info(`[FileSyncManager] Registering target:`, {
+      id: target.id,
+      type: target.type,
+      role: options.role
+    });
+
     // Run synchronous validations first
     this.validateTarget(target, options);
 
     if (options.role === "primary") {
       // Set primary target first
       this.primaryTarget = target;
+      console.info(`[FileSyncManager] Set primary target: ${target.id}`);
 
       // Start watching primary
       await this.startWatching(target);
@@ -359,6 +370,7 @@ export class FileSyncManager implements SyncManager {
     } else {
       // Register secondary target
       this.secondaryTargets.set(target.id, target);
+      console.info(`[FileSyncManager] Added secondary target: ${target.id}`);
 
       // Only sync if manager is initialized and primary exists
       if (this.currentState !== "uninitialized" && this.primaryTarget) {
@@ -461,6 +473,7 @@ export class FileSyncManager implements SyncManager {
     sourceId: string,
     changes: FileChangeInfo[]
   ): Promise<void> {
+    console.debug(`[FileSyncManager] Handling changes from ${sourceId}:`, changes);
     this.transitionTo("syncing", "changesDetected");
 
     const sourceTarget =

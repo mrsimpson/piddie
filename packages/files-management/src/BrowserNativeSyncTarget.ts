@@ -12,7 +12,7 @@ declare const globalThis: {
  * Browser implementation of the SyncTarget interface using the Native File System API
  */
 export class BrowserNativeSyncTarget extends BaseSyncTarget {
-  override readonly type = "browser";
+  override readonly type = "browser-native";
   private changeBuffer = new Map<string, FileChangeInfo>();
   private changeTimeout: ReturnType<typeof setTimeout> | null = null;
   private watchTimeout: ReturnType<typeof setTimeout> | null = null;

@@ -12,7 +12,7 @@ declare const globalThis: {
  * Browser implementation of the SyncTarget interface
  */
 export class BrowserSyncTarget extends BaseSyncTarget {
-  override readonly type = "browser";
+  override readonly type = "browser-fs";
   private changeBuffer = new Map<string, FileChangeInfo>();
   private changeTimeout: ReturnType<typeof setTimeout> | null = null;
   private watchTimeout: ReturnType<typeof setTimeout> | null = null;

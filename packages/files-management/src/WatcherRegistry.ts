@@ -22,9 +22,18 @@ export class WatcherRegistry {
     callback: (changes: FileChangeInfo[]) => void
   ): Promise<string> {
     const id = `watcher_${this.nextWatcherId++}`;
+    console.info(`[WatcherRegistry] Registering new watcher:`, {
+      id,
+      priority: options.priority,
+      metadata: options.metadata
+    });
 
     if (!options.metadata?.registeredBy) {
       throw new Error("Watcher registration requires metadata.registeredBy");
+    }
+
+    if (this.watchers.has(id)) {
+      throw new Error(`Watcher with id ${id} already exists`);
     }
 
     const watcher: FileWatcher = {
@@ -57,11 +66,13 @@ export class WatcherRegistry {
    * @param changes - Array of file changes to notify about
    */
   async notify(changes: FileChangeInfo[]): Promise<void> {
+    console.debug(`[WatcherRegistry] Notifying watchers of changes:`, changes);
     const sortedWatchers = Array.from(this.watchers.values()).sort(
       (a, b) => b.priority - a.priority
     );
 
     for (const watcher of sortedWatchers) {
+      console.debug(`[WatcherRegistry] Notifying watcher:`, watcher);
       try {
         // Apply filter if exists
         const filteredChanges = watcher.filter

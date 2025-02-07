@@ -25,7 +25,7 @@ interface KnownFileState {
  */
 export abstract class BaseSyncTarget implements SyncTarget {
   readonly id: string;
-  abstract readonly type: "browser" | "local" | "container";
+  abstract readonly type: "browser-native" | "browser-fs" | "local" | "container";
 
   protected fileSystem?: FileSystem;
   protected currentState: TargetStateType = "uninitialized";
@@ -341,6 +341,7 @@ export abstract class BaseSyncTarget implements SyncTarget {
     changeInfo: FileChangeInfo,
     contentStream?: FileContentStream
   ): Promise<FileConflict | null> {
+    console.debug(`[BaseSyncTarget] Applying change:`, changeInfo);
     return this.doSync(changeInfo, contentStream);
   }
 
@@ -428,12 +429,12 @@ export abstract class BaseSyncTarget implements SyncTarget {
       };
       filter?: (change: FileChangeInfo) => boolean;
     } = {
-      priority: WATCHER_PRIORITIES.OTHER,
-      metadata: {
-        registeredBy: "external",
-        type: "other-watcher"
+        priority: WATCHER_PRIORITIES.OTHER,
+        metadata: {
+          registeredBy: "external",
+          type: "other-watcher"
+        }
       }
-    }
   ): Promise<void> {
     const watcherOptions: WatcherOptions = {
       priority: options.priority ?? WATCHER_PRIORITIES.OTHER,

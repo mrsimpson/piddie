@@ -46,9 +46,9 @@ async function loadDirectory(path: string) {
     error.value = null;
     currentPath.value = path;
 
-    console.log(`Loading directory ${path}...`);
+    // console.log(`Loading directory ${path}...`);
     const entries = await props.fileSystem.listDirectory(path);
-    console.log(`Found ${entries.length} entries:`, entries);
+    // console.log(`Found ${entries.length} entries:`, entries);
 
     const metadataPromises = entries.map(async (entry) => {
       try {
@@ -60,7 +60,7 @@ async function loadDirectory(path: string) {
     });
 
     const metadata = await Promise.all(metadataPromises);
-    console.log(`Got metadata for ${metadata.length} entries:`, metadata);
+    // console.log(`Got metadata for ${metadata.length} entries:`, metadata);
 
     items.value = entries.map((entry, index) => {
       const meta = metadata[index];
@@ -158,7 +158,7 @@ function formatDate(timestamp: number): string {
 
 // Handle file changes from sync target
 async function handleFileChanges(changes: FileChangeInfo[]) {
-  console.log("FileSystemExplorer: Handling changes:", changes);
+  // console.log("FileSystemExplorer: Handling changes:", changes);
   const currentDir = currentPath.value;
 
   // Check if the current directory itself was deleted
@@ -169,7 +169,7 @@ async function handleFileChanges(changes: FileChangeInfo[]) {
   );
 
   if (currentDirDeleted) {
-    console.log("FileSystemExplorer: Current directory was deleted, navigating up");
+    // console.log("FileSystemExplorer: Current directory was deleted, navigating up");
     // Navigate up if current directory was deleted
     await navigateUp();
     return;
@@ -182,10 +182,10 @@ async function handleFileChanges(changes: FileChangeInfo[]) {
   });
 
   if (hasChangesInCurrentDir) {
-    console.log("FileSystemExplorer: Changes affect current directory, reloading");
+    // console.log("FileSystemExplorer: Changes affect current directory, reloading");
     await loadDirectory(currentDir);
   } else {
-    console.log("FileSystemExplorer: Changes do not affect current directory");
+    // console.log("FileSystemExplorer: Changes do not affect current directory");
   }
 }
 
