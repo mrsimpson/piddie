@@ -4,7 +4,8 @@ import {
   FileSystemError,
   FileMetadata,
   FileSystemItem,
-  LockMode
+  LockMode,
+  LockState
 } from "@piddie/shared-types";
 import type { FileSystemStateType } from "@piddie/shared-types";
 import { VALID_FILE_SYSTEM_STATE_TRANSITIONS } from "@piddie/shared-types";
@@ -92,10 +93,12 @@ export interface FsPromisesAdapterOptions {
  * Adapts any fs.promises-like implementation to our FileSystem interface.
  * This serves as the base for both node's fs.promises and browser-based implementations like LightningFS.
  */
-export class FsPromisesAdapter implements FileSystem {
+export abstract class FsPromisesAdapter implements FileSystem {
   protected options: FsPromisesAdapterOptions;
   protected currentState: FileSystemStateType = "uninitialized";
-  protected lockState: FileSystemState["lockState"] = { isLocked: false };
+  protected lockState: LockState = {
+    isLocked: false
+  };
   protected pendingOperations = 0;
   protected lastOperation?: FileSystemState["lastOperation"];
 
@@ -245,12 +248,12 @@ export class FsPromisesAdapter implements FileSystem {
       }
 
       // Allow write operations during sync mode only for sync operations
-      if (this.lockState.lockMode === "sync" && isSyncOperation) {
+      if (this.lockState.lockInfo?.mode === "sync" && isSyncOperation) {
         return;
       }
 
       throw new FileSystemError(
-        `File system is locked: ${this.lockState.lockReason}`,
+        `File system is locked: ${this.lockState.lockInfo?.reason}`,
         "LOCKED"
       );
     }
@@ -569,55 +572,69 @@ export class FsPromisesAdapter implements FileSystem {
   }
 
   async lock(
-    timeoutMs: number,
+    timeout: number,
     reason: string,
-    mode: LockMode = "external"
+    mode: LockMode,
+    owner: string
   ): Promise<void> {
-    // If already locked, just update the timeout and reason if needed
     if (this.lockState.isLocked) {
-      // Only update if the lock mode matches
-      if (this.lockState.lockMode === mode) {
-        this.lockState = {
-          ...this.lockState,
-          lockTimeout: timeoutMs,
-          lockReason: reason
-        };
-        return;
+      if (this.lockState.lockInfo?.owner !== owner) {
+        throw new FileSystemError(
+          `File system is locked by ${this.lockState.lockInfo?.owner}`,
+          "LOCKED"
+        );
       }
-      // If modes don't match, throw error
-      throw new FileSystemError(
-        `File system already locked in ${this.lockState.lockMode} mode`,
-        "LOCKED"
-      );
+      this.lockState = { isLocked: false };
+      // Same owner can relock - just update the timeout
+      return;
     }
 
-    const originalLockedSince = Date.now();
-    // Just set the lock state without transitioning state
     this.lockState = {
       isLocked: true,
-      lockedSince: originalLockedSince,
-      lockTimeout: timeoutMs,
-      lockReason: reason,
-      lockMode: mode
+      lockInfo: {
+        owner,
+        reason,
+        mode,
+        timestamp: Date.now()
+      }
     };
 
-    // Set up timeout to automatically unlock
+    // Set up timeout
     setTimeout(() => {
-      if (
-        this.lockState.isLocked &&
-        this.lockState.lockedSince === originalLockedSince
-      ) {
-        this.lockState = { isLocked: false };
+      if (this.lockState.lockInfo?.owner === owner) {
+        this.unlock(owner).catch(console.error);
       }
-    }, timeoutMs);
+    }, timeout);
   }
 
-  async forceUnlock(): Promise<void> {
+  async unlock(owner: string): Promise<void> {
     if (!this.lockState.isLocked) {
       return;
     }
 
-    // Just clear the lock state without transitioning state
-    this.lockState = { isLocked: false };
+    if (this.lockState.lockInfo?.owner !== owner) {
+      throw new FileSystemError(
+        `Cannot unlock: locked by ${this.lockState.lockInfo?.owner}`,
+        "LOCKED"
+      );
+    }
+
+    this.lockState = {
+      isLocked: false
+    };
+  }
+
+  getLockState(): LockState {
+    return {
+      isLocked: this.lockState.isLocked,
+      lockInfo: this.lockState.lockInfo
+    };
+  }
+
+  forceUnlock(): Promise<void> {
+    this.lockState = {
+      isLocked: false
+    };
+    return Promise.resolve();
   }
 }

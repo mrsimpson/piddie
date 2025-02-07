@@ -42,7 +42,6 @@ vi.mock("../src/FileSyncManager", () => ({
       close: async () => {}
     });
     confirmPrimarySync = vi.fn().mockResolvedValue(undefined);
-    rejectPendingSync = vi.fn().mockResolvedValue(undefined);
     reinitializeTarget = vi.fn().mockResolvedValue(undefined);
     validateStateTransition = vi.fn().mockReturnValue(true);
     getCurrentState = vi.fn().mockReturnValue({ phase: "idle" });

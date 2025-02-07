@@ -65,6 +65,7 @@ const context: SyncTargetTestContext<BrowserSyncTarget> = {
       deleteItem: vi.spyOn(fileSystem, "deleteItem"),
       exists: vi.spyOn(fileSystem, "exists"),
       lock: vi.spyOn(fileSystem, "lock"),
+      unlock: vi.spyOn(fileSystem, "unlock"),
       forceUnlock: vi.spyOn(fileSystem, "forceUnlock"),
       getMetadata: vi.spyOn(fileSystem, "getMetadata"),
       listDirectory: vi.spyOn(fileSystem, "listDirectory")

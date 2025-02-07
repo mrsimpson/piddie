@@ -99,6 +99,7 @@ export type SyncManagerStateType =
   | "uninitialized"
   | "ready"
   | "syncing"
+  | "resolving"
   | "conflict"
   | "error";
 
@@ -110,8 +111,14 @@ type SyncManagerStateTransition =
   | { from: "ready"; to: "syncing"; via: "changesDetected" }
   | { from: "syncing"; to: "ready"; via: "syncComplete" }
   | { from: "syncing"; to: "conflict"; via: "conflictDetected" }
-  | { from: "conflict"; to: "ready"; via: "conflictResolved" }
-  | { from: "ready" | "syncing" | "conflict"; to: "error"; via: "error" }
+  | { from: "conflict"; to: "resolving"; via: "confirmPrimarySync" }
+  | { from: "resolving"; to: "ready"; via: "conflictResolved" }
+  | { from: "resolving"; to: "ready"; via: "resolutionComplete" }
+  | {
+      from: "ready" | "syncing" | "conflict" | "resolving";
+      to: "error";
+      via: "error";
+    }
   | { from: "error"; to: "ready"; via: "recovery" };
 
 export const VALID_SYNC_MANAGER_TRANSITIONS: SyncManagerStateTransition[] = [
@@ -119,15 +126,18 @@ export const VALID_SYNC_MANAGER_TRANSITIONS: SyncManagerStateTransition[] = [
   { from: "ready", to: "syncing", via: "changesDetected" },
   { from: "syncing", to: "ready", via: "syncComplete" },
   { from: "syncing", to: "conflict", via: "conflictDetected" },
-  { from: "conflict", to: "ready", via: "conflictResolved" },
+  { from: "conflict", to: "resolving", via: "confirmPrimarySync" },
+  { from: "resolving", to: "ready", via: "conflictResolved" },
+  { from: "resolving", to: "ready", via: "resolutionComplete" },
   { from: "ready", to: "error", via: "error" },
   { from: "syncing", to: "error", via: "error" },
   { from: "conflict", to: "error", via: "error" },
+  { from: "resolving", to: "error", via: "error" },
   { from: "error", to: "ready", via: "recovery" }
 ];
 
 /**
- * Core sync manager interface
+ * Interface for sync manager
  */
 export interface SyncManager {
   /**
@@ -138,36 +148,81 @@ export interface SyncManager {
    *  - TARGET_ALREADY_EXISTS if target with same id already registered
    *  - PRIMARY_TARGET_EXISTS if trying to register primary when one exists
    */
-  registerTarget(target: SyncTarget, options: TargetRegistrationOptions): void;
+  registerTarget(
+    target: SyncTarget,
+    options: TargetRegistrationOptions
+  ): Promise<void>;
 
   /**
    * Unregister a sync target
+   * @param targetId ID of the target to unregister
    */
-  unregisterTarget(targetId: string): void;
+  unregisterTarget(targetId: string): Promise<void>;
 
   /**
    * Get the primary target
-   * @throws {Error} if no primary target registered
+   * @throws {SyncManagerError} if no primary target registered
    */
   getPrimaryTarget(): SyncTarget;
 
   /**
    * Get all secondary targets
+   * @returns Array of secondary targets
    */
   getSecondaryTargets(): SyncTarget[];
 
   /**
    * Get current sync status
+   * @returns Current sync status including phase and target states
    */
   getStatus(): SyncStatus;
 
   /**
-   * Get current pending sync if any
+   * Get pending sync information
+   * @returns Current pending sync or null if none
    */
   getPendingSync(): PendingSync | null;
 
   /**
+   * Get pending changes
+   * @returns Array of pending changes
+   * @throws {SyncManagerError} if no pending changes
+   */
+  getPendingChanges(): Promise<FileChangeInfo[]>;
+
+  /**
+   * Get content for a pending change
+   * @param path Path of the file to get content for
+   * @returns Stream of file content
+   * @throws {SyncManagerError} if no such pending change or source not available
+   */
+  getPendingChangeContent(path: string): Promise<FileContentStream>;
+
+  /**
+   * Confirm pending sync to primary
+   * This will apply pending changes to the primary target and reinitialize secondaries
+   * @throws {SyncManagerError} if no pending sync or operation fails
+   */
+  confirmPrimarySync(): Promise<void>;
+
+  /**
+   * Initialize the sync manager
+   * Verifies all targets are in valid state
+   * @throws {SyncManagerError} if any target is in error state
+   */
+  initialize(): Promise<void>;
+
+  /**
+   * Clean up resources
+   * Stops all watchers and clears target references
+   */
+  dispose(): Promise<void>;
+
+  /**
    * Get content stream for a file
+   * @param targetId ID of the target containing the file
+   * @param path Path of the file to get content for
+   * @returns Stream of file content
    * @throws {SyncManagerError} if target not found or file not available
    */
   getFileContent(targetId: string, path: string): Promise<FileContentStream>;
@@ -175,6 +230,8 @@ export interface SyncManager {
   /**
    * Handle changes reported from a target
    * Changes only include metadata, content must be streamed separately
+   * @param sourceId ID of the target reporting changes
+   * @param changes Array of file changes to process
    */
   handleTargetChanges(
     sourceId: string,
@@ -182,47 +239,10 @@ export interface SyncManager {
   ): Promise<void>;
 
   /**
-   * Get pending changes metadata
-   * @throws {Error} if no pending changes
-   */
-  getPendingChanges(): Promise<FileChangeInfo[]>;
-
-  /**
-   * Get content stream for a pending change
-   * @throws {Error} if no such pending change or source not available
-   */
-  getPendingChangeContent(path: string): Promise<FileContentStream>;
-
-  /**
-   * Confirm pending sync to primary, will reinitialize all secondaries
-   * @throws {Error} if no pending sync
-   */
-  confirmPrimarySync(): Promise<void>;
-
-  /**
-   * Reject pending sync, clearing pending changes
-   * @throws {Error} if no pending sync
-   */
-  rejectPendingSync(): Promise<void>;
-
-  /**
-   * Reinitialize a dirty target from primary
-   * @throws {Error} if target not found or not dirty
-   */
-  reinitializeTarget(targetId: string): Promise<void>;
-
-  /**
-   * Initialize the sync manager
-   */
-  initialize(config: SyncManagerConfig): Promise<void>;
-
-  /**
-   * Dispose the sync manager, cleaning up resources
-   */
-  dispose(): Promise<void>;
-
-  /**
    * Validate if a state transition is allowed
+   * @param from Current state
+   * @param to Target state
+   * @param via Action causing the transition
    * @returns boolean indicating if the transition is valid
    */
   validateStateTransition(
@@ -233,11 +253,14 @@ export interface SyncManager {
 
   /**
    * Get current state type
+   * @returns Current state of the sync manager
    */
   getCurrentState(): SyncManagerStateType;
 
   /**
    * Transition to a new state
+   * @param newState State to transition to
+   * @param via Action causing the transition
    * @throws {SyncManagerError} if transition is invalid
    */
   transitionTo(newState: SyncManagerStateType, via: string): void;
@@ -258,6 +281,7 @@ export class SyncManagerError extends Error {
       | "INVALID_TARGET_ROLE"
       | "DUPLICATE_TARGET_ID"
       | "INVALID_TARGET_STATE"
+      | "SYNC_FAILED"
   ) {
     super(message);
     this.name = "SyncManagerError";

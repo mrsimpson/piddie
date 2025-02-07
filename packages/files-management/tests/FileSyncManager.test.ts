@@ -373,7 +373,11 @@ describe("FileSyncManager", () => {
         )
       ).toBe(true);
       expect(
-        manager.validateStateTransition("conflict", "ready", "conflictResolved")
+        manager.validateStateTransition(
+          "resolving",
+          "ready",
+          "conflictResolved"
+        )
       ).toBe(true);
       expect(manager.validateStateTransition("ready", "error", "error")).toBe(
         true
@@ -1040,30 +1044,6 @@ describe("FileSyncManager", () => {
         metadata.path
       );
       expect(secondary2Content.metadata.hash).toBe(metadata.hash);
-    });
-
-    it("should handle pending sync rejection", async () => {
-      // Given pending changes from secondary
-      const { metadata, change } = createTestFile();
-      change.sourceTarget = secondaryTarget1.id;
-
-      // And primary sync will fail
-      const error = new Error("Sync failed");
-      vi.spyOn(primaryTarget, "applyFileChange").mockRejectedValue(error);
-
-      // When secondary reports changes
-      await manager.handleTargetChanges(secondaryTarget1.id, [change]);
-
-      // And pending sync is rejected
-      await manager.rejectPendingSync();
-
-      // Then pending changes should be cleared
-      expect(manager.getPendingSync()).toBeNull();
-
-      // And primary should not have changes
-      await expect(
-        primaryTarget.getFileContent(metadata.path)
-      ).rejects.toThrow();
     });
   });
 });

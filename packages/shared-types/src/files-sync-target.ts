@@ -82,25 +82,33 @@ export type TargetStateType =
   | "error";
 
 /**
- * Valid state transitions for the sync target
+ * Valid state transitions for sync targets
  */
-type TargetStateTransition =
+export type TargetStateTransition =
   | { from: "uninitialized"; to: "idle"; via: "initialize" }
   | { from: "idle"; to: "collecting"; via: "collect" }
   | { from: "collecting"; to: "syncing"; via: "sync" }
   | { from: "syncing"; to: "idle"; via: "finishSync" }
-  | { from: "collecting" | "syncing"; to: "error"; via: "error" }
-  | { from: "error"; to: "idle"; via: "recover" };
+  | { from: "syncing"; to: "error"; via: "error" }
+  | { from: "error"; to: "idle"; via: "recovery" };
 
 export const VALID_TARGET_STATE_TRANSITIONS: TargetStateTransition[] = [
   { from: "uninitialized", to: "idle", via: "initialize" },
   { from: "idle", to: "collecting", via: "collect" },
   { from: "collecting", to: "syncing", via: "sync" },
   { from: "syncing", to: "idle", via: "finishSync" },
-  { from: "collecting", to: "error", via: "error" },
   { from: "syncing", to: "error", via: "error" },
-  { from: "error", to: "idle", via: "recover" }
+  { from: "error", to: "idle", via: "recovery" }
 ];
+
+/**
+ * Type of sync target
+ */
+export type SyncTargetType =
+  | "browser-fs"
+  | "browser-native"
+  | "node-fs"
+  | "container-fs";
 
 /**
  * Core sync target interface
@@ -180,6 +188,7 @@ export interface SyncTarget {
 
   /**
    * Recover from error state
+   * This will attempt to unlock the underlying filesystem and transition back to idle state
    */
   recover(): Promise<void>;
 }

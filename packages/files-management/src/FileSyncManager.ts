@@ -119,7 +119,9 @@ export class FileSyncManager implements SyncManager {
     try {
       // First check if we're already watching this target
       if (this.activeWatchers.has(target.id)) {
-        console.debug(`[FileSyncManager] Already watching target: ${target.id}`);
+        console.debug(
+          `[FileSyncManager] Already watching target: ${target.id}`
+        );
         return;
       }
 
@@ -139,7 +141,10 @@ export class FileSyncManager implements SyncManager {
       this.activeWatchers.set(target.id, () => target.unwatch());
     } catch (error) {
       this.transitionTo("error", "error");
-      console.error(`[FileSyncManager] Failed to set up watcher for ${target.id}:`, error);
+      console.error(
+        `[FileSyncManager] Failed to set up watcher for ${target.id}:`,
+        error
+      );
       throw error;
     }
   }
@@ -473,7 +478,10 @@ export class FileSyncManager implements SyncManager {
     sourceId: string,
     changes: FileChangeInfo[]
   ): Promise<void> {
-    console.debug(`[FileSyncManager] Handling changes from ${sourceId}:`, changes);
+    console.debug(
+      `[FileSyncManager] Handling changes from ${sourceId}:`,
+      changes
+    );
     this.transitionTo("syncing", "changesDetected");
 
     const sourceTarget =
@@ -622,53 +630,67 @@ export class FileSyncManager implements SyncManager {
       this.pendingSync.sourceTargetId
     );
     if (!sourceTarget) {
-      this.transitionTo("error", "error");
       throw new SyncManagerError("Source target not found", "TARGET_NOT_FOUND");
     }
 
     if (!this.primaryTarget) {
-      this.transitionTo("error", "error");
       throw new SyncManagerError("No primary target", "NO_PRIMARY_TARGET");
     }
 
     try {
+      // Transition to resolving state before starting the operation
+      this.transitionTo("resolving", "confirmPrimarySync");
+
       // Get all unique changes
       const changes = await this.getPendingChanges();
 
-      // First verify source files exist
-      for (const change of changes) {
-        await sourceTarget.getFileContent(change.path);
-      }
-
-      // Then apply to primary
-      await this.applyChangesToTarget(
+      // Apply changes to primary target
+      const result = await this.applyChangesToTarget(
         this.primaryTarget,
         sourceTarget,
         changes
       );
 
-      // On success, reinitialize other secondaries
-      const reinitPromises = Array.from(this.secondaryTargets.values())
-        .filter((target) => target !== sourceTarget)
-        .map((target) => this.reinitializeTarget(target.id));
+      if (!result.success) {
+        // If apply fails, transition to error state
+        this.transitionTo("error", "error");
+        throw new SyncManagerError(
+          `Failed to apply changes to primary target: ${result.error?.message}`,
+          "SYNC_FAILED"
+        );
+      }
 
-      await Promise.all(reinitPromises);
-
+      // Clear pending sync after successful application
       this.pendingSync = null;
-      this.transitionTo("ready", "conflictResolved");
+
+      // Reinitialize all secondary targets
+      for (const target of this.secondaryTargets.values()) {
+        await this.reinitializeTarget(target.id);
+      }
+
+      // Transition back to ready state after successful completion
+      this.transitionTo("ready", "resolutionComplete");
     } catch (error) {
-      this.transitionTo("error", "error");
+      // On any error, transition to error state if not already there
+      if (this.currentState !== "error") {
+        this.transitionTo("error", "error");
+      }
       throw error;
     }
   }
 
-  async rejectPendingSync(): Promise<void> {
-    if (!this.pendingSync) {
-      throw new SyncManagerError("No pending changes", "NO_PENDING_SYNC");
+  protected async reinitializeTarget(targetId: string): Promise<void> {
+    const target = this.secondaryTargets.get(targetId);
+    if (!target) {
+      throw new SyncManagerError("Target not found", "TARGET_NOT_FOUND");
     }
 
-    this.pendingSync = null;
-    this.transitionTo("ready", "conflictResolved");
+    try {
+      await this.fullSyncFromPrimaryToTarget(target);
+    } catch (error) {
+      target.getState().status = "error";
+      throw error;
+    }
   }
 
   private async getAllPaths(target: SyncTarget): Promise<string[]> {
@@ -708,87 +730,6 @@ export class FileSyncManager implements SyncManager {
     // Start from root
     await processDirectory("/");
     return result;
-  }
-
-  async reinitializeTarget(targetId: string): Promise<void> {
-    const target = this.secondaryTargets.get(targetId);
-    if (!target) {
-      throw new SyncManagerError("Target not found", "TARGET_NOT_FOUND");
-    }
-
-    if (!this.primaryTarget) {
-      this.transitionTo("error", "error");
-      throw new SyncManagerError("No primary target", "NO_PRIMARY_TARGET");
-    }
-
-    try {
-      // Get all paths from primary first to know what changes are coming
-      const allPaths = await this.getAllPaths(this.primaryTarget);
-
-      // Notify target about incoming changes
-      await target.notifyIncomingChanges(allPaths);
-
-      // First, get all existing files in the target and delete them
-      const targetPaths = await this.getAllPaths(target);
-      if (targetPaths.length > 0) {
-        // Create delete changes for all existing files
-        const deleteChanges: FileChangeInfo[] = targetPaths.map((path) => ({
-          path,
-          type: "delete",
-          hash: "",
-          size: 0,
-          lastModified: Date.now(),
-          sourceTarget: this.primaryTarget!.id
-        }));
-
-        // Apply delete changes first
-        await this.applyChangesToTarget(
-          target,
-          this.primaryTarget,
-          deleteChanges
-        );
-      }
-
-      // Then get metadata for all paths
-      const allFiles = await this.primaryTarget.getMetadata(allPaths);
-
-      // Filter to only existing files and directories
-      const existingItems: FileMetadata[] = [];
-      for (const item of allFiles) {
-        try {
-          if (item.type === "directory") {
-            existingItems.push(item);
-          } else {
-            await this.primaryTarget.getFileContent(item.path);
-            existingItems.push(item);
-          }
-        } catch {
-          // Skip items that don't exist
-          continue;
-        }
-      }
-
-      // Create changes for existing items - handle directories and files differently
-      const changes: FileChangeInfo[] = existingItems.map((item) => ({
-        path: item.path,
-        type: "create" as const, // Always treat as create for reinitialization
-        hash: item.type === "directory" ? "" : item.hash,
-        size: item.type === "directory" ? 0 : item.size,
-        lastModified: item.lastModified,
-        sourceTarget: this.primaryTarget!.id
-      }));
-
-      // Apply changes to target
-      await this.applyChangesToTarget(target, this.primaryTarget, changes);
-
-      // Complete the sync
-      await target.syncComplete();
-      target.getState().status = "idle";
-    } catch (error) {
-      target.getState().status = "error";
-      this.transitionTo("error", "error");
-      throw error;
-    }
   }
 
   async initialize(): Promise<void> {

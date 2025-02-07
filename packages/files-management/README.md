@@ -265,13 +265,12 @@ sequenceDiagram
     Note over S: File change detected
     S->>SM: Report changes (FileChangeInfo[])
 
-    Note over SM: Phase: collecting
+    Note over SM: State: syncing
     Note over SM: Wait for inactivity
 
     SM->>P: notifyIncomingChanges(paths)
     Note over P: Lock operations
 
-    Note over SM: Phase: syncing
     SM->>S: getContents(paths)
     S-->>SM: Return Map<path, content>
 
@@ -287,6 +286,7 @@ sequenceDiagram
 
             alt Secondary Sync Success
                 O-->>SM: Success
+                Note over SM: State: ready
             else Secondary Sync Failure
                 O-->>SM: Failure
                 Note over O: Mark target dirty
@@ -295,32 +295,18 @@ sequenceDiagram
 
     else Primary Sync Failure
         P-->>SM: Failure
+        Note over SM: State: conflict
         Note over SM: Store pending changes
         Note over SM: Await manual resolution
     end
 
-    Note over SM: Phase: idle
+    Note over SM: State: ready
     SM->>P: syncComplete()
     SM->>O: syncComplete()
     Note over P,O: Unlock if no pending changes
 ```
 
-### Recovery Process
-
-#### Recovery Scenarios
-
-1. **Secondary Target Failure**
-
-   - Secondary target marked as "dirty"
-   - Continues operating with other targets
-   - Requires reinitialization from primary
-
-2. **Primary Target Failure**
-   - Changes remain pending
-   - User can:
-     - Review pending changes
-     - Confirm primary sync (reinitialize secondaries)
-     - Reject pending sync
+### Recovery and Resolution Process
 
 ```mermaid
 sequenceDiagram
@@ -339,39 +325,131 @@ sequenceDiagram
         Note over S: Target clean
 
     else Primary Sync Resolution
-        Note over SM: Has pending changes
+        Note over SM: State: conflict
         U->>SM: Request pending changes
         SM-->>U: Show changes
 
         alt User Confirms
             U->>SM: confirmPrimarySync()
-            SM->>S: reinitialize()
-            Note over S: All secondaries reinitialized
+            Note over SM: State: resolving
+            SM->>P: applyChanges(pending)
+
+            alt Apply Success
+                P-->>SM: Success
+                SM->>S: reinitialize()
+                Note over SM: State: ready
+                Note over S: All secondaries reinitialized
+            else Apply Failure
+                P-->>SM: Failure
+                Note over SM: State: error
+            end
         else User Rejects
             U->>SM: rejectPendingSync()
-            SM->>SM: Clear pending changes
+            Note over SM: Clear pending changes
+            Note over SM: State: ready
         end
     end
 ```
 
-### Key Features
+### Conflict Resolution and Primary Target Overwrite
 
-1. **Clear Source of Truth**
+The sync system uses a primary target overwrite strategy to maintain consistency across all targets. This approach is based on several key principles:
 
-   - Primary target maintains definitive state
-   - Secondary targets can be reinitialized
-   - Predictable sync flow
+1. **Primary Target as Source of Truth**
 
-2. **Deterministic Recovery**
+   - The primary target serves as the authoritative source for the entire system
+   - All secondary targets must eventually converge to match the primary's state
+   - This ensures a clear, deterministic resolution path for conflicts
 
-   - Simple recovery paths
-   - No complex partial states
-   - User control over data loss scenarios
+2. **Resolution States**
 
-3. **State Management**
-   - Clear target roles
-   - Explicit dirty state tracking
-   - Pending change management
+   ```mermaid
+   stateDiagram-v2
+       [*] --> Conflict: Sync Failure
+       Conflict --> Resolving: confirmPrimarySync()
+       Resolving --> Ready: Success
+       Resolving --> Error: Failure
+       Ready --> [*]
+   ```
+
+3. **Resolution Process Flow**
+
+   ```mermaid
+   sequenceDiagram
+       participant U as User
+       participant SM as Sync Manager
+       participant P as Primary Target
+       participant S as Secondary Targets
+
+       Note over SM: State: conflict
+       U->>SM: View pending changes
+       SM-->>U: Display changes
+       U->>SM: confirmPrimarySync()
+
+       Note over SM: State: resolving
+       SM->>P: Apply changes
+
+       alt Success
+           SM->>S: Reinitialize all secondaries
+           Note over S: Full sync from primary
+           SM->>SM: Clear pending changes
+           Note over SM: State: ready
+       else Failure
+           Note over SM: State: error
+           SM-->>U: Report error
+       end
+   ```
+
+4. **Consistency Guarantees**
+
+   - **Atomic Updates**: Changes to the primary target are atomic - they either fully succeed or fail
+   - **Transactional Behavior**: The resolution process is transactional:
+     1. Lock primary target
+     2. Apply changes
+     3. On success: reinitialize all secondaries
+     4. On failure: rollback to previous state
+   - **State Tracking**: The system maintains explicit states during resolution:
+     - `conflict`: Initial state when changes need resolution
+     - `resolving`: Actively applying changes to primary
+     - `ready`: Resolution complete, system consistent
+     - `error`: Resolution failed, needs recovery
+
+5. **Recovery Strategy**
+
+   ```mermaid
+   graph TD
+       A[Detect Conflict] --> B{Primary Update}
+       B -->|Success| C[Reinitialize Secondaries]
+       B -->|Failure| D[Error State]
+       C --> E[System Ready]
+       D --> F[Manual Recovery]
+       F --> A
+   ```
+
+6. **Benefits of Primary Overwrite**
+
+   - **Deterministic Resolution**: Clear path to consistency
+   - **Simple Mental Model**: Primary always wins
+   - **Easy Recovery**: Secondary targets can always be reinitialized
+   - **Data Safety**: No automatic merging or loss of changes
+   - **User Control**: Explicit confirmation required for resolution
+
+7. **Implementation Details**
+   - Primary target maintains file state including:
+     - File hashes for content verification
+     - Timestamps for change detection
+     - Size and metadata for validation
+   - Secondary targets track their sync state:
+     - Last successful sync timestamp
+     - Pending changes
+     - Current sync status
+   - Resolution process ensures:
+     - All file operations are completed
+     - Proper error handling
+     - State machine transitions
+     - Lock management
+
+This approach ensures that the system can always return to a consistent state through a well-defined process, with the primary target serving as the ultimate source of truth.
 
 ## Large File Handling
 
@@ -556,137 +634,3 @@ interface GitOperations {
    // After successful sync
    await git.commit("sync: Update files from [source target]");
    ```
-
-2. **Conflict Handling**
-   ```typescript
-   // When conflicts are detected
-   await git.checkout("conflict/[timestamp]");
-   await git.commit("conflict: Store conflicting versions\n\nPaths: [paths]");
-   await git.checkout("main"); // Return to main branch
-   ```
-
-### Commit Messages
-
-- Clear prefix indicating operation type (`sync:`, `conflict:`)
-- Source target identification
-- Affected paths in commit body
-- Timestamp for conflict branches
-
-## Usage Example
-
-```typescript
-// Register targets with specific filters
-syncManager.registerTarget(
-  new BrowserTarget({
-    relevantPaths: ["src/**/*", "public/**/*"]
-  })
-);
-
-syncManager.registerTarget(
-  new ContainerTarget({
-    ignorePaths: ["dist/**/*", "node_modules/**/*"]
-  })
-);
-
-// Git operations are explicit
-const git = new GitOperations();
-await git.commit("feat: Initial commit");
-```
-
-## State Management
-
-The system maintains detailed state information for all sync targets and operations.
-
-```mermaid
-stateDiagram-v2
-    [*] --> Idle
-    Idle --> Collecting: Change Detected
-    Collecting --> Notifying: Batch Ready
-    Notifying --> Syncing: All Notified
-    Syncing --> Idle: Success
-    Syncing --> Error: Failure
-    Error --> Idle: Recovered
-
-    state Syncing {
-        [*] --> LockTargets
-        LockTargets --> PropagateChanges
-        PropagateChanges --> UnlockTargets
-        UnlockTargets --> [*]
-    }
-```
-
-### Target States
-
-Each sync target maintains its own state:
-
-```typescript
-interface TargetState {
-  id: string;
-  type: "browser" | "local" | "container";
-  lockState: LockState;
-  pendingChanges: number;
-  lastSyncTime?: number;
-  status: "idle" | "collecting" | "notifying" | "syncing" | "error";
-  error?: string;
-}
-```
-
-### Lock Management
-
-Targets use a timeout-based locking mechanism:
-
-```typescript
-// Lock target with timeout
-await target.lock(5000, "Preparing for sync");
-
-// Check lock state
-const lockState = target.getLockState();
-if (
-  lockState.isLocked &&
-  Date.now() - lockState.lockedSince > lockState.lockTimeout
-) {
-  // Handle timeout
-  await target.forceUnlock();
-}
-```
-
-### Error Recovery
-
-The system provides mechanisms for handling lock failures:
-
-1. **Timeout-based Locks**
-
-   - All locks require timeout specification
-   - Automatic unlock after timeout
-   - Prevents indefinite locks
-
-2. **Force Unlock**
-
-   - Emergency unlock capability
-   - Can be triggered per target or globally
-   - Use with caution - may cause inconsistencies
-
-3. **State Recovery**
-   ```typescript
-   // Example of recovery flow
-   try {
-     await syncManager.resume();
-   } catch (error) {
-     await syncManager.forceUnlockAll();
-     // Handle recovery
-   }
-   ```
-
-### Monitoring
-
-The sync manager provides detailed status information:
-
-```typescript
-const status = syncManager.getStatus();
-console.log(
-  `Sync Progress: ${status.progress.processed}/${status.progress.total}`
-);
-status.targets.forEach((state, targetId) => {
-  console.log(`Target ${targetId}: ${state.status}`);
-});
-```

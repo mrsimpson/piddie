@@ -92,17 +92,21 @@ export interface FileContentStream {
 /**
  * Lock mode for file system operations
  */
-export type LockMode = "sync" | "external";
+export type LockMode = "sync";
 
 /**
  * Lock state of file system operations
  */
+export interface LockInfo {
+  owner: string;
+  reason: string;
+  mode: LockMode;
+  timestamp: number;
+}
+
 export interface LockState {
   isLocked: boolean;
-  lockedSince?: number;
-  lockTimeout?: number;
-  lockReason?: string;
-  lockMode?: LockMode;
+  lockInfo?: LockInfo | undefined;
 }
 
 /**
@@ -211,7 +215,12 @@ export interface FileSystem {
    * @param reason Reason for locking
    * @param mode Lock mode - 'sync' allows sync operations, 'external' blocks all writes
    */
-  lock(timeoutMs: number, reason: string, mode?: LockMode): Promise<void>;
+  lock(
+    timeout: number,
+    reason: string,
+    mode: LockMode,
+    owner: string
+  ): Promise<void>;
 
   /**
    * Force unlock
@@ -243,6 +252,9 @@ export interface FileSystem {
    * @throws {FileSystemError} if transition is invalid
    */
   transitionTo(newState: FileSystemStateType, via: string): void;
+
+  unlock(owner: string): Promise<void>;
+  getLockState(): LockState;
 }
 
 /**

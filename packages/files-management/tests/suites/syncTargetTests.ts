@@ -18,6 +18,7 @@ export interface SyncTargetTestContext<T extends SyncTarget> {
     deleteItem: MockInstance;
     exists: MockInstance;
     lock: MockInstance;
+    unlock: MockInstance;
     forceUnlock: MockInstance;
     getMetadata: MockInstance;
     listDirectory: MockInstance;
@@ -63,12 +64,16 @@ export function createSyncTargetTests<T extends SyncTarget>(
     describe("Initialization", () => {
       it("should initialize in primary mode", async () => {
         await target.initialize(fileSystem, true);
+        // Wait for first poll
+        await vi.advanceTimersByTimeAsync(1000);
         expect(spies.listDirectory).toHaveBeenCalled();
         expect(target.getState().status).toBe("idle");
       });
 
       it("should initialize in secondary mode", async () => {
         await target.initialize(fileSystem, false);
+        // Wait for first poll
+        await vi.advanceTimersByTimeAsync(1000);
         expect(spies.listDirectory).toHaveBeenCalled();
         expect(target.getState().status).toBe("idle");
       });
@@ -94,7 +99,8 @@ export function createSyncTargetTests<T extends SyncTarget>(
         expect(spies.lock).toHaveBeenCalledWith(
           30000,
           "Sync in progress",
-          "sync"
+          "sync",
+          target.id
         );
       });
 
@@ -124,7 +130,7 @@ export function createSyncTargetTests<T extends SyncTarget>(
           )
         );
         await target.syncComplete();
-        expect(spies.forceUnlock).toHaveBeenCalled();
+        expect(spies.unlock).toHaveBeenCalledWith(target.id);
       });
 
       it("should get file metadata", async () => {
@@ -294,27 +300,51 @@ export function createSyncTargetTests<T extends SyncTarget>(
         await target.initialize(fileSystem, true);
       });
 
-      it("should setup file watching with timeout", async () => {
-        const callback = vi.fn();
-        await target.watch(callback, DEFAULT_WATCH_OPTIONS);
-        expect(callback).not.toHaveBeenCalled();
+      it("should start polling after initialization", async () => {
+        // After initialization, the first poll should happen
         await vi.advanceTimersByTimeAsync(1000);
-        expect(callback).not.toHaveBeenCalled(); // No changes yet
+        expect(spies.listDirectory).toHaveBeenCalled();
       });
 
-      it("should cleanup timeout on unwatch", async () => {
+      it("should setup file watching with proper polling interval", async () => {
         const callback = vi.fn();
         await target.watch(callback, DEFAULT_WATCH_OPTIONS);
+
+        // First poll (no changes)
+        spies.listDirectory.mockResolvedValueOnce([]);
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(spies.listDirectory).toHaveBeenCalled();
+        expect(callback).not.toHaveBeenCalled();
+
+        // Second poll (still no changes)
+        spies.listDirectory.mockResolvedValueOnce([]);
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(spies.listDirectory).toHaveBeenCalledTimes(2);
+        expect(callback).not.toHaveBeenCalled();
+      });
+
+      it("should cleanup polling on unwatch", async () => {
+        const callback = vi.fn();
+        await target.watch(callback, DEFAULT_WATCH_OPTIONS);
+
+        // First poll
+        spies.listDirectory.mockResolvedValueOnce([]);
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(spies.listDirectory).toHaveBeenCalled();
+
+        // Unwatch
         await target.unwatch();
-        await vi.advanceTimersByTimeAsync(1000);
-        expect(callback).not.toHaveBeenCalled();
+
+        // No more polls should happen
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(spies.listDirectory).toHaveBeenCalledTimes(1);
       });
 
-      it("should detect new files", async () => {
+      it("should detect new files with proper debouncing", async () => {
         const callback = vi.fn();
         await target.watch(callback, DEFAULT_WATCH_OPTIONS);
 
-        // First check with empty directory
+        // First poll with empty directory
         spies.listDirectory.mockResolvedValueOnce([]);
         await vi.advanceTimersByTimeAsync(1000);
 
@@ -332,11 +362,11 @@ export function createSyncTargetTests<T extends SyncTarget>(
           "content"
         );
 
-        // wait for the watcher to execute
+        // Wait for the next poll
         await vi.advanceTimersByTimeAsync(1000);
 
-        // simulate some more moments passing for the debounce to expire
-        await vi.advanceTimersByTimeAsync(1000);
+        // Wait for debounce
+        await vi.advanceTimersByTimeAsync(100);
 
         expect(callback).toHaveBeenCalledWith([
           expect.objectContaining({
@@ -349,14 +379,14 @@ export function createSyncTargetTests<T extends SyncTarget>(
         ]);
       });
 
-      it("should detect modified files", async () => {
+      it("should detect modified files with proper debouncing", async () => {
         const callback = vi.fn();
         await target.watch(callback, DEFAULT_WATCH_OPTIONS);
 
         const initialTimestamp = Date.now();
         const modifiedTimestamp = initialTimestamp + 5000;
 
-        // Setup initial file
+        // Setup initial file and let it be detected
         await context.setupFileWithMetadata(
           spies,
           "test.txt",
@@ -370,7 +400,12 @@ export function createSyncTargetTests<T extends SyncTarget>(
           "initial content"
         );
 
+        // Wait for initial poll and debounce
         await vi.advanceTimersByTimeAsync(1000);
+        await vi.advanceTimersByTimeAsync(100);
+
+        // Reset the callback mock
+        callback.mockReset();
 
         // Setup modified file
         const { metadata: modifiedMetadata } =
@@ -387,13 +422,13 @@ export function createSyncTargetTests<T extends SyncTarget>(
             "modified content"
           );
 
-        // wait for the watcher to execute
+        // Wait for next poll
         await vi.advanceTimersByTimeAsync(1000);
 
-        // simulate some more moments passing for the debounce to expire
-        await vi.advanceTimersByTimeAsync(1000);
+        // Wait for debounce
+        await vi.advanceTimersByTimeAsync(100);
 
-        expect(callback).toHaveBeenLastCalledWith([
+        expect(callback).toHaveBeenCalledWith([
           expect.objectContaining({
             path: modifiedMetadata.path,
             type: "modify",
@@ -405,29 +440,41 @@ export function createSyncTargetTests<T extends SyncTarget>(
         ]);
       });
 
-      it("should detect deleted files", async () => {
+      it("should detect deleted files with proper debouncing", async () => {
         const callback = vi.fn();
         await target.watch(callback, DEFAULT_WATCH_OPTIONS);
 
-        // Setup initial file
+        // Setup initial file and let it be detected
         const { metadata } = await context.setupFileWithMetadata(
           spies,
           "test.txt",
-          null
+          {
+            path: "test.txt",
+            type: "file",
+            hash: "initialhash",
+            size: 100,
+            lastModified: Date.now()
+          },
+          "initial content"
         );
 
+        // Wait for initial poll and debounce
         await vi.advanceTimersByTimeAsync(1000);
+        await vi.advanceTimersByTimeAsync(100);
+
+        // Reset the callback mock
+        callback.mockReset();
 
         // Simulate deletion
         spies.listDirectory.mockResolvedValueOnce([]);
 
-        // wait for the watcher to execute
+        // Wait for next poll
         await vi.advanceTimersByTimeAsync(1000);
 
-        // simulate some more moments passing for the debounce to expire
-        await vi.advanceTimersByTimeAsync(1000);
+        // Wait for debounce
+        await vi.advanceTimersByTimeAsync(100);
 
-        expect(callback).toHaveBeenLastCalledWith([
+        expect(callback).toHaveBeenCalledWith([
           expect.objectContaining({
             path: metadata.path,
             type: "delete",
@@ -440,19 +487,84 @@ export function createSyncTargetTests<T extends SyncTarget>(
         const callback = vi.fn();
         await target.watch(callback, DEFAULT_WATCH_OPTIONS);
 
-        // Make the directory listing take much longer
-        spies.listDirectory.mockImplementation(async () => {
-          await new Promise((resolve) => setTimeout(resolve, 3000));
-          return [];
-        });
+        // Make the directory listing take longer than the polling interval
+        let resolveListDirectory: () => void;
+        spies.listDirectory.mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              resolveListDirectory = () => resolve([]);
+            })
+        );
 
-        // advance time twice. As the listDirectory is still running, the sync will be still running
-        await vi.advanceTimersByTimeAsync(1000);
+        // Trigger first check
         await vi.advanceTimersByTimeAsync(1000);
 
-        // we shouldn't have got more than two listDirectory calls
-        // (one for the watch-setup, one for the first time 100ms passing)
+        // Try to trigger second check while first is still running
+        await vi.advanceTimersByTimeAsync(1000);
+
+        // Should only have one listDirectory call
+        expect(spies.listDirectory).toHaveBeenCalledTimes(1);
+
+        // Complete the first check
+        resolveListDirectory!();
+        await vi.advanceTimersByTimeAsync(0);
+
+        // Next check should now happen
+        await vi.advanceTimersByTimeAsync(1000);
         expect(spies.listDirectory).toHaveBeenCalledTimes(2);
+      });
+
+      it("should buffer multiple changes within debounce period", async () => {
+        const callback = vi.fn();
+        await target.watch(callback, DEFAULT_WATCH_OPTIONS);
+
+        // Setup two files to be detected in the same poll
+        const { metadata: file1 } = await context.setupFileWithMetadata(
+          spies,
+          "file1.txt",
+          {
+            path: "file1.txt",
+            type: "file",
+            hash: "hash1",
+            size: 100,
+            lastModified: Date.now()
+          },
+          "content1"
+        );
+
+        const { metadata: file2 } = await context.setupFileWithMetadata(
+          spies,
+          "file2.txt",
+          {
+            path: "file2.txt",
+            type: "file",
+            hash: "hash2",
+            size: 200,
+            lastModified: Date.now()
+          },
+          "content2"
+        );
+
+        // Wait for poll
+        await vi.advanceTimersByTimeAsync(1000);
+
+        // Wait for debounce
+        await vi.advanceTimersByTimeAsync(100);
+
+        // Should get both changes in a single callback
+        expect(callback).toHaveBeenCalledTimes(1);
+        expect(callback).toHaveBeenCalledWith([
+          expect.objectContaining({
+            path: file1.path,
+            type: "create",
+            sourceTarget: target.id
+          }),
+          expect.objectContaining({
+            path: file2.path,
+            type: "create",
+            sourceTarget: target.id
+          })
+        ]);
       });
     });
 

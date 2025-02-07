@@ -8,7 +8,8 @@ import type {
   FileChangeInfo,
   FileSystemItem,
   TargetStateType,
-  WatcherOptions
+  WatcherOptions,
+  SyncTargetType
 } from "@piddie/shared-types";
 import { SyncOperationError } from "@piddie/shared-types";
 import { VALID_TARGET_STATE_TRANSITIONS } from "@piddie/shared-types";
@@ -25,7 +26,7 @@ interface KnownFileState {
  */
 export abstract class BaseSyncTarget implements SyncTarget {
   readonly id: string;
-  abstract readonly type: "browser-native" | "browser-fs" | "local" | "container";
+  abstract readonly type: SyncTargetType;
 
   protected fileSystem?: FileSystem;
   protected currentState: TargetStateType = "uninitialized";
@@ -88,7 +89,7 @@ export abstract class BaseSyncTarget implements SyncTarget {
       }
 
       // Lock in sync mode to allow modifications during sync
-      await this.fileSystem.lock(30000, "Sync in progress", "sync");
+      await this.lockFileSystem();
 
       // Process files in batches to avoid memory issues with large file sets
       const BATCH_SIZE = 50;
@@ -296,7 +297,7 @@ export abstract class BaseSyncTarget implements SyncTarget {
         );
       }
 
-      await this.fileSystem.forceUnlock();
+      await this.unlockFileSystem();
 
       // Update lastKnownFiles after sync is complete
       if (this.isPrimaryTarget || this.isInitialSync) {
@@ -314,16 +315,31 @@ export abstract class BaseSyncTarget implements SyncTarget {
   }
 
   protected async doRecover(): Promise<void> {
+    if (this.currentState !== "error") {
+      throw new SyncOperationError(
+        "Can only recover from error state",
+        "INITIALIZATION_FAILED"
+      );
+    }
+
     try {
+      // Clear error state
       this.error = null;
+
+      // Force unlock the underlying filesystem if it exists
       if (this.fileSystem) {
         await this.fileSystem.forceUnlock();
       }
-      this.transitionTo("idle", "recover");
+
+      // Transition back to idle state
+      this.transitionTo("idle", "recovery");
     } catch (error) {
-      this.currentState = "error";
+      // If recovery fails, stay in error state
       this.error = error instanceof Error ? error.message : "Unknown error";
-      throw error;
+      throw new SyncOperationError(
+        `Recovery failed: ${this.error}`,
+        "INITIALIZATION_FAILED"
+      );
     }
   }
 
@@ -429,12 +445,12 @@ export abstract class BaseSyncTarget implements SyncTarget {
       };
       filter?: (change: FileChangeInfo) => boolean;
     } = {
-        priority: WATCHER_PRIORITIES.OTHER,
-        metadata: {
-          registeredBy: "external",
-          type: "other-watcher"
-        }
+      priority: WATCHER_PRIORITIES.OTHER,
+      metadata: {
+        registeredBy: "external",
+        type: "other-watcher"
       }
+    }
   ): Promise<void> {
     const watcherOptions: WatcherOptions = {
       priority: options.priority ?? WATCHER_PRIORITIES.OTHER,
@@ -545,5 +561,19 @@ export abstract class BaseSyncTarget implements SyncTarget {
       });
     }
     this.lastKnownFiles = newKnownFiles;
+  }
+
+  protected async lockFileSystem(): Promise<void> {
+    if (!this.fileSystem) {
+      throw new SyncOperationError("No file system", "INITIALIZATION_FAILED");
+    }
+    await this.fileSystem.lock(30000, "Sync in progress", "sync", this.id);
+  }
+
+  protected async unlockFileSystem(): Promise<void> {
+    if (!this.fileSystem) {
+      return;
+    }
+    await this.fileSystem.unlock(this.id);
   }
 }

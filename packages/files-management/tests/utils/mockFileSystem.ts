@@ -60,7 +60,15 @@ export function setupDefaultSpyBehavior(
     writeFile: MockInstance<(path: string, content: string) => Promise<void>>;
     deleteItem: MockInstance<(path: string) => Promise<void>>;
     exists: MockInstance<(path: string) => Promise<boolean>>;
-    lock: MockInstance<(path: string, mode: LockMode) => Promise<void>>;
+    lock: MockInstance<
+      (
+        timeout: number,
+        reason: string,
+        mode: LockMode,
+        owner: string
+      ) => Promise<void>
+    >;
+    unlock: MockInstance<(path: string) => Promise<void>>;
     forceUnlock: MockInstance<(path: string) => Promise<void>>;
     listDirectory: MockInstance<(path: string) => Promise<FileSystemItem[]>>;
     getMetadata: MockInstance<(path: string) => Promise<FileMetadata>>;
