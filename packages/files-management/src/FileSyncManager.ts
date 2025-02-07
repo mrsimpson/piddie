@@ -4,7 +4,6 @@ import type {
   SyncTarget,
   SyncManager,
   TargetRegistrationOptions,
-  SyncManagerConfig,
   FileChangeInfo,
   FileContentStream,
   SyncStatus,
@@ -38,7 +37,6 @@ interface SyncOperationState {
 export class FileSyncManager implements SyncManager {
   private primaryTarget: SyncTarget | null = null;
   private secondaryTargets: Map<string, SyncTarget> = new Map();
-  private config?: SyncManagerConfig;
   private currentPhase: SyncStatus["phase"] = "idle";
   private pendingSync: PendingSync | null = null;
   private activeWatchers: Map<string, () => Promise<void>> = new Map();
@@ -61,6 +59,14 @@ export class FileSyncManager implements SyncManager {
   transitionTo(newState: SyncManagerStateType, via: string): void {
     const fromState = this.currentState;
     if (!this.validateStateTransition(this.currentState, newState, via)) {
+      console.log(
+        "Invalid state transition from",
+        fromState,
+        "to",
+        newState,
+        "via",
+        via
+      );
       this.currentState = "error";
       throw new SyncManagerError(
         `Invalid state transition from ${fromState} to ${newState} via ${via}`,
@@ -271,12 +277,16 @@ export class FileSyncManager implements SyncManager {
     return result;
   }
 
-  private async fullSyncFromPrimaryToTarget(target: SyncTarget): Promise<void> {
-    if (!this.primaryTarget) return;
+  async fullSyncFromPrimaryToTarget(target: SyncTarget): Promise<void> {
+    // Skip sync if not initialized or no primary target
+    if (this.currentState === "uninitialized" || !this.primaryTarget) {
+      return;
+    }
 
     try {
+      const primary = this.primaryTarget; // Store reference to avoid null checks
       // Get all paths from primary first to know what changes are coming
-      const allPaths = await this.getAllPaths(this.primaryTarget);
+      const allPaths = await this.getAllPaths(primary);
 
       // Notify target about incoming changes
       await target.notifyIncomingChanges(allPaths);
@@ -291,19 +301,15 @@ export class FileSyncManager implements SyncManager {
           hash: "",
           size: 0,
           lastModified: Date.now(),
-          sourceTarget: this.primaryTarget!.id
+          sourceTarget: primary.id
         }));
 
         // Apply delete changes first
-        await this.applyChangesToTarget(
-          target,
-          this.primaryTarget,
-          deleteChanges
-        );
+        await this.applyChangesToTarget(target, primary, deleteChanges);
       }
 
       // Get metadata for all paths
-      const allFiles = await this.primaryTarget.getMetadata(allPaths);
+      const allFiles = await primary.getMetadata(allPaths);
 
       // Create change info for each item - handle directories and files differently
       const changes: FileChangeInfo[] = allFiles.map((file) => ({
@@ -312,17 +318,20 @@ export class FileSyncManager implements SyncManager {
         hash: file.type === "directory" ? "" : file.hash,
         size: file.type === "directory" ? 0 : file.size,
         lastModified: file.lastModified,
-        sourceTarget: this.primaryTarget!.id
+        sourceTarget: primary.id
       }));
 
       // Apply changes to target
-      await this.applyChangesToTarget(target, this.primaryTarget, changes);
+      await this.applyChangesToTarget(target, primary, changes);
 
       // Complete the sync
       await target.syncComplete();
     } catch (error) {
-      target.getState().status = "error";
-      throw error;
+      this.transitionTo("error", "fullSyncFromPrimaryToTarget");
+      throw new SyncOperationError(
+        `Full sync failed: ${error instanceof Error ? error.message : String(error)}`,
+        "APPLY_FAILED"
+      );
     }
   }
 
@@ -340,16 +349,19 @@ export class FileSyncManager implements SyncManager {
       // Start watching primary
       await this.startWatching(target);
 
-      // Sync primary contents to all existing secondaries
-      for (const secondary of this.secondaryTargets.values()) {
-        await this.fullSyncFromPrimaryToTarget(secondary);
+      // Only sync if manager is initialized
+      if (this.currentState !== "uninitialized") {
+        // Sync primary contents to all existing secondaries
+        for (const secondary of this.secondaryTargets.values()) {
+          await this.fullSyncFromPrimaryToTarget(secondary);
+        }
       }
     } else {
       // Register secondary target
       this.secondaryTargets.set(target.id, target);
 
-      // If primary exists, sync its contents to the new secondary
-      if (this.primaryTarget) {
+      // Only sync if manager is initialized and primary exists
+      if (this.currentState !== "uninitialized" && this.primaryTarget) {
         await this.fullSyncFromPrimaryToTarget(target);
       }
 
@@ -412,11 +424,8 @@ export class FileSyncManager implements SyncManager {
     );
     if (primaryPending) {
       return {
-        ...this.pendingSync,
-        changes: primaryPending.changes,
-        failedPrimarySync: primaryPending.failedSync,
-        timestamp: primaryPending.timestamp
-      } as any; // Use any to satisfy backward compatibility
+        ...this.pendingSync
+      };
     }
 
     return this.pendingSync;
@@ -769,10 +778,7 @@ export class FileSyncManager implements SyncManager {
     }
   }
 
-  async initialize(config: SyncManagerConfig): Promise<void> {
-    this.config = config;
-    console.log("initialize", this.config);
-
+  async initialize(): Promise<void> {
     // Verify all targets are initialized
     if (
       this.primaryTarget &&

@@ -1,4 +1,4 @@
-import { beforeEach, describe, vi } from "vitest";
+import { vi } from "vitest";
 import { BrowserSyncTarget } from "../src/BrowserSyncTarget";
 import { BrowserFileSystem } from "../src/BrowserFileSystem";
 import type { FileMetadata, FileContentStream } from "@piddie/shared-types";

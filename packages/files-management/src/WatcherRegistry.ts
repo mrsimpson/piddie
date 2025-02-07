@@ -96,7 +96,7 @@ export class WatcherRegistry {
    * Get information about all registered watchers
    * @returns Array of watcher information
    */
-  getWatcherInfo(): Array<{ id: string; metadata: any }> {
+  getWatcherInfo(): Array<{ id: string; metadata: unknown }> {
     return Array.from(this.watchers.values()).map(({ id, metadata }) => ({
       id,
       metadata

@@ -60,7 +60,6 @@ interface MockFileSystemDirectoryHandle extends MockFileSystemHandle {
   kind: "directory";
   name: string;
   path: string;
-  [kAdapter]: {};
   queryPermission: Mock<
     (desc: { mode: "read" | "readwrite" }) => Promise<PermissionState>
   >;
@@ -92,7 +91,6 @@ interface MockFileSystemDirectoryHandle extends MockFileSystemHandle {
   [Symbol.asyncIterator]: Mock<
     () => AsyncIterableIterator<[string, MockFileSystemHandle]>
   >;
-  remove: Mock<() => Promise<void>>;
   isSameEntry: Mock<(other: MockFileSystemHandle) => Promise<boolean>>;
 }
 
@@ -322,7 +320,7 @@ const ensureDirectory = (path: string): MockFileSystemDirectoryHandle => {
   const handle = createMockDirectoryHandle(path);
   if (path !== "/") {
     const parentPath = path.substring(0, path.lastIndexOf("/")) || "/";
-    const parentDir = ensureDirectory(parentPath);
+    ensureDirectory(parentPath);
   }
   mockState.directories.set(path, handle);
   return handle;

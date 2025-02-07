@@ -255,6 +255,9 @@ export class SyncManagerError extends Error {
       | "NO_PENDING_SYNC"
       | "SOURCE_NOT_AVAILABLE"
       | "SYNC_IN_PROGRESS"
+      | "INVALID_TARGET_ROLE"
+      | "DUPLICATE_TARGET_ID"
+      | "INVALID_TARGET_STATE"
   ) {
     super(message);
     this.name = "SyncManagerError";

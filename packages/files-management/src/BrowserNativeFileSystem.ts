@@ -32,7 +32,7 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
                   { create: true }
                 );
               } catch (error) {
-                if ((error as any)?.name === "NotFoundError") {
+                if ((error as Error)?.name === "NotFoundError") {
                   throw new FileSystemError(
                     `Parent directory not found: ${dirPath}`,
                     "NOT_FOUND"
@@ -55,10 +55,11 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
           let parentHandle: FileSystemDirectoryHandle;
           try {
             parentHandle = await this.traverseToDirectory(parentPath);
-          } catch (error) {
+          } catch (error: unknown) {
             if (
-              (error as any)?.name === "NotFoundError" ||
-              (error instanceof FileSystemError && error.code === "NOT_FOUND")
+              (error as Error)?.name === "NotFoundError" ||
+              (error instanceof FileSystemError &&
+                (error as FileSystemError).code === "NOT_FOUND")
             ) {
               throw new FileSystemError(
                 `Parent directory not found: ${parentPath}`,
@@ -165,8 +166,9 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
             parentHandle = await this.traverseToDirectory(parentPath);
           } catch (error) {
             if (
-              (error as any)?.name === "NotFoundError" ||
-              (error instanceof FileSystemError && error.code === "NOT_FOUND")
+              (error as Error)?.name === "NotFoundError" ||
+              (error instanceof FileSystemError &&
+                (error as FileSystemError).code === "NOT_FOUND")
             ) {
               throw new FileSystemError(
                 `Parent directory not found: ${parentPath}`,
@@ -189,7 +191,7 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
               });
             }
           } catch (error) {
-            if ((error as any)?.name === "NotFoundError") {
+            if ((error as Error)?.name === "NotFoundError") {
               throw new FileSystemError(`Item not found: ${path}`, "NOT_FOUND");
             }
             throw new FileSystemError(
@@ -201,6 +203,7 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
           // Step 3: If it's a directory and not recursive, check if it's empty
           if (targetHandle.kind === "directory" && !options.recursive) {
             const dirHandle = targetHandle as FileSystemDirectoryHandle;
+            // eslint-disable-next-line
             for await (const [_] of dirHandle.entries()) {
               throw new FileSystemError(
                 `Directory not empty: ${path}`,

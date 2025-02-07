@@ -1,10 +1,10 @@
 import type {
   FileMetadata,
   FileContentStream,
-  FileChunk
+  FileSystemItem
 } from "@piddie/shared-types";
 import { ReadableStream } from "node:stream/web";
-import { vi } from "vitest";
+import { MockInstance, vi } from "vitest";
 
 export interface MockFileSystemContext {
   mockFiles: Map<string, Partial<FileSystemHandle>>;
@@ -54,7 +54,17 @@ export function createMockStream(
 }
 
 export function setupDefaultSpyBehavior(
-  spies: any,
+  spies: {
+    initialize: MockInstance<() => Promise<void>>;
+    readFile: MockInstance<(path: string) => Promise<string>>;
+    writeFile: MockInstance<(path: string, content: string) => Promise<void>>;
+    deleteItem: MockInstance<(path: string) => Promise<void>>;
+    exists: MockInstance<(path: string) => Promise<boolean>>;
+    lock: MockInstance<(path: string, mode: LockMode) => Promise<void>>;
+    forceUnlock: MockInstance<(path: string) => Promise<void>>;
+    listDirectory: MockInstance<(path: string) => Promise<FileSystemItem[]>>;
+    getMetadata: MockInstance<(path: string) => Promise<FileMetadata>>;
+  },
   context: MockFileSystemContext
 ) {
   // Setup default mock implementations

@@ -1,42 +1,42 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
-import type { SynchronizedFileSystem } from '../types/file-explorer'
-import type { SyncTarget } from '@piddie/shared-types'
-import { createSynchronizedFileSystem } from '../types/file-explorer'
+import { ref, onMounted, onBeforeUnmount } from "vue";
+import type { SynchronizedFileSystem } from "../types/file-explorer";
+import type { SyncTarget } from "@piddie/shared-types";
+import { createSynchronizedFileSystem } from "../types/file-explorer";
 import {
   FileSyncManager,
   BrowserFileSystem,
   BrowserNativeFileSystem,
   BrowserSyncTarget,
-  BrowserNativeSyncTarget,
-} from '@piddie/files-management'
-import { WATCHER_PRIORITIES } from '@piddie/shared-types'
-import FileExplorer from '../components/FileExplorer.vue'
-import ErrorDisplay from '../components/ErrorDisplay.vue'
-import { handleUIError } from '../utils/error-handling'
+  BrowserNativeSyncTarget
+} from "@piddie/files-management";
+import { WATCHER_PRIORITIES } from "@piddie/shared-types";
+import FileExplorer from "../components/FileExplorer.vue";
+import ErrorDisplay from "../components/ErrorDisplay.vue";
+import { handleUIError } from "../utils/error-handling";
 
-const COMPONENT_ID = 'DemoApp'
-const systems = ref<SynchronizedFileSystem[]>([])
-const syncManager = new FileSyncManager()
+const COMPONENT_ID = "DemoApp";
+const systems = ref<SynchronizedFileSystem[]>([]);
+const syncManager = new FileSyncManager();
 
 // Monitor sync status
 function monitorSync() {
-  const status = syncManager.getStatus()
-  const pendingSync = syncManager.getPendingSync()
+  const status = syncManager.getStatus();
+  const pendingSync = syncManager.getPendingSync();
 
   if (status.currentFailure) {
     handleUIError(
       status.currentFailure.error,
       `Sync failed for target ${status.currentFailure.targetId}`,
-      COMPONENT_ID,
-    )
+      COMPONENT_ID
+    );
   }
 
   if (pendingSync) {
-    console.log('Pending sync:', {
+    console.log("Pending sync:", {
       sourceTarget: pendingSync.sourceTargetId,
-      pendingTargets: Array.from(pendingSync.pendingByTarget.keys()),
-    })
+      pendingTargets: Array.from(pendingSync.pendingByTarget.keys())
+    });
   }
 }
 
@@ -44,33 +44,33 @@ async function initializeBrowserSystem() {
   try {
     // Create and initialize browser file system
     const browserFs = new BrowserFileSystem({
-      name: 'demo-browser',
-      rootDir: '/',
-    })
-    await browserFs.initialize()
+      name: "demo-browser",
+      rootDir: "/"
+    });
+    await browserFs.initialize();
 
     // Create and initialize browser sync target
-    const browserTarget = new BrowserSyncTarget('browser')
-    await browserTarget.initialize(browserFs, true)
+    const browserTarget = new BrowserSyncTarget("browser");
+    await browserTarget.initialize(browserFs, true);
 
     // Create synchronized system
     const browserSystem = await createSynchronizedFileSystem({
-      id: 'browser',
-      title: 'Browser Storage',
+      id: "browser",
+      title: "Browser Storage",
       fileSystem: browserFs,
       syncTarget: browserTarget,
       watcherOptions: {
         priority: WATCHER_PRIORITIES.UI_UPDATES,
         metadata: {
-          registeredBy: 'DemoApp',
-          type: 'ui-explorer',
-        },
-      },
-    })
+          registeredBy: "DemoApp",
+          type: "ui-explorer"
+        }
+      }
+    });
 
-    systems.value = [browserSystem]
+    systems.value = [browserSystem];
   } catch (err) {
-    handleUIError(err, 'Failed to initialize browser system', COMPONENT_ID)
+    handleUIError(err, "Failed to initialize browser system", COMPONENT_ID);
   }
 }
 
@@ -78,45 +78,45 @@ async function addNativeSystem() {
   try {
     // Request directory with readwrite permissions
     const dirHandle = await window.showDirectoryPicker({
-      mode: 'readwrite',
-    })
+      mode: "readwrite"
+    });
 
     // Create and initialize native file system
-    const nativeFs = new BrowserNativeFileSystem({ rootHandle: dirHandle })
-    await nativeFs.initialize()
+    const nativeFs = new BrowserNativeFileSystem({ rootHandle: dirHandle });
+    await nativeFs.initialize();
 
     // Create and initialize native sync target
-    const nativeTarget = new BrowserNativeSyncTarget('native')
-    await nativeTarget.initialize(nativeFs, false)
+    const nativeTarget = new BrowserNativeSyncTarget("native");
+    await nativeTarget.initialize(nativeFs, false);
 
     // Create synchronized system
     const nativeSystem = await createSynchronizedFileSystem({
-      id: 'native',
-      title: 'Local Files',
+      id: "native",
+      title: "Local Files",
       fileSystem: nativeFs,
       syncTarget: nativeTarget,
       watcherOptions: {
         priority: WATCHER_PRIORITIES.UI_UPDATES,
         metadata: {
-          registeredBy: 'DemoApp',
-          type: 'ui-explorer',
-        },
-      },
-    })
+          registeredBy: "DemoApp",
+          type: "ui-explorer"
+        }
+      }
+    });
 
     // Initialize sync manager if this is the second system
     if (systems.value.length === 1) {
       try {
-        await initializeSyncManager(systems.value[0].syncTarget, nativeSystem.syncTarget)
+        await initializeSyncManager(systems.value[0].syncTarget, nativeSystem.syncTarget);
       } catch (syncError) {
-        handleUIError(syncError, 'Failed to initialize sync', COMPONENT_ID)
+        handleUIError(syncError, "Failed to initialize sync", COMPONENT_ID);
       }
     }
 
     // Add native system to the list
-    systems.value = [...systems.value, nativeSystem]
+    systems.value = [...systems.value, nativeSystem];
   } catch (err) {
-    handleUIError(err, 'Failed to initialize native system', COMPONENT_ID)
+    handleUIError(err, "Failed to initialize native system", COMPONENT_ID);
   }
 }
 
@@ -124,29 +124,29 @@ async function initializeSyncManager(primaryTarget: SyncTarget, secondaryTarget:
   try {
     await syncManager.initialize({
       inactivityDelay: 1000,
-      maxRetries: 3,
-    })
+      maxRetries: 3
+    });
 
     // Register targets for file syncing
-    await syncManager.registerTarget(primaryTarget, { role: 'primary' })
-    await syncManager.registerTarget(secondaryTarget, { role: 'secondary' })
+    await syncManager.registerTarget(primaryTarget, { role: "primary" });
+    await syncManager.registerTarget(secondaryTarget, { role: "secondary" });
 
     // Monitor sync status
-    const monitorInterval = setInterval(monitorSync, 1000)
+    const monitorInterval = setInterval(monitorSync, 1000);
 
     // Clean up on component unmount
     onBeforeUnmount(() => {
-      clearInterval(monitorInterval)
-    })
+      clearInterval(monitorInterval);
+    });
 
-    console.log('Sync manager initialized successfully')
+    console.log("Sync manager initialized successfully");
   } catch (err) {
-    handleUIError(err, 'Failed to initialize sync manager', COMPONENT_ID)
+    handleUIError(err, "Failed to initialize sync manager", COMPONENT_ID);
   }
 }
 
 // Initialize browser system on mount
-onMounted(initializeBrowserSystem)
+onMounted(initializeBrowserSystem);
 </script>
 
 <template>

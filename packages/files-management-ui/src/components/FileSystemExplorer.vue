@@ -1,214 +1,214 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import type { FileSystem, SyncTarget, FileChangeInfo } from '@piddie/shared-types'
-import type { FileViewModel } from '../types/file-explorer'
-import { handleUIError } from '../utils/error-handling'
-import TextFileEditor from './TextFileEditor.vue'
+import { ref, computed, onMounted, onUnmounted } from "vue";
+import type { FileSystem, SyncTarget, FileChangeInfo } from "@piddie/shared-types";
+import type { FileViewModel } from "../types/file-explorer";
+import { handleUIError } from "../utils/error-handling";
+import TextFileEditor from "./TextFileEditor.vue";
 
 const props = defineProps<{
-  fileSystem: FileSystem
-  syncTarget: SyncTarget
-  title: string
-}>()
+  fileSystem: FileSystem;
+  syncTarget: SyncTarget;
+  title: string;
+}>();
 
-const currentPath = ref('/')
+const currentPath = ref("/");
 
 // Expose methods for parent components
 defineExpose({
   handleFileChanges,
   loadDirectory,
-  currentPath,
-})
+  currentPath
+});
 
-const items = ref<FileViewModel[]>([])
-const loading = ref(false)
-const error = ref<string | null>(null)
-const showNewFileDialog = ref(false)
-const showNewFolderDialog = ref(false)
-const newItemName = ref('')
-const selectedFile = ref<string | null>(null)
-const showDeleteConfirmDialog = ref(false)
+const items = ref<FileViewModel[]>([]);
+const loading = ref(false);
+const error = ref<string | null>(null);
+const showNewFileDialog = ref(false);
+const showNewFolderDialog = ref(false);
+const newItemName = ref("");
+const selectedFile = ref<string | null>(null);
+const showDeleteConfirmDialog = ref(false);
 
 const sortedItems = computed(() => {
   return [...items.value].sort((a, b) => {
     // Directories first
     if (a.isDirectory !== b.isDirectory) {
-      return a.isDirectory ? -1 : 1
+      return a.isDirectory ? -1 : 1;
     }
     // Then alphabetically
-    return a.name.localeCompare(b.name)
-  })
-})
+    return a.name.localeCompare(b.name);
+  });
+});
 
 async function loadDirectory(path: string) {
   try {
-    loading.value = true
-    error.value = null
-    currentPath.value = path
+    loading.value = true;
+    error.value = null;
+    currentPath.value = path;
 
-    console.log(`Loading directory ${path}...`)
-    const entries = await props.fileSystem.listDirectory(path)
-    console.log(`Found ${entries.length} entries:`, entries)
+    console.log(`Loading directory ${path}...`);
+    const entries = await props.fileSystem.listDirectory(path);
+    console.log(`Found ${entries.length} entries:`, entries);
 
     const metadataPromises = entries.map(async (entry) => {
       try {
-        return await props.fileSystem.getMetadata(entry.path)
+        return await props.fileSystem.getMetadata(entry.path);
       } catch (err) {
-        console.error(`Failed to get metadata for ${entry.path}:`, err)
-        throw err
+        console.error(`Failed to get metadata for ${entry.path}:`, err);
+        throw err;
       }
-    })
+    });
 
-    const metadata = await Promise.all(metadataPromises)
-    console.log(`Got metadata for ${metadata.length} entries:`, metadata)
+    const metadata = await Promise.all(metadataPromises);
+    console.log(`Got metadata for ${metadata.length} entries:`, metadata);
 
     items.value = entries.map((entry, index) => {
-      const meta = metadata[index]
+      const meta = metadata[index];
       if (!meta) {
-        console.error(`No metadata for ${entry.path}`)
-        throw new Error(`No metadata for ${entry.path}`)
+        console.error(`No metadata for ${entry.path}`);
+        throw new Error(`No metadata for ${entry.path}`);
       }
 
       return {
         path: entry.path,
-        name: entry.path.split('/').pop() || '',
-        isDirectory: entry.type === 'directory',
+        name: entry.path.split("/").pop() || "",
+        isDirectory: entry.type === "directory",
         size: meta.size,
         lastModified: meta.lastModified,
         metadata: meta,
-        selected: false,
-      }
-    })
+        selected: false
+      };
+    });
   } catch (err) {
-    console.error(`Failed to load directory ${path}:`, err)
-    error.value = err instanceof Error ? err.message : 'Failed to load directory'
-    handleUIError(err, `Failed to load directory ${path}`, COMPONENT_ID)
+    console.error(`Failed to load directory ${path}:`, err);
+    error.value = err instanceof Error ? err.message : "Failed to load directory";
+    handleUIError(err, `Failed to load directory ${path}`, COMPONENT_ID);
   } finally {
-    loading.value = false
+    loading.value = false;
   }
 }
 
 async function navigateUp() {
   const parentPath =
-    currentPath.value === '/' ? '/' : currentPath.value.split('/').slice(0, -1).join('/') || '/'
-  await loadDirectory(parentPath)
+    currentPath.value === "/" ? "/" : currentPath.value.split("/").slice(0, -1).join("/") || "/";
+  await loadDirectory(parentPath);
 }
 
 async function navigateTo(path: string) {
-  await loadDirectory(path)
+  await loadDirectory(path);
 }
 
-const COMPONENT_ID = 'FileSystemExplorer'
+const COMPONENT_ID = "FileSystemExplorer";
 async function createNewFile() {
-  if (!newItemName.value) return
+  if (!newItemName.value) return;
 
   try {
-    error.value = null
+    error.value = null;
     if (await props.fileSystem.exists(newItemName.value)) {
-      handleUIError(`File already exists: ${newItemName.value}`, COMPONENT_ID)
+      handleUIError(`File already exists: ${newItemName.value}`, COMPONENT_ID);
     }
-    const filePath = `${currentPath.value}/${newItemName.value}`.replace(/\/+/g, '/')
-    await props.fileSystem.writeFile(filePath, '')
-    await loadDirectory(currentPath.value)
-    showNewFileDialog.value = false
-    newItemName.value = ''
+    const filePath = `${currentPath.value}/${newItemName.value}`.replace(/\/+/g, "/");
+    await props.fileSystem.writeFile(filePath, "");
+    await loadDirectory(currentPath.value);
+    showNewFileDialog.value = false;
+    newItemName.value = "";
   } catch (err) {
-    handleUIError(err, 'Failed to create file', COMPONENT_ID)
+    handleUIError(err, "Failed to create file", COMPONENT_ID);
   }
 }
 
 async function createNewFolder() {
-  if (!newItemName.value) return
+  if (!newItemName.value) return;
 
   try {
-    error.value = null
-    const folderPath = `${currentPath.value}/${newItemName.value}`.replace(/\/+/g, '/')
-    await props.fileSystem.createDirectory(folderPath)
-    await loadDirectory(currentPath.value)
-    showNewFolderDialog.value = false
-    newItemName.value = ''
+    error.value = null;
+    const folderPath = `${currentPath.value}/${newItemName.value}`.replace(/\/+/g, "/");
+    await props.fileSystem.createDirectory(folderPath);
+    await loadDirectory(currentPath.value);
+    showNewFolderDialog.value = false;
+    newItemName.value = "";
   } catch (err) {
-    handleUIError(err, 'Failed to create folder', COMPONENT_ID)
+    handleUIError(err, "Failed to create folder", COMPONENT_ID);
   }
 }
 
 async function deleteSelectedFile() {
-  if (!selectedFile.value) return
+  if (!selectedFile.value) return;
 
   try {
-    error.value = null
-    await props.fileSystem.deleteItem(selectedFile.value)
-    await loadDirectory(currentPath.value)
-    selectedFile.value = null
-    showDeleteConfirmDialog.value = false
+    error.value = null;
+    await props.fileSystem.deleteItem(selectedFile.value);
+    await loadDirectory(currentPath.value);
+    selectedFile.value = null;
+    showDeleteConfirmDialog.value = false;
   } catch (err) {
-    handleUIError(err, 'Failed to delete file', COMPONENT_ID)
+    handleUIError(err, "Failed to delete file", COMPONENT_ID);
   }
 }
 
 function formatSize(size: number): string {
-  if (size < 1024) return `${size} B`
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function formatDate(timestamp: number): string {
-  return new Date(timestamp).toLocaleString()
+  return new Date(timestamp).toLocaleString();
 }
 
 // Handle file changes from sync target
 async function handleFileChanges(changes: FileChangeInfo[]) {
-  console.log('FileSystemExplorer: Handling changes:', changes)
-  const currentDir = currentPath.value
+  console.log("FileSystemExplorer: Handling changes:", changes);
+  const currentDir = currentPath.value;
 
   // Check if the current directory itself was deleted
   const currentDirDeleted = changes.some(
     (change) =>
-      change.type === 'delete' &&
-      (change.path === currentDir || currentDir.startsWith(change.path + '/')),
-  )
+      change.type === "delete" &&
+      (change.path === currentDir || currentDir.startsWith(change.path + "/"))
+  );
 
   if (currentDirDeleted) {
-    console.log('FileSystemExplorer: Current directory was deleted, navigating up')
+    console.log("FileSystemExplorer: Current directory was deleted, navigating up");
     // Navigate up if current directory was deleted
-    await navigateUp()
-    return
+    await navigateUp();
+    return;
   }
 
   // Check if any of the changes affect the current directory
   const hasChangesInCurrentDir = changes.some((change) => {
-    const parentDir = change.path.split('/').slice(0, -1).join('/') || '/'
-    return parentDir === currentDir
-  })
+    const parentDir = change.path.split("/").slice(0, -1).join("/") || "/";
+    return parentDir === currentDir;
+  });
 
   if (hasChangesInCurrentDir) {
-    console.log('FileSystemExplorer: Changes affect current directory, reloading')
-    await loadDirectory(currentDir)
+    console.log("FileSystemExplorer: Changes affect current directory, reloading");
+    await loadDirectory(currentDir);
   } else {
-    console.log('FileSystemExplorer: Changes do not affect current directory')
+    console.log("FileSystemExplorer: Changes do not affect current directory");
   }
 }
 
 // Set up and clean up file change watching
 onMounted(async () => {
   try {
-    console.log('FileSystemExplorer mounted, initializing...')
-    await loadDirectory('/')
-    console.log('Initial directory loaded')
+    console.log("FileSystemExplorer mounted, initializing...");
+    await loadDirectory("/");
+    console.log("Initial directory loaded");
   } catch (err) {
-    console.error('Failed to initialize FileSystemExplorer:', err)
-    error.value = err instanceof Error ? err.message : 'Failed to initialize file explorer'
-    handleUIError(err, 'Failed to initialize file explorer', COMPONENT_ID)
+    console.error("Failed to initialize FileSystemExplorer:", err);
+    error.value = err instanceof Error ? err.message : "Failed to initialize file explorer";
+    handleUIError(err, "Failed to initialize file explorer", COMPONENT_ID);
   }
-})
+});
 
 onUnmounted(async () => {
   try {
-    console.log('FileSystemExplorer unmounting, cleaning up...')
+    console.log("FileSystemExplorer unmounting, cleaning up...");
   } catch (err) {
-    console.error('Error during cleanup:', err)
+    console.error("Error during cleanup:", err);
   }
-})
+});
 </script>
 
 <template>
@@ -325,8 +325,8 @@ onUnmounted(async () => {
   grid-template-rows: auto 1fr;
   grid-template-columns: 300px 1fr;
   grid-template-areas:
-    'header header'
-    'list editor';
+    "header header"
+    "list editor";
   border: 1px solid var(--sl-color-neutral-200);
   border-radius: var(--sl-border-radius-medium);
 }

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, Mock, vi } from "vitest";
+import { expect, vi } from "vitest";
 import {
   createFileSystemTests,
   type FileSystemTestContext

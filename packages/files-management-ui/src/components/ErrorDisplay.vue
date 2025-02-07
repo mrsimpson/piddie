@@ -1,19 +1,19 @@
 <script setup lang="ts">
-import { useErrorStore } from '../stores/error-store'
-import { computed } from 'vue'
+import { useErrorStore } from "../stores/error-store";
+import { computed } from "vue";
 
-const errorStore = useErrorStore()
+const errorStore = useErrorStore();
 
 const sortedErrors = computed(() => {
-  return [...errorStore.errors.value].sort((a, b) => b.timestamp - a.timestamp)
-})
+  return [...errorStore.errors.value].sort((a, b) => b.timestamp - a.timestamp);
+});
 
 function dismissError(id: string) {
-  errorStore.removeError(id)
+  errorStore.removeError(id);
 }
 
 function formatTime(timestamp: number): string {
-  return new Date(timestamp).toLocaleTimeString()
+  return new Date(timestamp).toLocaleTimeString();
 }
 </script>
 

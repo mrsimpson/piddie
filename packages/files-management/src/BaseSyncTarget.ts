@@ -424,7 +424,7 @@ export abstract class BaseSyncTarget implements SyncTarget {
       metadata?: {
         registeredBy: string;
         type?: string;
-        [key: string]: any;
+        [key: string]: unknown;
       };
       filter?: (change: FileChangeInfo) => boolean;
     } = {

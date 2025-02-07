@@ -1,4 +1,4 @@
-import { describe, beforeEach, it, expect, vi } from "vitest";
+import { describe, beforeEach, it, expect, vi, afterEach } from "vitest";
 import type {
   SyncTarget,
   FileMetadata,
@@ -220,17 +220,13 @@ describe("FileSyncManager", () => {
     return { metadata, change, content };
   };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     primaryTarget = new MockSyncTarget("primary", "local");
     secondaryTarget1 = new MockSyncTarget("secondary1", "browser");
     secondaryTarget2 = new MockSyncTarget("secondary2", "container");
-
-    config = {
-      inactivityDelay: 100,
-      maxRetries: 3
-    };
-
+    config = { inactivityDelay: 1000, maxRetries: 3 };
     manager = new FileSyncManager();
+    await manager.initialize(config);
   });
 
   describe("Target Registration", () => {
@@ -420,71 +416,66 @@ describe("FileSyncManager", () => {
       // Then state should be ready
       expect(manager.getCurrentState()).toBe("ready");
     });
+  });
 
-    it("should transition through states during sync", async () => {
-      // Given an initialized manager
-      await manager.registerTarget(primaryTarget, { role: "primary" });
-      await manager.registerTarget(secondaryTarget1, { role: "secondary" });
-      await manager.initialize(config);
-      expect(manager.getCurrentState()).toBe("ready");
+  it("should transition through states during sync", async () => {
+    // Given an initialized manager
+    await manager.registerTarget(primaryTarget, { role: "primary" });
+    await manager.registerTarget(secondaryTarget1, { role: "secondary" });
+    expect(manager.getCurrentState()).toBe("ready");
 
-      // When primary reports changes
-      const { change } = createTestFile();
-      const syncPromise = manager.handleTargetChanges(primaryTarget.id, [
-        change
-      ]);
+    // When primary reports changes
+    const { change } = createTestFile();
+    const syncPromise = manager.handleTargetChanges(primaryTarget.id, [change]);
 
-      // Then state should be syncing
-      expect(manager.getCurrentState()).toBe("syncing");
+    // Then state should be syncing
+    expect(manager.getCurrentState()).toBe("syncing");
 
-      // When sync completes
-      await syncPromise;
+    // When sync completes
+    await syncPromise;
 
-      // Then state should be ready again
-      expect(manager.getCurrentState()).toBe("ready");
-    });
+    // Then state should be ready again
+    expect(manager.getCurrentState()).toBe("ready");
+  });
 
-    it("should transition to conflict state on sync conflicts", async () => {
-      // Given an initialized manager
-      await manager.registerTarget(primaryTarget, { role: "primary" });
-      await manager.registerTarget(secondaryTarget1, { role: "secondary" });
-      await manager.initialize(config);
+  it("should transition to conflict state on sync conflicts", async () => {
+    // Given an initialized manager
+    await manager.registerTarget(primaryTarget, { role: "primary" });
+    await manager.registerTarget(secondaryTarget1, { role: "secondary" });
 
-      // And a file that will cause conflict
-      const { metadata, change, content } = createTestFile();
-      secondaryTarget1.setMockFile(metadata.path, content, metadata);
+    // And a file that will cause conflict
+    const { metadata, change, content } = createTestFile();
+    secondaryTarget1.setMockFile(metadata.path, content, metadata);
 
-      // When secondary reports changes and primary sync fails
-      const error = new Error("Sync failed");
-      vi.spyOn(primaryTarget, "applyFileChange").mockRejectedValueOnce(error);
-      await manager.handleTargetChanges(secondaryTarget1.id, [change]);
+    // When secondary reports changes and primary sync fails
+    const error = new Error("Sync failed");
+    vi.spyOn(primaryTarget, "applyFileChange").mockRejectedValueOnce(error);
+    await manager.handleTargetChanges(secondaryTarget1.id, [change]);
 
-      // Then state should be conflict
-      expect(manager.getCurrentState()).toBe("conflict");
+    // Then state should be conflict
+    expect(manager.getCurrentState()).toBe("conflict");
 
-      // When confirming the sync
-      await manager.confirmPrimarySync();
+    // When confirming the sync
+    await manager.confirmPrimarySync();
 
-      // Then state should be ready
-      expect(manager.getCurrentState()).toBe("ready");
-    });
+    // Then state should be ready
+    expect(manager.getCurrentState()).toBe("ready");
+  });
 
-    it("should transition to error state on critical failures", async () => {
-      // Given an initialized manager
-      await manager.registerTarget(primaryTarget, { role: "primary" });
-      await manager.registerTarget(secondaryTarget1, { role: "secondary" });
-      await manager.initialize(config);
+  it("should transition to error state on critical failures", async () => {
+    // Given an initialized manager
+    await manager.registerTarget(primaryTarget, { role: "primary" });
+    await manager.registerTarget(secondaryTarget1, { role: "secondary" });
 
-      // When a critical error occurs (simulate by forcing invalid state transition)
-      try {
-        manager.transitionTo("invalid" as SyncManagerStateType, "someAction");
-      } catch {
-        // Expected
-      }
+    // When a critical error occurs (simulate by forcing invalid state transition)
+    try {
+      manager.transitionTo("invalid" as SyncManagerStateType, "someAction");
+    } catch {
+      // Expected
+    }
 
-      // Then state should be error
-      expect(manager.getCurrentState()).toBe("error");
-    });
+    // Then state should be error
+    expect(manager.getCurrentState()).toBe("error");
   });
 
   describe("Change Handling", () => {
@@ -492,7 +483,6 @@ describe("FileSyncManager", () => {
       await manager.registerTarget(primaryTarget, { role: "primary" });
       await manager.registerTarget(secondaryTarget1, { role: "secondary" });
       await manager.registerTarget(secondaryTarget2, { role: "secondary" });
-      await manager.initialize(config);
       expect(manager.getCurrentState()).toBe("ready");
     });
 
@@ -548,7 +538,9 @@ describe("FileSyncManager", () => {
 
         // And secondary1 will fail to apply changes
         const error = new Error("Sync failed");
-        vi.spyOn(secondaryTarget1, "applyFileChange").mockRejectedValue(error);
+        vi.spyOn(secondaryTarget1, "applyFileChange").mockRejectedValueOnce(
+          error
+        );
 
         // When primary reports changes
         await manager.handleTargetChanges(primaryTarget.id, [change]);
@@ -635,7 +627,7 @@ describe("FileSyncManager", () => {
 
         // And primary will fail to apply changes
         const error = new Error("Sync failed");
-        vi.spyOn(primaryTarget, "applyFileChange").mockRejectedValue(error);
+        vi.spyOn(primaryTarget, "applyFileChange").mockRejectedValueOnce(error);
 
         // When secondary reports changes
         await manager.handleTargetChanges(secondaryTarget1.id, [change]);
@@ -689,7 +681,6 @@ describe("FileSyncManager", () => {
       await manager.registerTarget(primaryTarget, { role: "primary" });
       await manager.registerTarget(secondaryTarget1, { role: "secondary" });
       await manager.registerTarget(secondaryTarget2, { role: "secondary" });
-      await manager.initialize(config);
       expect(manager.getCurrentState()).toBe("ready");
     });
 
@@ -966,6 +957,11 @@ describe("FileSyncManager", () => {
         expect(unchangedContent.metadata.hash).toBe("hash");
       });
     });
+
+    afterEach(async () => {
+      await manager.dispose();
+      vi.clearAllMocks();
+    });
   });
 
   describe("Recovery", () => {
@@ -973,7 +969,6 @@ describe("FileSyncManager", () => {
       manager.registerTarget(primaryTarget, { role: "primary" });
       manager.registerTarget(secondaryTarget1, { role: "secondary" });
       manager.registerTarget(secondaryTarget2, { role: "secondary" });
-      await manager.initialize(config);
     });
 
     it("should reinitialize dirty target from primary", async () => {
@@ -1071,55 +1066,69 @@ describe("FileSyncManager", () => {
       ).rejects.toThrow();
     });
   });
+});
 
-  describe("Resource Management", () => {
-    it("should initialize all targets", async () => {
-      // Given registered targets
-      manager.registerTarget(primaryTarget, { role: "primary" });
-      manager.registerTarget(secondaryTarget1, { role: "secondary" });
-      manager.registerTarget(secondaryTarget2, { role: "secondary" });
+describe("Resource Management with uninitialized sync manager", () => {
+  let primaryTarget: MockSyncTarget;
+  let secondaryTarget1: MockSyncTarget;
+  let secondaryTarget2: MockSyncTarget;
+  let config: SyncManagerConfig;
+  let manager: FileSyncManager;
 
-      // When initializing
-      await manager.initialize(config);
+  beforeEach(async () => {
+    primaryTarget = new MockSyncTarget("primary", "local");
+    secondaryTarget1 = new MockSyncTarget("secondary1", "browser");
+    secondaryTarget2 = new MockSyncTarget("secondary2", "container");
+    config = { inactivityDelay: 1000, maxRetries: 3 };
+    manager = new FileSyncManager();
+  });
 
-      // Then all targets should be initialized
-      expect(primaryTarget.getState().status).toBe("idle");
-      expect(secondaryTarget1.getState().status).toBe("idle");
-      expect(secondaryTarget2.getState().status).toBe("idle");
-    });
+  it("should initialize all targets", async () => {
+    // Given registered targets
+    manager.registerTarget(primaryTarget, { role: "primary" });
+    manager.registerTarget(secondaryTarget1, { role: "secondary" });
+    manager.registerTarget(secondaryTarget2, { role: "secondary" });
 
-    it("should dispose all targets", async () => {
-      // Given initialized targets
-      manager.registerTarget(primaryTarget, { role: "primary" });
-      manager.registerTarget(secondaryTarget1, { role: "secondary" });
-      await manager.initialize(config);
+    // When initializing
+    await manager.initialize(config);
 
-      // When disposing
-      await manager.dispose();
+    // Then all targets should be initialized
+    expect(primaryTarget.getState().status).toBe("idle");
+    expect(secondaryTarget1.getState().status).toBe("idle");
+    expect(secondaryTarget2.getState().status).toBe("idle");
+  });
 
-      // Then targets should be unregistered
-      expect(() => manager.getPrimaryTarget()).toThrow();
-      expect(manager.getSecondaryTargets()).toHaveLength(0);
-    });
+  it("should dispose all targets", async () => {
+    // Given initialized targets
+    manager.registerTarget(primaryTarget, { role: "primary" });
+    manager.registerTarget(secondaryTarget1, { role: "secondary" });
+    await manager.initialize(config);
 
-    it("should handle target unregistration", async () => {
-      // Given registered targets
-      manager.registerTarget(primaryTarget, { role: "primary" });
-      manager.registerTarget(secondaryTarget1, { role: "secondary" });
-      manager.registerTarget(secondaryTarget2, { role: "secondary" });
+    // When disposing
+    await manager.dispose();
 
-      // When unregistering a secondary
-      await manager.unregisterTarget(secondaryTarget1.id);
+    // Then targets should be unregistered
+    expect(() => manager.getPrimaryTarget()).toThrow();
+    expect(manager.getSecondaryTargets()).toHaveLength(0);
+  });
 
-      // Then it should be removed
-      expect(manager.getSecondaryTargets()).toHaveLength(1);
-      expect(manager.getSecondaryTargets()[0]).toBe(secondaryTarget2);
+  it("should handle target unregistration", async () => {
+    // Given registered targets
+    manager.registerTarget(primaryTarget, { role: "primary" });
+    manager.registerTarget(secondaryTarget1, { role: "secondary" });
+    manager.registerTarget(secondaryTarget2, { role: "secondary" });
 
-      // When unregistering primary
-      await manager.unregisterTarget(primaryTarget.id);
+    // When unregistering a secondary
+    await manager.unregisterTarget(secondaryTarget1.id);
 
-      // Then it should be removed
-      expect(() => manager.getPrimaryTarget()).toThrow();
-    });
+    // Then it should be removed
+    expect(manager.getSecondaryTargets()).toHaveLength(1);
+    expect(manager.getSecondaryTargets()[0]).toBe(secondaryTarget2);
+
+    // When unregistering primary
+    await manager.unregisterTarget(primaryTarget.id);
+
+    // Then it should be removed
+    expect(() => manager.getPrimaryTarget()).toThrow();
   });
 });

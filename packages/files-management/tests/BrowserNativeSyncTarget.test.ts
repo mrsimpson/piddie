@@ -1,6 +1,6 @@
-import { beforeEach, describe, vi } from "vitest";
+import { vi } from "vitest";
 import { BrowserNativeSyncTarget } from "../src/BrowserNativeSyncTarget";
-import type { FileSystemDirectoryHandle } from "../src/BrowserNativeFileSystem";
+import type { FileSystemDirectoryHandle } from "native-file-system-adapter";
 import type { FileMetadata, FileContentStream } from "@piddie/shared-types";
 import {
   createSyncTargetTests,
@@ -31,16 +31,8 @@ const context: SyncTargetTestContext<BrowserNativeSyncTarget> = {
   createFileSystem: () => {
     const mockRootHandle = {
       ...createMockDirectoryHandle("root", mockFiles),
-      queryPermission: vi
-        .fn()
-        .mockImplementation(
-          async (desc: { mode: "read" | "readwrite" }) => "granted"
-        ),
-      requestPermission: vi
-        .fn()
-        .mockImplementation(
-          async (desc: { mode: "read" | "readwrite" }) => "granted"
-        )
+      queryPermission: vi.fn().mockImplementation(async () => "granted"),
+      requestPermission: vi.fn().mockImplementation(async () => "granted")
     } as unknown as FileSystemDirectoryHandle;
 
     // Setup directory handle behavior

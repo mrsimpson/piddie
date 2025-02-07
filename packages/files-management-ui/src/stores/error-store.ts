@@ -1,14 +1,14 @@
-import { ref } from 'vue'
+import { ref } from "vue";
 
 export interface UIError {
-  id: string
-  message: string
-  timestamp: number
-  componentId?: string
-  details?: unknown
+  id: string;
+  message: string;
+  timestamp: number;
+  componentId?: string;
+  details?: unknown;
 }
 
-const errors = ref<UIError[]>([])
+const errors = ref<UIError[]>([]);
 
 export function useErrorStore() {
   function addError(message: string, details?: unknown, componentId?: string) {
@@ -17,21 +17,21 @@ export function useErrorStore() {
       message,
       timestamp: Date.now(),
       componentId,
-      details,
-    }
+      details
+    };
 
-    errors.value.push(error)
+    errors.value.push(error);
   }
 
   function removeError(id: string) {
-    errors.value = errors.value.filter((error) => error.id !== id)
+    errors.value = errors.value.filter((error) => error.id !== id);
   }
 
   function clearErrors(componentId?: string) {
     if (componentId) {
-      errors.value = errors.value.filter((error) => error.componentId !== componentId)
+      errors.value = errors.value.filter((error) => error.componentId !== componentId);
     } else {
-      errors.value = []
+      errors.value = [];
     }
   }
 
@@ -39,6 +39,6 @@ export function useErrorStore() {
     errors,
     addError,
     removeError,
-    clearErrors,
-  }
+    clearErrors
+  };
 }

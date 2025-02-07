@@ -1,97 +1,97 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
-import type { FileSystem, FileChangeInfo } from '@piddie/shared-types'
+import { ref, watch, onMounted, onBeforeUnmount } from "vue";
+import type { FileSystem, FileChangeInfo } from "@piddie/shared-types";
 import {
   BrowserSyncTarget,
   BrowserNativeSyncTarget,
-  BrowserNativeFileSystem,
-} from '@piddie/files-management'
-import { WATCHER_PRIORITIES } from '@piddie/shared-types'
-import { handleUIError } from '../utils/error-handling'
+  BrowserNativeFileSystem
+} from "@piddie/files-management";
+import { WATCHER_PRIORITIES } from "@piddie/shared-types";
+import { handleUIError } from "../utils/error-handling";
 
-const COMPONENT_ID = 'TextFileEditor'
+const COMPONENT_ID = "TextFileEditor";
 
 const props = defineProps<{
-  filePath: string
-  fileSystem: FileSystem
-}>()
+  filePath: string;
+  fileSystem: FileSystem;
+}>();
 
 const emit = defineEmits<{
-  (e: 'close'): void
-  (e: 'save'): void
-}>()
+  (e: "close"): void;
+  (e: "save"): void;
+}>();
 
-const content = ref('')
-const loading = ref(false)
-const error = ref<string | null>(null)
-const isDirty = ref(false)
-const uiSyncTarget = ref<BrowserSyncTarget | BrowserNativeSyncTarget | null>(null)
-const hasExternalChanges = ref(false)
+const content = ref("");
+const loading = ref(false);
+const error = ref<string | null>(null);
+const isDirty = ref(false);
+const uiSyncTarget = ref<BrowserSyncTarget | BrowserNativeSyncTarget | null>(null);
+const hasExternalChanges = ref(false);
 
 async function loadContent() {
   try {
-    loading.value = true
-    error.value = null
-    content.value = await props.fileSystem.readFile(props.filePath)
-    isDirty.value = false
-    hasExternalChanges.value = false
+    loading.value = true;
+    error.value = null;
+    content.value = await props.fileSystem.readFile(props.filePath);
+    isDirty.value = false;
+    hasExternalChanges.value = false;
   } catch (err) {
-    handleUIError(err, 'Failed to load file', COMPONENT_ID)
+    handleUIError(err, "Failed to load file", COMPONENT_ID);
   } finally {
-    loading.value = false
+    loading.value = false;
   }
 }
 
 async function saveContent() {
   try {
-    loading.value = true
-    error.value = null
-    await props.fileSystem.writeFile(props.filePath, content.value)
-    isDirty.value = false
-    hasExternalChanges.value = false
-    emit('save')
+    loading.value = true;
+    error.value = null;
+    await props.fileSystem.writeFile(props.filePath, content.value);
+    isDirty.value = false;
+    hasExternalChanges.value = false;
+    emit("save");
   } catch (err) {
-    handleUIError(err, 'Failed to save file', COMPONENT_ID)
+    handleUIError(err, "Failed to save file", COMPONENT_ID);
   } finally {
-    loading.value = false
+    loading.value = false;
   }
 }
 
 function handleContentChange(event: Event) {
-  const textarea = event.target as HTMLTextAreaElement
-  content.value = textarea.value
-  isDirty.value = true
+  const textarea = event.target as HTMLTextAreaElement;
+  content.value = textarea.value;
+  isDirty.value = true;
 }
 
 // Initialize UI sync target for file changes
 async function initializeFileWatcher() {
   try {
     // Create UI sync target matching the filesystem type
-    const isNativeFs = props.fileSystem instanceof BrowserNativeFileSystem
+    const isNativeFs = props.fileSystem instanceof BrowserNativeFileSystem;
     uiSyncTarget.value = isNativeFs
       ? new BrowserNativeSyncTarget(`editor-${props.filePath}`)
-      : new BrowserSyncTarget(`editor-${props.filePath}`)
+      : new BrowserSyncTarget(`editor-${props.filePath}`);
 
     // Initialize with the same filesystem
-    await uiSyncTarget.value.initialize(props.fileSystem, false)
+    await uiSyncTarget.value.initialize(props.fileSystem, false);
 
     // Watch for changes on the same filesystem
     await uiSyncTarget.value.watch(
       async (changes: FileChangeInfo[]) => {
         // Check if our file was changed
-        const fileChanged = changes.some((change) => change.path === props.filePath)
+        const fileChanged = changes.some((change) => change.path === props.filePath);
         if (fileChanged) {
-          console.log(`File ${props.filePath} changed externally`)
+          console.log(`File ${props.filePath} changed externally`);
           // Get the latest content from the filesystem
-          const currentContent = await props.fileSystem.readFile(props.filePath)
+          const currentContent = await props.fileSystem.readFile(props.filePath);
           // Only mark as changed if content actually differs
           if (currentContent !== content.value) {
             if (isDirty.value) {
               // If we have unsaved changes, just mark that there are external changes
-              hasExternalChanges.value = true
+              hasExternalChanges.value = true;
             } else {
               // If no unsaved changes, reload the content
-              await loadContent()
+              await loadContent();
             }
           }
         }
@@ -100,14 +100,14 @@ async function initializeFileWatcher() {
         priority: WATCHER_PRIORITIES.UI_UPDATES,
         metadata: {
           registeredBy: COMPONENT_ID,
-          type: 'editor-watcher',
-          filePath: props.filePath,
-        },
-      },
-    )
+          type: "editor-watcher",
+          filePath: props.filePath
+        }
+      }
+    );
   } catch (err) {
-    console.error('Failed to initialize file watcher:', err)
-    handleUIError(err, 'Failed to initialize file watcher', COMPONENT_ID)
+    console.error("Failed to initialize file watcher:", err);
+    handleUIError(err, "Failed to initialize file watcher", COMPONENT_ID);
   }
 }
 
@@ -115,10 +115,10 @@ async function initializeFileWatcher() {
 async function cleanupFileWatcher() {
   if (uiSyncTarget.value) {
     try {
-      await uiSyncTarget.value.unwatch()
-      uiSyncTarget.value = null
+      await uiSyncTarget.value.unwatch();
+      uiSyncTarget.value = null;
     } catch (err) {
-      console.error('Error cleaning up file watcher:', err)
+      console.error("Error cleaning up file watcher:", err);
     }
   }
 }
@@ -127,20 +127,20 @@ async function cleanupFileWatcher() {
 watch(
   () => props.filePath,
   async () => {
-    await loadContent()
+    await loadContent();
     // Reinitialize watcher for new file
-    await cleanupFileWatcher()
-    await initializeFileWatcher()
+    await cleanupFileWatcher();
+    await initializeFileWatcher();
   },
-  { immediate: true },
-)
+  { immediate: true }
+);
 
 // Component lifecycle
-onMounted(initializeFileWatcher)
-onBeforeUnmount(cleanupFileWatcher)
+onMounted(initializeFileWatcher);
+onBeforeUnmount(cleanupFileWatcher);
 
 async function handleReload() {
-  await loadContent()
+  await loadContent();
 }
 </script>
 

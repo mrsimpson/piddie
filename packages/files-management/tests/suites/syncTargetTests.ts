@@ -357,19 +357,18 @@ export function createSyncTargetTests<T extends SyncTarget>(
         const modifiedTimestamp = initialTimestamp + 5000;
 
         // Setup initial file
-        const { metadata: initialMetadata } =
-          await context.setupFileWithMetadata(
-            spies,
-            "test.txt",
-            {
-              path: "test.txt",
-              type: "file",
-              lastModified: initialTimestamp,
-              hash: "initialhash",
-              size: 100
-            },
-            "initial content"
-          );
+        await context.setupFileWithMetadata(
+          spies,
+          "test.txt",
+          {
+            path: "test.txt",
+            type: "file",
+            lastModified: initialTimestamp,
+            hash: "initialhash",
+            size: 100
+          },
+          "initial content"
+        );
 
         await vi.advanceTimersByTimeAsync(1000);
 

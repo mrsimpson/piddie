@@ -1,0 +1,9 @@
+# Generated files
+.pnpm-store
+pnpm-lock.yaml
+node_modules
+dist
+docs/.vitepress/cache
+
+# Packages
+/packages

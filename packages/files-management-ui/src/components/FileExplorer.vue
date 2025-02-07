@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import type { SynchronizedFileSystem } from '../types/file-explorer'
-import FileSystem from './FileSystem.vue'
+import type { SynchronizedFileSystem } from "../types/file-explorer";
+import FileSystem from "./FileSystem.vue";
 
 defineProps<{
-  systems: SynchronizedFileSystem[]
-}>()
+  systems: SynchronizedFileSystem[];
+}>();
 </script>
 
 <template>

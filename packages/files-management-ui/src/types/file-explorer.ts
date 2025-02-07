@@ -1,23 +1,23 @@
-import type { FileMetadata, FileSystem, SyncTarget, WatcherOptions } from '@piddie/shared-types'
+import type { FileMetadata, FileSystem, SyncTarget, WatcherOptions } from "@piddie/shared-types";
 
 /**
  * View model for a file or directory in the explorer
  */
 export interface FileViewModel {
   /** Path of the file or directory */
-  path: string
+  path: string;
   /** Name to display in the UI */
-  name: string
+  name: string;
   /** Whether this is a directory */
-  isDirectory: boolean
+  isDirectory: boolean;
   /** File size in bytes */
-  size: number
+  size: number;
   /** Last modified timestamp */
-  lastModified: number
+  lastModified: number;
   /** Whether the item is currently selected */
-  selected?: boolean
+  selected?: boolean;
   /** Original file metadata */
-  metadata: FileMetadata
+  metadata: FileMetadata;
 }
 
 /**
@@ -25,11 +25,11 @@ export interface FileViewModel {
  */
 export interface FileSystemPanelConfig {
   /** Title to show in the panel header */
-  title: string
+  title: string;
   /** Type of file system */
-  type: 'browser' | 'native'
+  type: "browser" | "native";
   /** Current directory path */
-  currentPath: string
+  currentPath: string;
 }
 
 /**
@@ -37,15 +37,15 @@ export interface FileSystemPanelConfig {
  */
 export interface SynchronizedFileSystem {
   /** The file system instance */
-  fileSystem: FileSystem
+  fileSystem: FileSystem;
   /** The sync target initialized with this file system */
-  syncTarget: SyncTarget
+  syncTarget: SyncTarget;
   /** Display title for the UI */
-  title: string
+  title: string;
   /** Unique identifier for this synchronized system */
-  id: string
+  id: string;
   /** Options for the file watcher */
-  watcherOptions?: Omit<WatcherOptions, 'callback'>
+  watcherOptions?: Omit<WatcherOptions, "callback">;
 }
 
 /**
@@ -53,15 +53,15 @@ export interface SynchronizedFileSystem {
  * This ensures the sync target is properly initialized with its file system
  */
 export async function createSynchronizedFileSystem(params: {
-  fileSystem: FileSystem
-  syncTarget: SyncTarget
-  title: string
-  id: string
-  watcherOptions?: Omit<WatcherOptions, 'callback'>
+  fileSystem: FileSystem;
+  syncTarget: SyncTarget;
+  title: string;
+  id: string;
+  watcherOptions?: Omit<WatcherOptions, "callback">;
 }): Promise<SynchronizedFileSystem> {
   return {
-    ...params,
+    ...params
     // Freeze the object to prevent accidental modifications
     // that could break the relationship
-  } as const
+  } as const;
 }
