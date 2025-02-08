@@ -55,16 +55,20 @@ export abstract class BaseSyncTarget implements SyncTarget {
     return this.currentState;
   }
 
-  transitionTo(newState: TargetStateType, via: string): void {
+  transitionTo(newState: TargetStateType, via: string, errorMessage?: string): void {
     if (!this.validateStateTransition(this.currentState, newState, via)) {
       const fromState = this.currentState;
+      const invalidTransitionError = `Invalid state transition from ${fromState} to ${newState} via ${via}`;
       this.currentState = "error";
-      throw new SyncOperationError(
-        `Invalid state transition from ${fromState} to ${newState} via ${via}`,
-        "INITIALIZATION_FAILED"
-      );
+      this.error = invalidTransitionError;
+      throw new SyncOperationError(invalidTransitionError, "INITIALIZATION_FAILED");
     }
     this.currentState = newState;
+    if (newState === "error" && errorMessage) {
+      this.error = errorMessage;
+    } else if (newState !== "error") {
+      this.error = null;
+    }
   }
 
   getState(): TargetState {
@@ -82,10 +86,9 @@ export abstract class BaseSyncTarget implements SyncTarget {
   protected async doCollect(paths: string[]): Promise<void> {
     try {
       if (!this.fileSystem) {
-        throw new SyncOperationError(
-          "Not initialized",
-          "INITIALIZATION_FAILED"
-        );
+        const errorMessage = "Not initialized";
+        this.transitionTo("error", "error", errorMessage);
+        throw new SyncOperationError(errorMessage, "INITIALIZATION_FAILED");
       }
 
       // Lock in sync mode to allow modifications during sync
@@ -147,6 +150,8 @@ export abstract class BaseSyncTarget implements SyncTarget {
 
         // If we encountered any error during processing, throw it after the loop
         if (batchError) {
+          const errorMessage = batchError instanceof Error ? batchError.message : "Unknown batch error";
+          this.transitionTo("error", "error", errorMessage);
           throw batchError;
         }
 
@@ -159,14 +164,14 @@ export abstract class BaseSyncTarget implements SyncTarget {
       } catch (error) {
         // Ensure we unlock and transition to error state
         await this.fileSystem.forceUnlock();
-        this.currentState = "error";
-        this.error = error instanceof Error ? error.message : "Unknown error";
+        const errorMessage = error instanceof Error ? error.message : "Unknown error";
+        this.transitionTo("error", "error", errorMessage);
         throw error;
       }
     } catch (error) {
       // Ensure we're in error state and need recovery
-      this.currentState = "error";
-      this.error = error instanceof Error ? error.message : "Unknown error";
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      this.transitionTo("error", "error", errorMessage);
       throw error;
     }
   }
@@ -176,7 +181,9 @@ export abstract class BaseSyncTarget implements SyncTarget {
     contentStream?: FileContentStream
   ): Promise<FileConflict | null> {
     if (!this.fileSystem) {
-      throw new SyncOperationError("Not initialized", "INITIALIZATION_FAILED");
+      const errorMessage = "Not initialized";
+      this.transitionTo("error", "error", errorMessage);
+      throw new SyncOperationError(errorMessage, "INITIALIZATION_FAILED");
     }
 
     try {
@@ -184,10 +191,9 @@ export abstract class BaseSyncTarget implements SyncTarget {
       if (this.currentState === "collecting") {
         this.transitionTo("syncing", "sync");
       } else if (this.currentState !== "syncing") {
-        throw new SyncOperationError(
-          `Cannot sync in state ${this.currentState}`,
-          "INITIALIZATION_FAILED"
-        );
+        const errorMessage = `Cannot sync in state ${this.currentState}`;
+        this.transitionTo("error", "error", errorMessage);
+        throw new SyncOperationError(errorMessage, "INITIALIZATION_FAILED");
       }
 
       // Handle file deletion
@@ -201,10 +207,9 @@ export abstract class BaseSyncTarget implements SyncTarget {
 
       // For creates/updates, we need a content stream
       if (!contentStream) {
-        throw new SyncOperationError(
-          "Content stream required for create/update operations",
-          "APPLY_FAILED"
-        );
+        const errorMessage = "Content stream required for create/update operations";
+        this.transitionTo("error", "error", errorMessage);
+        throw new SyncOperationError(errorMessage, "APPLY_FAILED");
       }
 
       const metadata = contentStream.metadata;
@@ -233,28 +238,34 @@ export abstract class BaseSyncTarget implements SyncTarget {
           }
           return null;
         } catch (error) {
-          this.currentState = "error";
-          this.error = `Failed to create directory ${metadata.path}: ${error instanceof Error ? error.message : "Unknown error"}`;
-          throw new SyncOperationError(this.error, "APPLY_FAILED");
+          const errorMessage = `Failed to create directory ${metadata.path}: ${error instanceof Error ? error.message : "Unknown error"}`;
+          this.transitionTo("error", "error", errorMessage);
+          throw new SyncOperationError(errorMessage, "APPLY_FAILED");
         }
       }
 
       // Ensure parent directory exists for files
       const parentDir = metadata.path.split("/").slice(0, -1).join("/") || "/";
       if (!(await this.fileSystem.exists(parentDir))) {
-        await this.fileSystem.createDirectory(parentDir, {}, true);
-        // Get parent directory metadata from source if available
         try {
-          const parentMetadata = await this.fileSystem.getMetadata(parentDir);
-          this.lastKnownFiles.set(parentDir, {
-            lastModified: parentMetadata.lastModified,
-            hash: "" // Directories don't have a hash
-          });
+          await this.fileSystem.createDirectory(parentDir, {}, true);
+          // Get parent directory metadata from source if available
+          try {
+            const parentMetadata = await this.fileSystem.getMetadata(parentDir);
+            this.lastKnownFiles.set(parentDir, {
+              lastModified: parentMetadata.lastModified,
+              hash: "" // Directories don't have a hash
+            });
+          } catch (error) {
+            console.warn(
+              `Failed to get metadata for parent directory ${parentDir}:`,
+              error
+            );
+          }
         } catch (error) {
-          console.warn(
-            `Failed to get metadata for parent directory ${parentDir}:`,
-            error
-          );
+          const errorMessage = `Failed to create parent directory ${parentDir}: ${error instanceof Error ? error.message : "Unknown error"}`;
+          this.transitionTo("error", "error", errorMessage);
+          throw new SyncOperationError(errorMessage, "APPLY_FAILED");
         }
       }
 
@@ -276,14 +287,14 @@ export abstract class BaseSyncTarget implements SyncTarget {
         return null;
       } catch (error) {
         // Ensure we transition to error state on content application failure
-        this.currentState = "error";
-        this.error = `Failed to apply content for ${metadata.path}: ${error instanceof Error ? error.message : "Unknown error"}`;
-        throw new SyncOperationError(this.error, "APPLY_FAILED");
+        const errorMessage = `Failed to apply content for ${metadata.path}: ${error instanceof Error ? error.message : "Unknown error"}`;
+        this.transitionTo("error", "error", errorMessage);
+        throw new SyncOperationError(errorMessage, "APPLY_FAILED");
       }
     } catch (error) {
       // Ensure we're in error state and need recovery
-      this.currentState = "error";
-      this.error = error instanceof Error ? error.message : "Unknown error";
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      this.transitionTo("error", "error", errorMessage);
       throw error;
     }
   }
@@ -291,10 +302,9 @@ export abstract class BaseSyncTarget implements SyncTarget {
   protected async doFinishSync(): Promise<boolean> {
     try {
       if (!this.fileSystem) {
-        throw new SyncOperationError(
-          "Not initialized",
-          "INITIALIZATION_FAILED"
-        );
+        const errorMessage = "Not initialized";
+        this.transitionTo("error", "error", errorMessage);
+        throw new SyncOperationError(errorMessage, "INITIALIZATION_FAILED");
       }
 
       await this.unlockFileSystem();
@@ -308,18 +318,17 @@ export abstract class BaseSyncTarget implements SyncTarget {
       this.transitionTo("idle", "finishSync");
       return true;
     } catch (error) {
-      this.currentState = "error";
-      this.error = error instanceof Error ? error.message : "Unknown error";
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      this.transitionTo("error", "error", errorMessage);
       throw error;
     }
   }
 
   protected async doRecover(): Promise<void> {
     if (this.currentState !== "error") {
-      throw new SyncOperationError(
-        "Can only recover from error state",
-        "INITIALIZATION_FAILED"
-      );
+      const errorMessage = "Can only recover from error state";
+      this.transitionTo("error", "error", errorMessage);
+      throw new SyncOperationError(errorMessage, "INITIALIZATION_FAILED");
     }
 
     try {
@@ -335,11 +344,9 @@ export abstract class BaseSyncTarget implements SyncTarget {
       this.transitionTo("idle", "recovery");
     } catch (error) {
       // If recovery fails, stay in error state
-      this.error = error instanceof Error ? error.message : "Unknown error";
-      throw new SyncOperationError(
-        `Recovery failed: ${this.error}`,
-        "INITIALIZATION_FAILED"
-      );
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      this.transitionTo("error", "error", errorMessage);
+      throw new SyncOperationError(errorMessage, "INITIALIZATION_FAILED");
     }
   }
 
@@ -445,12 +452,12 @@ export abstract class BaseSyncTarget implements SyncTarget {
       };
       filter?: (change: FileChangeInfo) => boolean;
     } = {
-      priority: WATCHER_PRIORITIES.OTHER,
-      metadata: {
-        registeredBy: "external",
-        type: "other-watcher"
+        priority: WATCHER_PRIORITIES.OTHER,
+        metadata: {
+          registeredBy: "external",
+          type: "other-watcher"
+        }
       }
-    }
   ): Promise<void> {
     const watcherOptions: WatcherOptions = {
       priority: options.priority ?? WATCHER_PRIORITIES.OTHER,
