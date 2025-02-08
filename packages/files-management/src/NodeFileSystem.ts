@@ -2,9 +2,7 @@ import type {
   FileSystem,
   FileSystemState,
   FileSystemStateType,
-  LockMode
 } from "@piddie/shared-types";
-import { FileSystemError } from "@piddie/shared-types";
 import { promises as fs } from "fs";
 import { FsPromisesAdapter, MinimalFsPromises } from "./FsPromisesAdapter";
 
@@ -32,76 +30,5 @@ export class NodeFileSystem extends FsPromisesAdapter implements FileSystem {
     };
 
     super({ rootDir, fs: fsWrapper });
-  }
-
-  override async initialize(): Promise<void> {
-    try {
-      await super.initialize();
-      this.transitionTo("ready", "initialize");
-    } catch (error) {
-      this.transitionTo("error", "error");
-      throw error;
-    }
-  }
-
-  override async lock(
-    timeoutMs: number,
-    reason: string,
-    mode: LockMode = "external"
-  ): Promise<void> {
-    if (this.lockState.isLocked) {
-      throw new FileSystemError("File system already locked", "LOCKED");
-    }
-
-    this.lockState = {
-      isLocked: true,
-      lockedSince: Date.now(),
-      lockTimeout: timeoutMs,
-      lockReason: reason,
-      lockMode: mode
-    };
-  }
-
-  override async forceUnlock(): Promise<void> {
-    if (!this.lockState.isLocked) {
-      return;
-    }
-
-    this.transitionTo("ready", "unlock");
-    this.lockState = { isLocked: false };
-  }
-
-  protected async handleOperation<T>(
-    operation: () => Promise<T>,
-    type: string,
-    path: string
-  ): Promise<T> {
-    if (this.lockState.isLocked && this.lockState.lockMode === "external") {
-      throw new FileSystemError("File system is locked", "LOCKED");
-    }
-
-    this.pendingOperations++;
-    this.lastOperation = {
-      type,
-      path,
-      timestamp: Date.now()
-    };
-
-    try {
-      return await operation();
-    } catch (error) {
-      this.transitionTo("error", "error");
-      throw error;
-    } finally {
-      this.pendingOperations--;
-    }
-  }
-
-  /**
-   * Get the size of a file in bytes
-   */
-  async getSize(path: string): Promise<number> {
-    const stats = await this.options.fs.stat(this.getAbsolutePath(path));
-    return stats.size;
   }
 }
