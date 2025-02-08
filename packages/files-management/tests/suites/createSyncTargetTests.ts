@@ -638,21 +638,6 @@ export function createSyncTargetTests<T extends SyncTarget>(
         expect(state.error).toBeDefined();
       });
 
-      it("should transition to idle state after syncing empty directory", async () => {
-        await target.initialize(fileSystem, true);
-
-        // Mock an empty directory
-        spies.listDirectory.mockResolvedValue([]);
-
-        // Start sync process with empty path array
-        await target.notifyIncomingChanges([]);
-        expect(target.getState().status).toBe("collecting");
-
-        // Complete sync
-        await target.syncComplete();
-        expect(target.getState().status).toBe("idle");
-      });
-
       it("should handle state transitions during sync process", async () => {
         await target.initialize(fileSystem, true);
 

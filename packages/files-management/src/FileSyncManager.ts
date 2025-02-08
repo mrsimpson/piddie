@@ -57,6 +57,14 @@ export class FileSyncManager implements SyncManager {
 
   transitionTo(newState: SyncManagerStateType, via: string): void {
     const fromState = this.currentState;
+
+    // allow to transition to error from all states
+    if (newState === "error") {
+      console.error(`Transitioning to error state via ${via}`)
+      this.currentState = "error";
+      return
+    }
+
     if (!this.validateStateTransition(this.currentState, newState, via)) {
       console.error(
         "Invalid state transition from",
@@ -69,7 +77,7 @@ export class FileSyncManager implements SyncManager {
       this.currentState = "error";
       throw new SyncManagerError(
         `Invalid state transition from ${fromState} to ${newState} via ${via}`,
-        "SYNC_IN_PROGRESS"
+        "SYNC_FAILED"
       );
     }
     this.currentState = newState;
@@ -294,16 +302,20 @@ export class FileSyncManager implements SyncManager {
     try {
       const primary = this.primaryTarget; // Store reference to avoid null checks
       // Get all paths from primary first to know what changes are coming
-      const allPaths = await this.getAllPaths(primary);
-
-      // Notify target about incoming changes
-      await target.notifyIncomingChanges(allPaths);
+      const filesInPrimary = await this.getAllPaths(primary);
 
       // First, get all existing files in the target and delete them
-      const targetPaths = await this.getAllPaths(target);
-      if (targetPaths.length > 0) {
+      const existingFilesInTarget = await this.getAllPaths(target);
+
+      // Notify target about incoming changes
+      if (filesInPrimary.length === 0 && existingFilesInTarget.length === 0) {
+        return // nothing to do: Source and target are empty directories
+      }
+
+      await target.notifyIncomingChanges(filesInPrimary);
+      if (existingFilesInTarget.length > 0) {
         // Create delete changes for all existing files
-        const deleteChanges: FileChangeInfo[] = targetPaths.map((path) => ({
+        const deleteChanges: FileChangeInfo[] = existingFilesInTarget.map((path) => ({
           path,
           type: "delete",
           hash: "",
@@ -317,7 +329,7 @@ export class FileSyncManager implements SyncManager {
       }
 
       // Get metadata for all paths
-      const allFiles = await primary.getMetadata(allPaths);
+      const allFiles = await primary.getMetadata(filesInPrimary);
 
       // Create change info for each item - handle directories and files differently
       const changes: FileChangeInfo[] = allFiles.map((file) => ({

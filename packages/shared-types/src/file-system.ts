@@ -92,7 +92,7 @@ export interface FileContentStream {
 /**
  * Lock mode for file system operations
  */
-export type LockMode = "sync";
+export type LockMode = "sync" | "external";
 
 /**
  * Lock state of file system operations

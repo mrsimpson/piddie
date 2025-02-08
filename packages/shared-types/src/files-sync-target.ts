@@ -115,7 +115,7 @@ export type SyncTargetType =
  */
 export interface SyncTarget {
   id: string;
-  type: "browser" | "local" | "container";
+  type: SyncTargetType;
 
   /**
    * Initialize target with file system

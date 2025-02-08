@@ -65,7 +65,7 @@ export const createFileSystemTests = (
         // Given a locked file system
         const path = "/test.txt";
         const content = "new content";
-        await context.fileSystem.lock(1000, "test lock");
+        await context.fileSystem.lock(1000, "test lock", "external", "test");
 
         // When trying to write
         const writePromise = context.fileSystem.writeFile(path, content);
@@ -201,7 +201,7 @@ export const createFileSystemTests = (
         // Given a locked file system and an existing directory
         const path = "/locked-dir";
         context.mockDirectoryExists(path);
-        await context.fileSystem.lock(1000, "test lock");
+        await context.fileSystem.lock(1000, "test lock", "external", "test");
 
         // When trying to delete the directory
         const deletePromise = context.fileSystem.deleteItem(path);
@@ -413,7 +413,7 @@ export const createFileSystemTests = (
           context.mockFileExists(path);
 
           // When locking the file system
-          await context.fileSystem.lock(1000, "test lock");
+          await context.fileSystem.lock(1000, "test lock", "external", "test");
 
           // Then write operations should be rejected
           await expect(
@@ -434,7 +434,7 @@ export const createFileSystemTests = (
           context.mockFileExists(path, content);
 
           // When locking the file system
-          await context.fileSystem.lock(1000, "test lock");
+          await context.fileSystem.lock(1000, "test lock", "external", "test");
 
           // Then read operations should still work
           await expect(context.fileSystem.exists(path)).resolves.toBe(true);
@@ -453,7 +453,7 @@ export const createFileSystemTests = (
           context.mockFileExists(path, content);
 
           // When locking and unlocking
-          await context.fileSystem.lock(1000, "test lock");
+          await context.fileSystem.lock(1000, "test lock", "external", "test");
           await context.fileSystem.forceUnlock();
 
           // Then the state should persist
@@ -477,7 +477,7 @@ export const createFileSystemTests = (
           expect(await context.fileSystem.listDirectory(emptyDir)).toEqual([]);
 
           // When locking the filesystem
-          await context.fileSystem.lock(1000, "test lock");
+          await context.fileSystem.lock(1000, "test lock", "external", "test");
 
           // Then directory should still be accessible and empty
           expect(await context.fileSystem.exists(emptyDir)).toBe(true);
@@ -493,7 +493,7 @@ export const createFileSystemTests = (
 
         it("should prevent modifications to empty directories while locked", async () => {
           // When locking the filesystem
-          await context.fileSystem.lock(1000, "test lock");
+          await context.fileSystem.lock(1000, "test lock", "external", "test");
 
           // Then write operations should be rejected
           await expect(

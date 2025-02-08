@@ -8,7 +8,8 @@ import type {
   SyncManagerConfig,
   FileChunk,
   FileSystemItem,
-  FileConflict
+  FileConflict,
+  SyncTargetType
 } from "@piddie/shared-types";
 import { SyncManagerError, SyncManagerStateType } from "@piddie/shared-types";
 import { ReadableStream, ReadableStreamDefaultReader } from "node:stream/web";
@@ -46,13 +47,13 @@ class MockFileContentStream implements FileContentStream {
 
 class MockSyncTarget implements SyncTarget {
   id: string;
-  type: "browser" | "local" | "container";
+  type: SyncTargetType;
   private state: TargetState;
   private watchCallback: ((changes: FileChangeInfo[]) => void) | null = null;
   private mockFiles: Map<string, { content: string; metadata: FileMetadata }> =
     new Map();
 
-  constructor(id: string, type: "browser" | "local" | "container") {
+  constructor(id: string, type: SyncTargetType) {
     this.id = id;
     this.type = type;
     this.state = {
@@ -73,7 +74,7 @@ class MockSyncTarget implements SyncTarget {
       if (filePath.startsWith(prefix)) {
         const relativePath = filePath.slice(prefix.length);
         // Only include direct children (no nested paths)
-        if (!relativePath.includes("/")) {
+        if (!relativePath.includes("/") || file.metadata.type === "directory") {
           result.push({
             path: filePath,
             type: file.metadata.type,
@@ -542,9 +543,7 @@ describe("FileSyncManager", () => {
 
         // And secondary1 will fail to apply changes
         const error = new Error("Sync failed");
-        vi.spyOn(secondaryTarget1, "applyFileChange").mockRejectedValueOnce(
-          error
-        );
+        vi.spyOn(secondaryTarget1, "applyFileChange").mockRejectedValueOnce(error);
 
         // When primary reports changes
         await manager.handleTargetChanges(primaryTarget.id, [change]);
@@ -611,15 +610,11 @@ describe("FileSyncManager", () => {
         await manager.handleTargetChanges(secondaryTarget1.id, [change]);
 
         // Then primary should receive changes first
-        const primaryContent = await primaryTarget.getFileContent(
-          metadata.path
-        );
+        const primaryContent = await primaryTarget.getFileContent(metadata.path);
         expect(primaryContent.metadata.hash).toBe(metadata.hash);
 
         // And other secondary should receive changes after
-        const secondaryContent = await secondaryTarget2.getFileContent(
-          metadata.path
-        );
+        const secondaryContent = await secondaryTarget2.getFileContent(metadata.path);
         expect(secondaryContent.metadata.hash).toBe(metadata.hash);
       });
 
@@ -666,15 +661,11 @@ describe("FileSyncManager", () => {
         await manager.handleTargetChanges(secondaryTarget1.id, [change]);
 
         // Then primary should have changes
-        const primaryContent = await primaryTarget.getFileContent(
-          metadata.path
-        );
+        const primaryContent = await primaryTarget.getFileContent(metadata.path);
         expect(primaryContent.metadata.hash).toBe(metadata.hash);
 
         // And secondary2 should receive changes
-        const secondary2Content = await secondaryTarget2.getFileContent(
-          metadata.path
-        );
+        const secondary2Content = await secondaryTarget2.getFileContent(metadata.path);
         expect(secondary2Content.metadata.hash).toBe(metadata.hash);
       });
     });
@@ -965,6 +956,98 @@ describe("FileSyncManager", () => {
     afterEach(async () => {
       await manager.dispose();
       vi.clearAllMocks();
+    });
+  });
+
+  describe("Full Sync Operations", () => {
+    beforeEach(async () => {
+      await manager.registerTarget(primaryTarget, { role: "primary" });
+      await manager.registerTarget(secondaryTarget1, { role: "secondary" });
+    });
+
+    it("should perform a full sync from primary to target", async () => {
+      // Given files in primary target
+      const primaryFiles = [
+        { path: "file1.txt", content: "content1" },
+        { path: "dir1/file2.txt", content: "content2" },
+        { path: "dir1/subdir/file3.txt", content: "content3" }
+      ];
+
+      // And existing files in secondary target that should be deleted
+      const secondaryFiles = [
+        { path: "old-file.txt", content: "old content" },
+        { path: "old-dir/old-file2.txt", content: "old content 2" }
+      ];
+
+      // Setup primary target files
+      for (const file of primaryFiles) {
+        primaryTarget.setMockFile(file.path, file.content, {
+          path: file.path,
+          type: file.path.includes("/") ? "directory" : "file",
+          hash: "mock-hash",
+          size: file.content.length,
+          lastModified: Date.now()
+        });
+      }
+
+      // Setup secondary target files
+      for (const file of secondaryFiles) {
+        secondaryTarget1.setMockFile(file.path, file.content, {
+          path: file.path,
+          type: file.path.includes("/") ? "directory" : "file",
+          hash: "mock-hash",
+          size: file.content.length,
+          lastModified: Date.now()
+        });
+      }
+
+      // When performing a full sync
+      await manager.fullSyncFromPrimaryToTarget(secondaryTarget1);
+
+      // Then old files should be deleted
+      for (const file of secondaryFiles) {
+        const metadata = await expect(secondaryTarget1.getMetadata([file.path])).rejects.toThrow();
+      }
+
+      // And new files should be copied
+      for (const file of primaryFiles) {
+        const metadata = await secondaryTarget1.getMetadata([file.path]);
+        expect(metadata).toHaveLength(1);
+        const content = await secondaryTarget1.getFileContent(file.path);
+        expect(await content.getReader().read().then(r => r.value?.content)).toBe(file.content);
+      }
+    });
+
+    it("should handle empty source and target directories", async () => {
+      // When performing a full sync with empty directories
+      await manager.fullSyncFromPrimaryToTarget(secondaryTarget1);
+
+      // Then it should complete without error
+      const primaryFiles = await primaryTarget.listDirectory("/");
+      const secondaryFiles = await secondaryTarget1.listDirectory("/");
+      expect(primaryFiles).toHaveLength(0);
+      expect(secondaryFiles).toHaveLength(0);
+    });
+
+    it("should handle sync errors gracefully", async () => {
+      // Given a failing read operation in primary
+      vi.spyOn(primaryTarget, "getMetadata").mockRejectedValueOnce(new Error("Read failed"));
+
+      // And a file in primary
+      primaryTarget.setMockFile("test.txt", "test content", {
+        path: "test.txt",
+        type: "file",
+        hash: "mock-hash",
+        size: 11,
+        lastModified: Date.now()
+      });
+
+      // When performing a full sync
+      await expect(manager.fullSyncFromPrimaryToTarget(secondaryTarget1))
+        .rejects.toThrow("Full sync failed");
+
+      // Then the manager should be in error state
+      expect(manager.getCurrentState()).toBe("error");
     });
   });
 

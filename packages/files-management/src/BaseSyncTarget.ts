@@ -159,8 +159,6 @@ export abstract class BaseSyncTarget implements SyncTarget {
         if (this.isPrimaryTarget || this.isInitialSync) {
           this.lastKnownFiles = currentFiles;
         }
-
-        this.transitionTo("collecting", "collect");
       } catch (error) {
         // Ensure we unlock and transition to error state
         await this.fileSystem.forceUnlock();
@@ -187,14 +185,6 @@ export abstract class BaseSyncTarget implements SyncTarget {
     }
 
     try {
-      // Only transition to syncing if we're in collecting state
-      if (this.currentState === "collecting") {
-        this.transitionTo("syncing", "sync");
-      } else if (this.currentState !== "syncing") {
-        const errorMessage = `Cannot sync in state ${this.currentState}`;
-        this.transitionTo("error", "error", errorMessage);
-        throw new SyncOperationError(errorMessage, "INITIALIZATION_FAILED");
-      }
 
       // Handle file deletion
       if (changeInfo.type === "delete") {
@@ -357,6 +347,9 @@ export abstract class BaseSyncTarget implements SyncTarget {
   ): Promise<void>;
 
   async notifyIncomingChanges(paths: string[]): Promise<void> {
+
+    this.transitionTo("collecting", "collect");
+
     await this.doCollect(paths);
   }
 
@@ -365,6 +358,9 @@ export abstract class BaseSyncTarget implements SyncTarget {
     contentStream?: FileContentStream
   ): Promise<FileConflict | null> {
     console.debug(`[BaseSyncTarget] Applying change:`, changeInfo);
+
+    this.transitionTo("syncing", "sync");
+
     return this.doSync(changeInfo, contentStream);
   }
 
