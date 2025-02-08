@@ -63,7 +63,7 @@ export interface FileConflict {
  */
 export interface TargetState {
   id: string;
-  type: "browser" | "local" | "container" | "browser-native";
+  type: SyncTargetType;
   lockState: LockState;
   pendingChanges: number;
   lastSyncTime?: number;

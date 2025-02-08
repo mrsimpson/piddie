@@ -8,7 +8,6 @@ import type {
   FileContentStream,
   SyncStatus,
   PendingSync,
-  FileMetadata,
   FileConflict,
   SyncManagerStateType
 } from "@piddie/shared-types";

@@ -2,7 +2,6 @@ import type {
   FileSystem,
   SyncManager,
   GitOperations,
-  FileManagementConfig,
   FileManagementService as IFileManagementService,
   SyncTarget
 } from "@piddie/shared-types";
@@ -72,7 +71,7 @@ export class FileManagementService implements IFileManagementService {
     return this._git;
   }
 
-  async initialize(config?: FileManagementConfig): Promise<void> {
+  async initialize(): Promise<void> {
     if (this._initialized) {
       throw new Error("Service already initialized");
     }
@@ -85,10 +84,7 @@ export class FileManagementService implements IFileManagementService {
     await primaryTarget.initialize(this._fileSystem, true);
 
     // Initialize sync manager with config
-    await this._syncManager.initialize({
-      inactivityDelay: config?.sync?.inactivityDelay ?? 1000,
-      maxRetries: 3
-    });
+    await this._syncManager.initialize();
 
     this._initialized = true;
   }
