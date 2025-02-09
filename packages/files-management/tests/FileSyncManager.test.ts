@@ -112,6 +112,7 @@ class MockSyncTarget implements SyncTarget {
   async getFileContent(path: string): Promise<FileContentStream> {
     const file = this.mockFiles.get(path);
     if (!file) throw new Error(`File not found: ${path}`);
+    if (file.metadata.type === "directory") throw new Error(`No content available for directory: ${path}`);
     return new MockFileContentStream(file.content, file.metadata);
   }
 
@@ -124,20 +125,23 @@ class MockSyncTarget implements SyncTarget {
       return null;
     }
 
-    if (!contentStream) {
-      throw new Error("Content stream required for create/modify operations");
-    }
-
     let content = "";
-    const reader = contentStream.getReader();
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        content += value.content;
+
+    if (changeInfo.size > 0) {
+      if (!contentStream) {
+        throw new Error("Content stream required for create/modify operations");
       }
-    } finally {
-      reader.releaseLock();
+
+      const reader = contentStream.getReader();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          content += value.content;
+        }
+      } finally {
+        reader.releaseLock();
+      }
     }
 
     this.mockFiles.set(changeInfo.path, {
@@ -951,6 +955,80 @@ describe("FileSyncManager", () => {
           await secondaryTarget1.getFileContent("dir2/file2.txt");
         expect(unchangedContent.metadata.hash).toBe("hash");
       });
+
+      it("should sync a folder and its contents properly from secondary to primary", async () => {
+        // Define metadata for the new folder
+        const folderPath = "new-folder";
+        const folderMetadata: FileMetadata = {
+          path: folderPath,
+          type: "directory",
+          hash: "",
+          size: 0,
+          lastModified: Date.now()
+        };
+
+        // Create the new folder in the secondary target
+        secondaryTarget1.setMockFile(folderPath, "", folderMetadata);
+
+        // Define metadata and content for the new file within the folder
+        const filePath = `${folderPath}/file.txt`;
+        const fileContent = "This is a test file.";
+        const fileMetadata: FileMetadata = {
+          path: filePath,
+          type: "file",
+          hash: "testfilehash",
+          size: fileContent.length,
+          lastModified: Date.now()
+        };
+
+        // Create the new file in the secondary target
+        secondaryTarget1.setMockFile(filePath, fileContent, fileMetadata);
+
+        // Define the changes to be handled
+        const changes: FileChangeInfo[] = [
+          {
+            path: folderPath,
+            type: "create",
+            hash: "",
+            size: 0,
+            lastModified: folderMetadata.lastModified,
+            sourceTarget: secondaryTarget1.id
+          },
+          {
+            path: filePath,
+            type: "create",
+            hash: fileMetadata.hash,
+            size: fileMetadata.size,
+            lastModified: fileMetadata.lastModified,
+            sourceTarget: secondaryTarget1.id
+          }
+        ];
+
+        // When the secondary target reports changes
+        await manager.handleTargetChanges(secondaryTarget1.id, changes);
+
+        // Then the primary target should have the new folder
+        const primaryFolderMetadata = await primaryTarget.getMetadata([folderPath]);
+        expect(primaryFolderMetadata).toHaveLength(1);
+        expect(primaryFolderMetadata[0].type).toBe("directory");
+        expect(primaryFolderMetadata[0].path).toBe(folderPath);
+
+        // And the primary target should have the new file within the folder
+        const primaryFileMetadata = await primaryTarget.getMetadata([filePath]);
+        expect(primaryFileMetadata).toHaveLength(1);
+        expect(primaryFileMetadata[0].type).toBe("file");
+        expect(primaryFileMetadata[0].path).toBe(filePath);
+        expect(primaryFileMetadata[0].hash).toBe(fileMetadata.hash);
+        expect(primaryFileMetadata[0].size).toBe(fileMetadata.size);
+
+        // Additionally, verify the content of the file in the primary target
+        const primaryFileContentStream = await primaryTarget.getFileContent(filePath);
+        const reader = primaryFileContentStream.getReader();
+        const { value, done } = await reader.read();
+        expect(done).toBe(false);
+        expect(value?.content).toBe(fileContent);
+        await primaryFileContentStream.close();
+      });
     });
 
     afterEach(async () => {
@@ -1139,9 +1217,9 @@ describe("Resource Management with uninitialized sync manager", () => {
   let manager: FileSyncManager;
 
   beforeEach(async () => {
-    primaryTarget = new MockSyncTarget("primary", "local");
-    secondaryTarget1 = new MockSyncTarget("secondary1", "browser");
-    secondaryTarget2 = new MockSyncTarget("secondary2", "container");
+    primaryTarget = new MockSyncTarget("primary", "browser-fs");
+    secondaryTarget1 = new MockSyncTarget("secondary1", "browser-native");
+    secondaryTarget2 = new MockSyncTarget("secondary2", "node-fs");
     config = { inactivityDelay: 1000, maxRetries: 3 };
     manager = new FileSyncManager();
   });

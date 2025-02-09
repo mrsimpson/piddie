@@ -159,6 +159,9 @@ export abstract class BaseSyncTarget implements SyncTarget {
         if (this.isPrimaryTarget || this.isInitialSync) {
           this.lastKnownFiles = currentFiles;
         }
+
+        this.transitionTo("collecting", "collect");
+
       } catch (error) {
         // Ensure we unlock and transition to error state
         await this.fileSystem.forceUnlock();
@@ -347,9 +350,6 @@ export abstract class BaseSyncTarget implements SyncTarget {
   ): Promise<void>;
 
   async notifyIncomingChanges(paths: string[]): Promise<void> {
-
-    this.transitionTo("collecting", "collect");
-
     await this.doCollect(paths);
   }
 

@@ -1,8 +1,5 @@
 import { expect, vi } from "vitest";
-import {
-  createFileSystemTests,
-  type FileSystemTestContext
-} from "./suites/FileSystemTests";
+import { createFileSystemTests, type FileSystemTestContext } from "./suites/createFileSystemTests";
 import { BrowserFileSystem } from "../src/BrowserFileSystem";
 import FS from "@isomorphic-git/lightning-fs";
 
