@@ -30,7 +30,10 @@ export class NodeSyncTarget extends BaseSyncTarget {
     }
   }
 
-  override async initialize(fileSystem: FileSystem, isPrimary: boolean): Promise<void> {
+  override async initialize(
+    fileSystem: FileSystem,
+    isPrimary: boolean
+  ): Promise<void> {
     if (!(fileSystem instanceof NodeFileSystem)) {
       throw new SyncOperationError(
         "NodeSyncTarget requires NodeFileSystem",

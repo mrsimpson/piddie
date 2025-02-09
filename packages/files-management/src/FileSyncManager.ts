@@ -60,9 +60,9 @@ export class FileSyncManager implements SyncManager {
 
     // allow to transition to error from all states
     if (newState === "error") {
-      console.error(`Transitioning to error state via ${via}`)
+      console.error(`Transitioning to error state via ${via}`);
       this.currentState = "error";
-      return
+      return;
     }
 
     if (!this.validateStateTransition(this.currentState, newState, via)) {
@@ -309,20 +309,22 @@ export class FileSyncManager implements SyncManager {
 
       // Notify target about incoming changes
       if (filesInPrimary.length === 0 && existingFilesInTarget.length === 0) {
-        return // nothing to do: Source and target are empty directories
+        return; // nothing to do: Source and target are empty directories
       }
 
       await target.notifyIncomingChanges(filesInPrimary);
       if (existingFilesInTarget.length > 0) {
         // Create delete changes for all existing files
-        const deleteChanges: FileChangeInfo[] = existingFilesInTarget.map((path) => ({
-          path,
-          type: "delete",
-          hash: "",
-          size: 0,
-          lastModified: Date.now(),
-          sourceTarget: primary.id
-        }));
+        const deleteChanges: FileChangeInfo[] = existingFilesInTarget.map(
+          (path) => ({
+            path,
+            type: "delete",
+            hash: "",
+            size: 0,
+            lastModified: Date.now(),
+            sourceTarget: primary.id
+          })
+        );
 
         // Apply delete changes first
         await this.applyChangesToTarget(target, primary, deleteChanges);

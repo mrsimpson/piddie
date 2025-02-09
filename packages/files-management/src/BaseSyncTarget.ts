@@ -55,13 +55,20 @@ export abstract class BaseSyncTarget implements SyncTarget {
     return this.currentState;
   }
 
-  transitionTo(newState: TargetStateType, via: string, errorMessage?: string): void {
+  transitionTo(
+    newState: TargetStateType,
+    via: string,
+    errorMessage?: string
+  ): void {
     if (!this.validateStateTransition(this.currentState, newState, via)) {
       const fromState = this.currentState;
       const invalidTransitionError = `Invalid state transition from ${fromState} to ${newState} via ${via}`;
       this.currentState = "error";
       this.error = invalidTransitionError;
-      throw new SyncOperationError(invalidTransitionError, "INITIALIZATION_FAILED");
+      throw new SyncOperationError(
+        invalidTransitionError,
+        "INITIALIZATION_FAILED"
+      );
     }
     this.currentState = newState;
     if (newState === "error" && errorMessage) {
@@ -150,7 +157,10 @@ export abstract class BaseSyncTarget implements SyncTarget {
 
         // If we encountered any error during processing, throw it after the loop
         if (batchError) {
-          const errorMessage = batchError instanceof Error ? batchError.message : "Unknown batch error";
+          const errorMessage =
+            batchError instanceof Error
+              ? batchError.message
+              : "Unknown batch error";
           this.transitionTo("error", "error", errorMessage);
           throw batchError;
         }
@@ -161,17 +171,18 @@ export abstract class BaseSyncTarget implements SyncTarget {
         }
 
         this.transitionTo("collecting", "collect");
-
       } catch (error) {
         // Ensure we unlock and transition to error state
         await this.fileSystem.forceUnlock();
-        const errorMessage = error instanceof Error ? error.message : "Unknown error";
+        const errorMessage =
+          error instanceof Error ? error.message : "Unknown error";
         this.transitionTo("error", "error", errorMessage);
         throw error;
       }
     } catch (error) {
       // Ensure we're in error state and need recovery
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
       this.transitionTo("error", "error", errorMessage);
       throw error;
     }
@@ -188,7 +199,6 @@ export abstract class BaseSyncTarget implements SyncTarget {
     }
 
     try {
-
       // Handle file deletion
       if (changeInfo.type === "delete") {
         if (await this.fileSystem.exists(changeInfo.path)) {
@@ -200,7 +210,8 @@ export abstract class BaseSyncTarget implements SyncTarget {
 
       // For creates/updates, we need a content stream
       if (!contentStream) {
-        const errorMessage = "Content stream required for create/update operations";
+        const errorMessage =
+          "Content stream required for create/update operations";
         this.transitionTo("error", "error", errorMessage);
         throw new SyncOperationError(errorMessage, "APPLY_FAILED");
       }
@@ -286,7 +297,8 @@ export abstract class BaseSyncTarget implements SyncTarget {
       }
     } catch (error) {
       // Ensure we're in error state and need recovery
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
       this.transitionTo("error", "error", errorMessage);
       throw error;
     }
@@ -311,7 +323,8 @@ export abstract class BaseSyncTarget implements SyncTarget {
       this.transitionTo("idle", "finishSync");
       return true;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
       this.transitionTo("error", "error", errorMessage);
       throw error;
     }
@@ -337,7 +350,8 @@ export abstract class BaseSyncTarget implements SyncTarget {
       this.transitionTo("idle", "recovery");
     } catch (error) {
       // If recovery fails, stay in error state
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
       this.transitionTo("error", "error", errorMessage);
       throw new SyncOperationError(errorMessage, "INITIALIZATION_FAILED");
     }
@@ -408,7 +422,9 @@ export abstract class BaseSyncTarget implements SyncTarget {
     if (!this.fileSystem) throw new Error("Not initialized");
 
     const metadata = await this.fileSystem.getMetadata(path);
-    const content = await this.fileSystem.readFile(path);
+
+    const content =
+      metadata.type === "file" ? await this.fileSystem.readFile(path) : "";
 
     return {
       metadata,
@@ -448,12 +464,12 @@ export abstract class BaseSyncTarget implements SyncTarget {
       };
       filter?: (change: FileChangeInfo) => boolean;
     } = {
-        priority: WATCHER_PRIORITIES.OTHER,
-        metadata: {
-          registeredBy: "external",
-          type: "other-watcher"
-        }
+      priority: WATCHER_PRIORITIES.OTHER,
+      metadata: {
+        registeredBy: "external",
+        type: "other-watcher"
       }
+    }
   ): Promise<void> {
     const watcherOptions: WatcherOptions = {
       priority: options.priority ?? WATCHER_PRIORITIES.OTHER,

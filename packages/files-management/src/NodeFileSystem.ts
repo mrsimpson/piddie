@@ -1,7 +1,7 @@
 import type {
   FileSystem,
   FileSystemState,
-  FileSystemStateType,
+  FileSystemStateType
 } from "@piddie/shared-types";
 import { promises as fs } from "fs";
 import { FsPromisesAdapter, MinimalFsPromises } from "./FsPromisesAdapter";

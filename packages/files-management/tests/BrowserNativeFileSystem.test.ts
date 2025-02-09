@@ -3,7 +3,7 @@ import type { WritableStream } from "node:stream/web";
 import {
   createFileSystemTests,
   type FileSystemTestContext
-} from "./suites/FileSystemTests";
+} from "./suites/createFileSystemTests";
 import { BrowserNativeFileSystem } from "../src/BrowserNativeFileSystem";
 import { showDirectoryPicker } from "native-file-system-adapter";
 

@@ -18,12 +18,19 @@ import { FileSyncManager } from "../src/FileSyncManager";
 class MockFileContentStream implements FileContentStream {
   private stream: ReadableStream<FileChunk>;
   metadata: FileMetadata;
+  private content: string | Buffer;
 
   constructor(content: string | Buffer, metadata: FileMetadata) {
     this.metadata = metadata;
-    const buffer = Buffer.isBuffer(content) ? content : Buffer.from(content);
+    this.content = content;
+    this.stream = this.createStream();
+  }
 
-    this.stream = new ReadableStream<FileChunk>({
+  private createStream(): ReadableStream<FileChunk> {
+    const buffer = Buffer.isBuffer(this.content)
+      ? this.content
+      : Buffer.from(this.content);
+    return new ReadableStream<FileChunk>({
       start: (controller) => {
         controller.enqueue({
           content: buffer.toString(),
@@ -37,11 +44,21 @@ class MockFileContentStream implements FileContentStream {
   }
 
   getReader(): ReadableStreamDefaultReader<FileChunk> {
-    return this.stream.getReader();
+    try {
+      return this.stream.getReader();
+    } catch (error) {
+      // If the stream is locked, create a new one
+      this.stream = this.createStream();
+      return this.stream.getReader();
+    }
   }
 
   async close(): Promise<void> {
-    await this.stream.cancel();
+    try {
+      await this.stream.cancel();
+    } catch {
+      // Ignore errors during close
+    }
   }
 }
 
@@ -112,7 +129,6 @@ class MockSyncTarget implements SyncTarget {
   async getFileContent(path: string): Promise<FileContentStream> {
     const file = this.mockFiles.get(path);
     if (!file) throw new Error(`File not found: ${path}`);
-    if (file.metadata.type === "directory") throw new Error(`No content available for directory: ${path}`);
     return new MockFileContentStream(file.content, file.metadata);
   }
 
@@ -125,11 +141,13 @@ class MockSyncTarget implements SyncTarget {
       return null;
     }
 
+    const isDirectory = changeInfo.hash === "" && changeInfo.size === 0;
     let content = "";
 
-    if (changeInfo.size > 0) {
+    // Only process content stream for files
+    if (!isDirectory) {
       if (!contentStream) {
-        throw new Error("Content stream required for create/modify operations");
+        throw new Error("Content stream required for file operations");
       }
 
       const reader = contentStream.getReader();
@@ -148,10 +166,7 @@ class MockSyncTarget implements SyncTarget {
       content,
       metadata: {
         path: changeInfo.path,
-        type:
-          changeInfo.hash === "" && changeInfo.size === 0
-            ? "directory"
-            : "file",
+        type: isDirectory ? "directory" : "file",
         hash: changeInfo.hash,
         size: changeInfo.size,
         lastModified: changeInfo.lastModified
@@ -547,7 +562,9 @@ describe("FileSyncManager", () => {
 
         // And secondary1 will fail to apply changes
         const error = new Error("Sync failed");
-        vi.spyOn(secondaryTarget1, "applyFileChange").mockRejectedValueOnce(error);
+        vi.spyOn(secondaryTarget1, "applyFileChange").mockRejectedValueOnce(
+          error
+        );
 
         // When primary reports changes
         await manager.handleTargetChanges(primaryTarget.id, [change]);
@@ -614,11 +631,15 @@ describe("FileSyncManager", () => {
         await manager.handleTargetChanges(secondaryTarget1.id, [change]);
 
         // Then primary should receive changes first
-        const primaryContent = await primaryTarget.getFileContent(metadata.path);
+        const primaryContent = await primaryTarget.getFileContent(
+          metadata.path
+        );
         expect(primaryContent.metadata.hash).toBe(metadata.hash);
 
         // And other secondary should receive changes after
-        const secondaryContent = await secondaryTarget2.getFileContent(metadata.path);
+        const secondaryContent = await secondaryTarget2.getFileContent(
+          metadata.path
+        );
         expect(secondaryContent.metadata.hash).toBe(metadata.hash);
       });
 
@@ -665,11 +686,15 @@ describe("FileSyncManager", () => {
         await manager.handleTargetChanges(secondaryTarget1.id, [change]);
 
         // Then primary should have changes
-        const primaryContent = await primaryTarget.getFileContent(metadata.path);
+        const primaryContent = await primaryTarget.getFileContent(
+          metadata.path
+        );
         expect(primaryContent.metadata.hash).toBe(metadata.hash);
 
         // And secondary2 should receive changes
-        const secondary2Content = await secondaryTarget2.getFileContent(metadata.path);
+        const secondary2Content = await secondaryTarget2.getFileContent(
+          metadata.path
+        );
         expect(secondary2Content.metadata.hash).toBe(metadata.hash);
       });
     });
@@ -742,8 +767,12 @@ describe("FileSyncManager", () => {
 
         // Then empty directories should be created
         for (const path of emptyDirs) {
-          const content = await secondaryTarget1.getFileContent(path);
-          expect(content.metadata.type).toBe("directory");
+          const metadata = await secondaryTarget1.getMetadata([path]);
+          expect(metadata).toHaveLength(1);
+          expect(metadata[0].type).toBe("directory");
+          expect(metadata[0].path).toBe(path);
+          expect(metadata[0].hash).toBe("");
+          expect(metadata[0].size).toBe(0);
         }
       });
 
@@ -774,9 +803,23 @@ describe("FileSyncManager", () => {
 
         // Then all directories and file should be created in correct order
         for (const path of paths) {
-          const content = await secondaryTarget1.getFileContent(path);
           const isFile = path === paths[paths.length - 1];
-          expect(content.metadata.type).toBe(isFile ? "file" : "directory");
+          const metadata = await secondaryTarget1.getMetadata([path]);
+          expect(metadata).toHaveLength(1);
+          expect(metadata[0].type).toBe(isFile ? "file" : "directory");
+          expect(metadata[0].path).toBe(path);
+          if (isFile) {
+            expect(metadata[0].hash).toBe("filehash");
+            expect(metadata[0].size).toBe(100);
+            // Verify file content
+            const content = await secondaryTarget1.getFileContent(path);
+            const reader = content.getReader();
+            const { value } = await reader.read();
+            expect(value?.content).toBe("content");
+          } else {
+            expect(metadata[0].hash).toBe("");
+            expect(metadata[0].size).toBe(0);
+          }
         }
       });
     });
@@ -1008,7 +1051,9 @@ describe("FileSyncManager", () => {
         await manager.handleTargetChanges(secondaryTarget1.id, changes);
 
         // Then the primary target should have the new folder
-        const primaryFolderMetadata = await primaryTarget.getMetadata([folderPath]);
+        const primaryFolderMetadata = await primaryTarget.getMetadata([
+          folderPath
+        ]);
         expect(primaryFolderMetadata).toHaveLength(1);
         expect(primaryFolderMetadata[0].type).toBe("directory");
         expect(primaryFolderMetadata[0].path).toBe(folderPath);
@@ -1022,7 +1067,8 @@ describe("FileSyncManager", () => {
         expect(primaryFileMetadata[0].size).toBe(fileMetadata.size);
 
         // Additionally, verify the content of the file in the primary target
-        const primaryFileContentStream = await primaryTarget.getFileContent(filePath);
+        const primaryFileContentStream =
+          await primaryTarget.getFileContent(filePath);
         const reader = primaryFileContentStream.getReader();
         const { value, done } = await reader.read();
         expect(done).toBe(false);
@@ -1084,7 +1130,9 @@ describe("FileSyncManager", () => {
 
       // Then old files should be deleted
       for (const file of secondaryFiles) {
-        const metadata = await expect(secondaryTarget1.getMetadata([file.path])).rejects.toThrow();
+        const metadata = await expect(
+          secondaryTarget1.getMetadata([file.path])
+        ).rejects.toThrow();
       }
 
       // And new files should be copied
@@ -1092,7 +1140,12 @@ describe("FileSyncManager", () => {
         const metadata = await secondaryTarget1.getMetadata([file.path]);
         expect(metadata).toHaveLength(1);
         const content = await secondaryTarget1.getFileContent(file.path);
-        expect(await content.getReader().read().then(r => r.value?.content)).toBe(file.content);
+        expect(
+          await content
+            .getReader()
+            .read()
+            .then((r) => r.value?.content)
+        ).toBe(file.content);
       }
     });
 
@@ -1109,7 +1162,9 @@ describe("FileSyncManager", () => {
 
     it("should handle sync errors gracefully", async () => {
       // Given a failing read operation in primary
-      vi.spyOn(primaryTarget, "getMetadata").mockRejectedValueOnce(new Error("Read failed"));
+      vi.spyOn(primaryTarget, "getMetadata").mockRejectedValueOnce(
+        new Error("Read failed")
+      );
 
       // And a file in primary
       primaryTarget.setMockFile("test.txt", "test content", {
@@ -1121,8 +1176,9 @@ describe("FileSyncManager", () => {
       });
 
       // When performing a full sync
-      await expect(manager.fullSyncFromPrimaryToTarget(secondaryTarget1))
-        .rejects.toThrow("Full sync failed");
+      await expect(
+        manager.fullSyncFromPrimaryToTarget(secondaryTarget1)
+      ).rejects.toThrow("Full sync failed");
 
       // Then the manager should be in error state
       expect(manager.getCurrentState()).toBe("error");
@@ -1164,7 +1220,7 @@ describe("FileSyncManager", () => {
       expect(secondaryTarget1.getState().status).toBe("error");
 
       // When reinitializing the target after it got available again
-      await manager.reinitializeTarget(secondaryTarget1.id);
+      await manager.fullSyncFromPrimaryToTarget(secondaryTarget1);
 
       // Then it should have all files from primary
       const content1 = await secondaryTarget1.getFileContent(
@@ -1243,7 +1299,7 @@ describe("Resource Management with uninitialized sync manager", () => {
     // Given initialized targets
     manager.registerTarget(primaryTarget, { role: "primary" });
     manager.registerTarget(secondaryTarget1, { role: "secondary" });
-    await manager.initialize(config);
+    await manager.initialize();
 
     // When disposing
     await manager.dispose();
