@@ -93,6 +93,98 @@ export interface SyncFailure {
 }
 
 /**
+ * Base interface for all sync progress events
+ */
+interface BaseSyncProgressEvent {
+  /** Source target ID */
+  sourceTargetId: string;
+  /** Target ID being synced to */
+  targetId: string;
+  /** Timestamp of the event */
+  timestamp: number;
+}
+
+/**
+ * Progress event for file collection phase
+ */
+interface CollectingProgressEvent extends BaseSyncProgressEvent {
+  type: 'collecting';
+  /** Total number of files to collect */
+  totalFiles: number;
+  /** Number of files collected so far */
+  collectedFiles: number;
+  /** Current file being processed */
+  currentFile: string;
+}
+
+/**
+ * Progress event for file sync phase
+ */
+interface SyncingProgressEvent extends BaseSyncProgressEvent {
+  type: 'syncing';
+  /** Total number of files to sync */
+  totalFiles: number;
+  /** Number of files synced so far */
+  syncedFiles: number;
+  /** Current file being synced */
+  currentFile: string;
+}
+
+/**
+ * Progress event for file streaming
+ */
+interface StreamingProgressEvent extends BaseSyncProgressEvent {
+  type: 'streaming';
+  /** Total size in bytes */
+  totalBytes: number;
+  /** Number of bytes transferred */
+  processedBytes: number;
+  /** File being streamed */
+  currentFile: string;
+}
+
+/**
+ * Progress event for sync completion
+ */
+interface CompletionProgressEvent extends BaseSyncProgressEvent {
+  type: 'completing';
+  /** Total number of files processed */
+  totalFiles: number;
+  /** Number of files successfully synced */
+  successfulFiles: number;
+  /** Number of files that failed */
+  failedFiles: number;
+}
+
+/**
+ * Progress event for sync errors
+ */
+interface ErrorProgressEvent extends BaseSyncProgressEvent {
+  type: 'error';
+  /** The file that caused the error */
+  currentFile: string;
+  /** The error that occurred */
+  error: Error;
+  /** Operation phase when error occurred */
+  phase: 'collecting' | 'syncing' | 'streaming';
+}
+
+/**
+ * Union type of all possible progress events
+ */
+export type SyncProgressEvent =
+  | CollectingProgressEvent
+  | SyncingProgressEvent
+  | StreamingProgressEvent
+  | CompletionProgressEvent
+  | ErrorProgressEvent;
+
+/**
+ * Progress event listener function type
+ */
+export type SyncProgressListener = (progress: SyncProgressEvent) => void;
+
+/**
  * Possible states of the sync manager
  */
 export type SyncManagerStateType =
@@ -115,10 +207,10 @@ type SyncManagerStateTransition =
   | { from: "resolving"; to: "ready"; via: "conflictResolved" }
   | { from: "resolving"; to: "ready"; via: "resolutionComplete" }
   | {
-      from: "ready" | "syncing" | "conflict" | "resolving";
-      to: "error";
-      via: "error";
-    }
+    from: "ready" | "syncing" | "conflict" | "resolving";
+    to: "error";
+    via: "error";
+  }
   | { from: "error"; to: "ready"; via: "recovery" };
 
 export const VALID_SYNC_MANAGER_TRANSITIONS: SyncManagerStateTransition[] = [
@@ -264,6 +356,19 @@ export interface SyncManager {
    * @throws {SyncManagerError} if transition is invalid
    */
   transitionTo(newState: SyncManagerStateType, via: string): void;
+
+  /**
+   * Add a progress listener for sync operations
+   * @param listener Function to call with progress updates
+   * @returns Function to remove the listener
+   */
+  addProgressListener(listener: SyncProgressListener): () => void;
+
+  /**
+   * Remove a progress listener
+   * @param listener The listener function to remove
+   */
+  removeProgressListener(listener: SyncProgressListener): void;
 }
 
 export class SyncManagerError extends Error {

@@ -16,49 +16,27 @@ import { ReadableStream, ReadableStreamDefaultReader } from "node:stream/web";
 import { FileSyncManager } from "../src/FileSyncManager";
 
 class MockFileContentStream implements FileContentStream {
-  private stream: ReadableStream<FileChunk>;
+  stream: ReadableStream<Uint8Array>;
   metadata: FileMetadata;
-  private content: string | Buffer;
+  private content: Uint8Array;
 
-  constructor(content: string | Buffer, metadata: FileMetadata) {
+  constructor(content: Uint8Array, metadata: FileMetadata) {
     this.metadata = metadata;
     this.content = content;
     this.stream = this.createStream();
   }
 
-  private createStream(): ReadableStream<FileChunk> {
-    const buffer = Buffer.isBuffer(this.content)
-      ? this.content
-      : Buffer.from(this.content);
-    return new ReadableStream<FileChunk>({
+  private createStream(): ReadableStream<Uint8Array> {
+    return new ReadableStream<Uint8Array>({
       start: (controller) => {
-        controller.enqueue({
-          content: buffer.toString(),
-          chunkIndex: 0,
-          totalChunks: 1,
-          chunkHash: "mock-hash"
-        });
+        controller.enqueue(this.content);
         controller.close();
       }
     });
   }
 
-  getReader(): ReadableStreamDefaultReader<FileChunk> {
-    try {
-      return this.stream.getReader();
-    } catch (error) {
-      // If the stream is locked, create a new one
-      this.stream = this.createStream();
-      return this.stream.getReader();
-    }
-  }
-
-  async close(): Promise<void> {
-    try {
-      await this.stream.cancel();
-    } catch {
-      // Ignore errors during close
-    }
+  close(): Promise<void> {
+    return Promise.resolve();
   }
 }
 
@@ -67,7 +45,7 @@ class MockSyncTarget implements SyncTarget {
   type: SyncTargetType;
   private state: TargetState;
   private watchCallback: ((changes: FileChangeInfo[]) => void) | null = null;
-  private mockFiles: Map<string, { content: string; metadata: FileMetadata }> =
+  private mockFiles: Map<string, { content: Uint8Array; metadata: FileMetadata }> =
     new Map();
 
   constructor(id: string, type: SyncTargetType) {
@@ -129,6 +107,12 @@ class MockSyncTarget implements SyncTarget {
   async getFileContent(path: string): Promise<FileContentStream> {
     const file = this.mockFiles.get(path);
     if (!file) throw new Error(`File not found: ${path}`);
+    
+    // Return empty content for directories
+    if (file.metadata.type === 'directory') {
+      return new MockFileContentStream(new Uint8Array(), file.metadata);
+    }
+    
     return new MockFileContentStream(file.content, file.metadata);
   }
 
@@ -142,7 +126,7 @@ class MockSyncTarget implements SyncTarget {
     }
 
     const isDirectory = changeInfo.hash === "" && changeInfo.size === 0;
-    let content = "";
+    let content = new Uint8Array();
 
     // Only process content stream for files
     if (!isDirectory) {
@@ -150,12 +134,12 @@ class MockSyncTarget implements SyncTarget {
         throw new Error("Content stream required for file operations");
       }
 
-      const reader = contentStream.getReader();
+      const reader = contentStream.stream.getReader();
       try {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          content += value.content;
+          content = new Uint8Array([...content, ...value]);
         }
       } finally {
         reader.releaseLock();
@@ -207,7 +191,28 @@ class MockSyncTarget implements SyncTarget {
   }
 
   setMockFile(path: string, content: string, metadata: FileMetadata): void {
-    this.mockFiles.set(path, { content, metadata });
+    // Create parent directories if they don't exist
+    const parts = path.split('/');
+    if (parts.length > 1) {
+      const dirPath = parts.slice(0, -1).join('/');
+      const dirMetadata: FileMetadata = {
+        path: dirPath,
+        type: 'directory',
+        hash: '',
+        size: 0,
+        lastModified: Date.now()
+      };
+      this.mockFiles.set(dirPath, { content: new Uint8Array(), metadata: dirMetadata });
+    }
+    
+    // Set the actual file with correct type
+    const fileMetadata = {
+      ...metadata,
+      type: metadata.type || (path.includes('.') ? "file" : "directory") as FileMetadata["type"],
+    };
+    const textEncoder = new TextEncoder();
+    const encodedContent = textEncoder.encode(content);
+    this.mockFiles.set(path, { content: encodedContent, metadata: fileMetadata });
   }
 }
 
@@ -241,12 +246,12 @@ describe("FileSyncManager", () => {
   };
 
   beforeEach(async () => {
-    primaryTarget = new MockSyncTarget("primary", "local");
-    secondaryTarget1 = new MockSyncTarget("secondary1", "browser");
-    secondaryTarget2 = new MockSyncTarget("secondary2", "container");
+    primaryTarget = new MockSyncTarget("primary", "node-fs");
+    secondaryTarget1 = new MockSyncTarget("secondary1", "browser-fs");
+    secondaryTarget2 = new MockSyncTarget("secondary2", "container-fs");
     config = { inactivityDelay: 1000, maxRetries: 3 };
     manager = new FileSyncManager();
-    await manager.initialize(config);
+    await manager.initialize();
   });
 
   describe("Target Registration", () => {
@@ -336,8 +341,8 @@ describe("FileSyncManager", () => {
 
     it("should throw error when registering duplicate target id", async () => {
       // Given a target with ID 'test'
-      const target1 = new MockSyncTarget("test", "local");
-      const target2 = new MockSyncTarget("test", "browser");
+      const target1 = new MockSyncTarget("test", "node-fs");
+      const target2 = new MockSyncTarget("test", "browser-fs");
       target1.getState().status = "idle";
       target2.getState().status = "idle";
       await manager.registerTarget(target1, { role: "primary" });
@@ -435,7 +440,7 @@ describe("FileSyncManager", () => {
       expect(manager.getCurrentState()).toBe("uninitialized");
 
       // When initializing
-      await manager.initialize(config);
+      await manager.initialize();
 
       // Then state should be ready
       expect(manager.getCurrentState()).toBe("ready");
@@ -686,9 +691,7 @@ describe("FileSyncManager", () => {
         await manager.handleTargetChanges(secondaryTarget1.id, [change]);
 
         // Then primary should have changes
-        const primaryContent = await primaryTarget.getFileContent(
-          metadata.path
-        );
+        const primaryContent = await primaryTarget.getFileContent(metadata.path);
         expect(primaryContent.metadata.hash).toBe(metadata.hash);
 
         // And secondary2 should receive changes
@@ -813,9 +816,9 @@ describe("FileSyncManager", () => {
             expect(metadata[0].size).toBe(100);
             // Verify file content
             const content = await secondaryTarget1.getFileContent(path);
-            const reader = content.getReader();
+            const reader = content.stream.getReader();
             const { value } = await reader.read();
-            expect(value?.content).toBe("content");
+            expect(Buffer.from(value)).toEqual(Buffer.from("content"));
           } else {
             expect(metadata[0].hash).toBe("");
             expect(metadata[0].size).toBe(0);
@@ -1069,17 +1072,14 @@ describe("FileSyncManager", () => {
         // Additionally, verify the content of the file in the primary target
         const primaryFileContentStream =
           await primaryTarget.getFileContent(filePath);
-        const reader = primaryFileContentStream.getReader();
+        const reader = primaryFileContentStream.stream.getReader();
         const { value, done } = await reader.read();
         expect(done).toBe(false);
-        expect(value?.content).toBe(fileContent);
+        const textDecoder = new TextDecoder();
+        const actualContent = textDecoder.decode(value);
+        expect(actualContent).toEqual(fileContent);
         await primaryFileContentStream.close();
       });
-    });
-
-    afterEach(async () => {
-      await manager.dispose();
-      vi.clearAllMocks();
     });
   });
 
@@ -1107,7 +1107,7 @@ describe("FileSyncManager", () => {
       for (const file of primaryFiles) {
         primaryTarget.setMockFile(file.path, file.content, {
           path: file.path,
-          type: file.path.includes("/") ? "directory" : "file",
+          type: file.path.includes(".") ? "file" : "directory",
           hash: "mock-hash",
           size: file.content.length,
           lastModified: Date.now()
@@ -1140,12 +1140,12 @@ describe("FileSyncManager", () => {
         const metadata = await secondaryTarget1.getMetadata([file.path]);
         expect(metadata).toHaveLength(1);
         const content = await secondaryTarget1.getFileContent(file.path);
-        expect(
-          await content
-            .getReader()
-            .read()
-            .then((r) => r.value?.content)
-        ).toBe(file.content);
+        const reader = content.stream.getReader();
+        const { value, done } = await reader.read();
+        expect(done).toBe(false);
+        const textDecoder = new TextDecoder();
+        const actualContent = textDecoder.decode(value);
+        expect(actualContent).toEqual(file.content);
       }
     });
 

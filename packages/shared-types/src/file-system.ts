@@ -69,24 +69,17 @@ export interface FileChunk {
 }
 
 /**
- * Stream interface for reading file contents using Web Streams API
+ * Stream of file content with metadata
  */
 export interface FileContentStream {
-  /**
-   * File metadata
-   */
-  metadata: FileMetadata;
-
-  /**
-   * Get a Web Streams reader for the file content
-   * Returns chunks of file content
-   */
-  getReader(): ReadableStreamDefaultReader<FileChunk>;
-
-  /**
-   * Close the stream and free resources
-   */
-  close(): Promise<void>;
+  /** ReadableStream of the file content */
+  stream: ReadableStream<Uint8Array>;
+  /** Size of the file in bytes, if known */
+  size?: number;
+  /** MIME type of the file, if known */
+  mimeType?: string;
+  /** Last modified timestamp */
+  lastModified: number;
 }
 
 /**

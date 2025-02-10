@@ -9,7 +9,9 @@ import type {
   SyncStatus,
   PendingSync,
   FileConflict,
-  SyncManagerStateType
+  SyncManagerStateType,
+  SyncProgressEvent,
+  SyncProgressListener
 } from "@piddie/shared-types";
 import { VALID_SYNC_MANAGER_TRANSITIONS } from "@piddie/shared-types";
 import { WATCHER_PRIORITIES } from "@piddie/shared-types";
@@ -40,6 +42,7 @@ export class FileSyncManager implements SyncManager {
   private pendingSync: PendingSync | null = null;
   private activeWatchers: Map<string, () => Promise<void>> = new Map();
   private currentState: SyncManagerStateType = "uninitialized";
+  private progressListeners: Set<SyncProgressListener> = new Set();
 
   validateStateTransition(
     from: SyncManagerStateType,
@@ -169,6 +172,25 @@ export class FileSyncManager implements SyncManager {
     }
   }
 
+  private emitProgress(progress: SyncProgressEvent): void {
+    for (const listener of this.progressListeners) {
+      try {
+        listener(progress);
+      } catch (error) {
+        console.error('Error in progress listener:', error);
+      }
+    }
+  }
+
+  addProgressListener(listener: SyncProgressListener): () => void {
+    this.progressListeners.add(listener);
+    return () => this.progressListeners.delete(listener);
+  }
+
+  removeProgressListener(listener: SyncProgressListener): void {
+    this.progressListeners.delete(listener);
+  }
+
   private async applyChangeToTarget(
     change: FileChangeInfo,
     sourceTarget: SyncTarget,
@@ -177,7 +199,6 @@ export class FileSyncManager implements SyncManager {
     try {
       // For deletions, we don't need to get file content
       if (change.type === "delete") {
-        // Check if the file or directory exists
         try {
           const conflict = await target.applyFileChange(change);
           if (conflict) return conflict;
@@ -195,10 +216,71 @@ export class FileSyncManager implements SyncManager {
 
       // For creates and modifications, get the file content and metadata
       const content = await sourceTarget.getFileContent(change.path);
-      const conflict = await target.applyFileChange(change, content);
-      if (conflict) return conflict;
+
+      // Track streaming progress if content has size information
+      if (content.size !== undefined) {
+        let bytesTransferred = 0;
+        const reader = content.stream.getReader();
+        const self = this; // Store reference to FileSyncManager
+
+        const newStream = new ReadableStream<Uint8Array>({
+          async start(controller) {
+            try {
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                bytesTransferred += value.length;
+                controller.enqueue(value);
+
+                // Emit streaming progress
+                self.emitProgress({
+                  type: 'streaming',
+                  sourceTargetId: sourceTarget.id,
+                  targetId: target.id,
+                  totalBytes: content.size,
+                  processedBytes: bytesTransferred,
+                  currentFile: change.path,
+                  timestamp: Date.now()
+                });
+              }
+              controller.close();
+            } catch (error) {
+              controller.error(error);
+              throw error;
+            }
+          }
+        });
+
+        // Create wrapped content with progress tracking
+        const streamContent: FileContentStream = {
+          stream: newStream,
+          size: content.size,
+          lastModified: content.lastModified
+        };
+        if (content.mimeType) {
+          streamContent.mimeType = content.mimeType;
+        }
+
+        const conflict = await target.applyFileChange(change, streamContent);
+        if (conflict) return conflict;
+      } else {
+        const conflict = await target.applyFileChange(change, content);
+        if (conflict) return conflict;
+      }
+
       return change;
     } catch (error) {
+      // Emit error progress
+      this.emitProgress({
+        type: 'error',
+        sourceTargetId: sourceTarget.id,
+        targetId: target.id,
+        currentFile: change.path,
+        error: error as Error,
+        phase: 'streaming',
+        timestamp: Date.now()
+      });
+
       throw new SyncOperationError(
         `Failed to apply change to target ${target.id}: ${error}`,
         "APPLY_FAILED"
@@ -261,19 +343,54 @@ export class FileSyncManager implements SyncManager {
       // Order changes for hierarchical operations
       const orderedChanges = this.prepareChangesForHierarchy(changes);
 
+      // Emit initial syncing progress
+      this.emitProgress({
+        type: 'syncing',
+        sourceTargetId: sourceTarget.id,
+        targetId: target.id,
+        totalFiles: orderedChanges.length,
+        syncedFiles: 0,
+        currentFile: '',
+        timestamp: Date.now()
+      });
+
       // Process changes sequentially to maintain hierarchy
       for (const change of orderedChanges) {
         try {
+          // Emit progress for current file
+          this.emitProgress({
+            type: 'syncing',
+            sourceTargetId: sourceTarget.id,
+            targetId: target.id,
+            totalFiles: orderedChanges.length,
+            syncedFiles: result.appliedChanges.length,
+            currentFile: change.path,
+            timestamp: Date.now()
+          });
+
           const changeResult = await this.applyChangeToTarget(
             change,
             sourceTarget,
             target
           );
+
           if ("targetId" in changeResult) {
             // This is a FileConflict
             result.success = false;
             result.error = new Error(`Conflict detected for ${change.path}`);
             target.getState().status = "error";
+
+            // Emit error progress
+            this.emitProgress({
+              type: 'error',
+              sourceTargetId: sourceTarget.id,
+              targetId: target.id,
+              currentFile: change.path,
+              error: result.error,
+              phase: 'syncing',
+              timestamp: Date.now()
+            });
+
             return result;
           }
           result.appliedChanges.push(changeResult);
@@ -281,13 +398,48 @@ export class FileSyncManager implements SyncManager {
           result.success = false;
           result.error = error as Error;
           target.getState().status = "error";
+
+          // Emit error progress
+          this.emitProgress({
+            type: 'error',
+            sourceTargetId: sourceTarget.id,
+            targetId: target.id,
+            currentFile: change.path,
+            error: error as Error,
+            phase: 'syncing',
+            timestamp: Date.now()
+          });
+
           return result;
         }
       }
+
+      // Emit completion progress
+      this.emitProgress({
+        type: 'completing',
+        sourceTargetId: sourceTarget.id,
+        targetId: target.id,
+        totalFiles: orderedChanges.length,
+        successfulFiles: result.appliedChanges.length,
+        failedFiles: orderedChanges.length - result.appliedChanges.length,
+        timestamp: Date.now()
+      });
+
     } catch (error) {
       result.success = false;
       result.error = error as Error;
       target.getState().status = "error";
+
+      // Emit error progress
+      this.emitProgress({
+        type: 'error',
+        sourceTargetId: sourceTarget.id,
+        targetId: target.id,
+        currentFile: '',
+        error: error as Error,
+        phase: 'syncing',
+        timestamp: Date.now()
+      });
     }
 
     return result;
