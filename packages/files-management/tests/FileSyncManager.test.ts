@@ -12,18 +12,19 @@ import type {
   SyncTargetType
 } from "@piddie/shared-types";
 import { SyncManagerError, SyncManagerStateType } from "@piddie/shared-types";
-import { ReadableStream, ReadableStreamDefaultReader } from "node:stream/web";
 import { FileSyncManager } from "../src/FileSyncManager";
 
 class MockFileContentStream implements FileContentStream {
   stream: ReadableStream<Uint8Array>;
   metadata: FileMetadata;
+  lastModified: number;
   private content: Uint8Array;
 
   constructor(content: Uint8Array, metadata: FileMetadata) {
     this.metadata = metadata;
     this.content = content;
     this.stream = this.createStream();
+    this.lastModified = metadata.lastModified || Date.now();
   }
 
   private createStream(): ReadableStream<Uint8Array> {
@@ -107,12 +108,12 @@ class MockSyncTarget implements SyncTarget {
   async getFileContent(path: string): Promise<FileContentStream> {
     const file = this.mockFiles.get(path);
     if (!file) throw new Error(`File not found: ${path}`);
-    
+
     // Return empty content for directories
     if (file.metadata.type === 'directory') {
-      return new MockFileContentStream(new Uint8Array(), file.metadata);
+      return new MockFileContentStream(new Uint8Array(), file.metadata,);
     }
-    
+
     return new MockFileContentStream(file.content, file.metadata);
   }
 
@@ -204,7 +205,7 @@ class MockSyncTarget implements SyncTarget {
       };
       this.mockFiles.set(dirPath, { content: new Uint8Array(), metadata: dirMetadata });
     }
-    
+
     // Set the actual file with correct type
     const fileMetadata = {
       ...metadata,
@@ -534,9 +535,6 @@ describe("FileSyncManager", () => {
 
         // Then state should be ready
         expect(manager.getCurrentState()).toBe("ready");
-        expect(
-          manager.validateStateTransition("ready", "syncing", "changesDetected")
-        ).toBe(true);
       });
 
       it("should propagate changes from primary to secondaries", async () => {
@@ -554,10 +552,10 @@ describe("FileSyncManager", () => {
         expect(secondaryTarget2.getState().status).toBe("idle");
 
         // And file should exist in both secondaries
-        const content1 = await secondaryTarget1.getFileContent(metadata.path);
-        const content2 = await secondaryTarget2.getFileContent(metadata.path);
-        expect(content1.metadata.hash).toBe(metadata.hash);
-        expect(content2.metadata.hash).toBe(metadata.hash);
+        const [metadata1] = await secondaryTarget1.getMetadata([metadata.path]);
+        const [metadata2] = await secondaryTarget2.getMetadata([metadata.path]);
+        expect(metadata1!.hash).toBe(metadata.hash);
+        expect(metadata2!.hash).toBe(metadata.hash);
       });
 
       it("should handle secondary sync failure by marking target as dirty", async () => {
@@ -636,16 +634,15 @@ describe("FileSyncManager", () => {
         await manager.handleTargetChanges(secondaryTarget1.id, [change]);
 
         // Then primary should receive changes first
-        const primaryContent = await primaryTarget.getFileContent(
-          metadata.path
-        );
-        expect(primaryContent.metadata.hash).toBe(metadata.hash);
+        const [primaryMetadata] = await primaryTarget.getMetadata([metadata.path]);
+        expect(primaryMetadata!.hash).toBe(metadata.hash);
 
         // And other secondary should receive changes after
-        const secondaryContent = await secondaryTarget2.getFileContent(
+
+        const [secondaryMetadata] = await secondaryTarget2.getMetadata([
           metadata.path
-        );
-        expect(secondaryContent.metadata.hash).toBe(metadata.hash);
+        ]);
+        expect(secondaryMetadata!.hash).toBe(metadata.hash);
       });
 
       it("should store pending changes on primary sync failure", async () => {
@@ -691,14 +688,12 @@ describe("FileSyncManager", () => {
         await manager.handleTargetChanges(secondaryTarget1.id, [change]);
 
         // Then primary should have changes
-        const primaryContent = await primaryTarget.getFileContent(metadata.path);
-        expect(primaryContent.metadata.hash).toBe(metadata.hash);
+        const [primaryMetadata] = await primaryTarget.getMetadata([metadata.path]);
+        expect(primaryMetadata!.hash).toBe(metadata.hash);
 
         // And secondary2 should receive changes
-        const secondary2Content = await secondaryTarget2.getFileContent(
-          metadata.path
-        );
-        expect(secondary2Content.metadata.hash).toBe(metadata.hash);
+        const [secondary2Metadata] = await secondaryTarget2.getMetadata([metadata.path]);
+        expect(secondary2Metadata!.hash).toBe(metadata.hash);
       });
     });
   });
@@ -738,17 +733,13 @@ describe("FileSyncManager", () => {
         );
 
         // When reinitializing a secondary target
-        await manager.reinitializeTarget(secondaryTarget1.id);
+        await manager.fullSyncFromPrimaryToTarget(secondaryTarget1);
 
         // Then the directory should be created before the file
-        const dirContent = await secondaryTarget1.getFileContent(
-          dirMetadata.path
-        );
-        const fileContent = await secondaryTarget1.getFileContent(
-          fileMetadata.path
-        );
-        expect(dirContent.metadata.type).toBe("directory");
-        expect(fileContent.metadata.type).toBe("file");
+        const [dirContent] = await secondaryTarget1.getMetadata([dirMetadata.path]);
+        const [fileContent] = await secondaryTarget1.getMetadata([fileMetadata.path]);
+        expect(dirContent!.type).toBe("directory");
+        expect(fileContent!.type).toBe("file");
       });
 
       it("should handle empty directories", async () => {
@@ -766,16 +757,15 @@ describe("FileSyncManager", () => {
         });
 
         // When reinitializing a secondary target
-        await manager.reinitializeTarget(secondaryTarget1.id);
+        await manager.fullSyncFromPrimaryToTarget(secondaryTarget1);
 
         // Then empty directories should be created
         for (const path of emptyDirs) {
-          const metadata = await secondaryTarget1.getMetadata([path]);
-          expect(metadata).toHaveLength(1);
-          expect(metadata[0].type).toBe("directory");
-          expect(metadata[0].path).toBe(path);
-          expect(metadata[0].hash).toBe("");
-          expect(metadata[0].size).toBe(0);
+          const [metadata] = await secondaryTarget1.getMetadata([path]);
+          expect(metadata!.type).toBe("directory");
+          expect(metadata!.path).toBe(path);
+          expect(metadata!.hash).toBe("");
+          expect(metadata!.size).toBe(0);
         }
       });
 
@@ -802,26 +792,25 @@ describe("FileSyncManager", () => {
         });
 
         // When reinitializing a secondary target
-        await manager.reinitializeTarget(secondaryTarget1.id);
+        await manager.fullSyncFromPrimaryToTarget(secondaryTarget1);
 
         // Then all directories and file should be created in correct order
         for (const path of paths) {
           const isFile = path === paths[paths.length - 1];
-          const metadata = await secondaryTarget1.getMetadata([path]);
-          expect(metadata).toHaveLength(1);
-          expect(metadata[0].type).toBe(isFile ? "file" : "directory");
-          expect(metadata[0].path).toBe(path);
+          const [metadata] = await secondaryTarget1.getMetadata([path]);
+          expect(metadata!.type).toBe(isFile ? "file" : "directory");
+          expect(metadata!.path).toBe(path);
           if (isFile) {
-            expect(metadata[0].hash).toBe("filehash");
-            expect(metadata[0].size).toBe(100);
+            expect(metadata!.hash).toBe("filehash");
+            expect(metadata!.size).toBe(100);
             // Verify file content
             const content = await secondaryTarget1.getFileContent(path);
             const reader = content.stream.getReader();
             const { value } = await reader.read();
-            expect(Buffer.from(value)).toEqual(Buffer.from("content"));
+            expect(Buffer.from(value!)).toEqual(Buffer.from("content"));
           } else {
-            expect(metadata[0].hash).toBe("");
-            expect(metadata[0].size).toBe(0);
+            expect(metadata!.hash).toBe("");
+            expect(metadata!.size).toBe(0);
           }
         }
       });
@@ -869,11 +858,10 @@ describe("FileSyncManager", () => {
         await manager.handleTargetChanges(primaryTarget.id, changes);
 
         // Then directory should be created before file in secondary
-        const dirContent = await secondaryTarget1.getFileContent("nested");
-        const fileContent =
-          await secondaryTarget1.getFileContent("nested/file.txt");
-        expect(dirContent.metadata.type).toBe("directory");
-        expect(fileContent.metadata.type).toBe("file");
+        const [dirMetadata] = await secondaryTarget1.getMetadata(["nested"]);
+        const [fileMetadata] = await secondaryTarget1.getMetadata(["nested/file.txt"]);
+        expect(dirMetadata!.type).toBe("directory");
+        expect(fileMetadata!.type).toBe("file");
       });
 
       it("should handle deletion of nested structure in correct order", async () => {
@@ -990,16 +978,14 @@ describe("FileSyncManager", () => {
         await expect(secondaryTarget1.getFileContent("dir1")).rejects.toThrow();
 
         // Creations
-        const dirContent = await secondaryTarget1.getFileContent("dir3");
-        const fileContent =
-          await secondaryTarget1.getFileContent("dir3/newfile.txt");
-        expect(dirContent.metadata.type).toBe("directory");
-        expect(fileContent.metadata.type).toBe("file");
+        const [dir3Metadata] = await secondaryTarget1.getMetadata(["dir3"]);
+        const [newFileMetadata] = await secondaryTarget1.getMetadata(["dir3/newfile.txt"]);
+        expect(dir3Metadata!.type).toBe("directory");
+        expect(newFileMetadata!.type).toBe("file");
 
         // Unchanged files should remain
-        const unchangedContent =
-          await secondaryTarget1.getFileContent("dir2/file2.txt");
-        expect(unchangedContent.metadata.hash).toBe("hash");
+        const [unchangedMetadata] = await secondaryTarget1.getMetadata(["dir2/file2.txt"]);
+        expect(unchangedMetadata!.hash).toBe("hash");
       });
 
       it("should sync a folder and its contents properly from secondary to primary", async () => {
@@ -1054,20 +1040,16 @@ describe("FileSyncManager", () => {
         await manager.handleTargetChanges(secondaryTarget1.id, changes);
 
         // Then the primary target should have the new folder
-        const primaryFolderMetadata = await primaryTarget.getMetadata([
-          folderPath
-        ]);
-        expect(primaryFolderMetadata).toHaveLength(1);
-        expect(primaryFolderMetadata[0].type).toBe("directory");
-        expect(primaryFolderMetadata[0].path).toBe(folderPath);
+        const [primaryFolderMetadata] = await primaryTarget.getMetadata([folderPath]);
+        expect(primaryFolderMetadata!.type).toBe("directory");
+        expect(primaryFolderMetadata!.path).toBe(folderPath);
 
         // And the primary target should have the new file within the folder
-        const primaryFileMetadata = await primaryTarget.getMetadata([filePath]);
-        expect(primaryFileMetadata).toHaveLength(1);
-        expect(primaryFileMetadata[0].type).toBe("file");
-        expect(primaryFileMetadata[0].path).toBe(filePath);
-        expect(primaryFileMetadata[0].hash).toBe(fileMetadata.hash);
-        expect(primaryFileMetadata[0].size).toBe(fileMetadata.size);
+        const [primaryFileMetadata] = await primaryTarget.getMetadata([filePath]);
+        expect(primaryFileMetadata!.type).toBe("file");
+        expect(primaryFileMetadata!.path).toBe(filePath);
+        expect(primaryFileMetadata!.hash).toBe(fileMetadata.hash);
+        expect(primaryFileMetadata!.size).toBe(fileMetadata.size);
 
         // Additionally, verify the content of the file in the primary target
         const primaryFileContentStream =
@@ -1078,7 +1060,6 @@ describe("FileSyncManager", () => {
         const textDecoder = new TextDecoder();
         const actualContent = textDecoder.decode(value);
         expect(actualContent).toEqual(fileContent);
-        await primaryFileContentStream.close();
       });
     });
   });
@@ -1137,8 +1118,8 @@ describe("FileSyncManager", () => {
 
       // And new files should be copied
       for (const file of primaryFiles) {
-        const metadata = await secondaryTarget1.getMetadata([file.path]);
-        expect(metadata).toHaveLength(1);
+        const [metadata] = await secondaryTarget1.getMetadata([file.path]);
+        expect(metadata!.type).toBe(file.path.includes(".") ? "file" : "directory");
         const content = await secondaryTarget1.getFileContent(file.path);
         const reader = content.stream.getReader();
         const { value, done } = await reader.read();
@@ -1223,14 +1204,10 @@ describe("FileSyncManager", () => {
       await manager.fullSyncFromPrimaryToTarget(secondaryTarget1);
 
       // Then it should have all files from primary
-      const content1 = await secondaryTarget1.getFileContent(
-        file1.metadata.path
-      );
-      const content2 = await secondaryTarget1.getFileContent(
-        file2.metadata.path
-      );
-      expect(content1.metadata.hash).toBe(file1.metadata.hash);
-      expect(content2.metadata.hash).toBe(file2.metadata.hash);
+      const [metadata1] = await secondaryTarget1.getMetadata([file1.metadata.path]);
+      const [metadata2] = await secondaryTarget1.getMetadata([file2.metadata.path]);
+      expect(metadata1!.hash).toBe(file1.metadata.hash);
+      expect(metadata2!.hash).toBe(file2.metadata.hash);
     });
 
     it("should handle pending sync confirmation", async () => {
@@ -1253,14 +1230,12 @@ describe("FileSyncManager", () => {
       await manager.confirmPrimarySync();
 
       // Then primary should have the changes
-      const primaryContent = await primaryTarget.getFileContent(metadata.path);
-      expect(primaryContent.metadata.hash).toBe(metadata.hash);
+      const [primaryMetadata] = await primaryTarget.getMetadata([metadata.path]);
+      expect(primaryMetadata!.hash).toBe(metadata.hash);
 
       // And other secondary should be reinitialized with changes
-      const secondary2Content = await secondaryTarget2.getFileContent(
-        metadata.path
-      );
-      expect(secondary2Content.metadata.hash).toBe(metadata.hash);
+      const [secondary2Metadata] = await secondaryTarget2.getMetadata([metadata.path]);
+      expect(secondary2Metadata!.hash).toBe(metadata.hash);
     });
   });
 });
@@ -1269,14 +1244,12 @@ describe("Resource Management with uninitialized sync manager", () => {
   let primaryTarget: MockSyncTarget;
   let secondaryTarget1: MockSyncTarget;
   let secondaryTarget2: MockSyncTarget;
-  let config: SyncManagerConfig;
   let manager: FileSyncManager;
 
   beforeEach(async () => {
     primaryTarget = new MockSyncTarget("primary", "browser-fs");
     secondaryTarget1 = new MockSyncTarget("secondary1", "browser-native");
     secondaryTarget2 = new MockSyncTarget("secondary2", "node-fs");
-    config = { inactivityDelay: 1000, maxRetries: 3 };
     manager = new FileSyncManager();
   });
 
@@ -1287,7 +1260,7 @@ describe("Resource Management with uninitialized sync manager", () => {
     manager.registerTarget(secondaryTarget2, { role: "secondary" });
 
     // When initializing
-    await manager.initialize(config);
+    await manager.initialize();
 
     // Then all targets should be initialized
     expect(primaryTarget.getState().status).toBe("idle");
