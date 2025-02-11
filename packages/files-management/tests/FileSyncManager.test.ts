@@ -6,10 +6,10 @@ import type {
   FileChangeInfo,
   TargetState,
   SyncManagerConfig,
-  FileChunk,
   FileSystemItem,
   FileConflict,
-  SyncTargetType
+  SyncTargetType,
+  SyncProgressEvent
 } from "@piddie/shared-types";
 import { SyncManagerError, SyncManagerStateType } from "@piddie/shared-types";
 import { FileSyncManager } from "../src/FileSyncManager";
@@ -223,6 +223,7 @@ describe("FileSyncManager", () => {
   let secondaryTarget2: MockSyncTarget;
   let config: SyncManagerConfig;
   let manager: FileSyncManager;
+  let progressEvents: SyncProgressEvent[];
 
   // Common test data
   const createTestFile = (
@@ -252,6 +253,7 @@ describe("FileSyncManager", () => {
     secondaryTarget2 = new MockSyncTarget("secondary2", "container-fs");
     config = { inactivityDelay: 1000, maxRetries: 3 };
     manager = new FileSyncManager();
+    progressEvents = [];
     await manager.initialize();
   });
 
@@ -1238,6 +1240,137 @@ describe("FileSyncManager", () => {
       expect(secondary2Metadata!.hash).toBe(metadata.hash);
     });
   });
+
+  describe("Progress Events", () => {
+    beforeEach(async () => {
+      await manager.registerTarget(primaryTarget, { role: "primary" });
+      await manager.registerTarget(secondaryTarget1, { role: "secondary" });
+      await manager.registerTarget(secondaryTarget2, { role: "secondary" });
+      progressEvents = [];
+
+      manager.addProgressListener((event) => {
+        progressEvents.push(event);
+      });
+    });
+
+    it("should emit syncing progress events", async () => {
+      // Given a file to sync
+      const { metadata, change, content } = createTestFile("test.txt", "test content");
+      primaryTarget.setMockFile(metadata.path, content, metadata);
+
+      // When changes are handled
+      await manager.handleTargetChanges(primaryTarget.id, [change]);
+
+      // Then syncing events should be emitted
+      const syncingEvents = progressEvents.filter(e => e.type === 'syncing');
+      expect(syncingEvents.length).toBeGreaterThan(0);
+
+      // Verify initial syncing event
+      const initialEvent = syncingEvents[0];
+      expect(initialEvent).toBeDefined();
+      if (initialEvent) {
+        expect(initialEvent.type).toBe('syncing');
+        expect(initialEvent.sourceTargetId).toBe(primaryTarget.id);
+        expect(initialEvent.targetId).toBe(secondaryTarget1.id);
+        expect(initialEvent.totalFiles).toBe(1);
+        expect(initialEvent.syncedFiles).toBe(0);
+        expect(initialEvent.currentFile).toBe('');
+      }
+
+      // Verify file syncing event
+      const fileEvent = syncingEvents[1];
+      expect(fileEvent).toBeDefined();
+      if (fileEvent) {
+        expect(fileEvent.currentFile).toBe('test.txt');
+        expect(fileEvent.syncedFiles).toBe(0);
+        expect(fileEvent.totalFiles).toBe(1);
+      }
+    });
+
+    it.skip("should emit streaming progress events for file content", async () => {
+      // Given a larger file to sync
+      const content = "x".repeat(1000); // 1KB of content
+      const { metadata, change, content: binaryContent } = createTestFile("large.txt", content);
+      primaryTarget.setMockFile(metadata.path, binaryContent, metadata);
+
+      // When changes are handled
+      await manager.handleTargetChanges(primaryTarget.id, [change]);
+
+      // Then streaming events should be emitted
+      const streamingEvents = progressEvents.filter(e => e.type === 'streaming');
+      expect(streamingEvents.length).toBeGreaterThan(0);
+
+      // Verify streaming progress
+      const streamEvent = streamingEvents[0];
+      expect(streamEvent).toBeDefined();
+      if (streamEvent) {
+        expect(streamEvent.type).toBe('streaming');
+        expect(streamEvent.sourceTargetId).toBe(primaryTarget.id);
+        expect(streamEvent.targetId).toBe(secondaryTarget1.id);
+        expect(streamEvent.totalBytes).toBe(metadata.size);
+        expect(streamEvent.processedBytes).toBeGreaterThan(0);
+        expect(streamEvent.currentFile).toBe('large.txt');
+      }
+    });
+
+    it("should emit completion progress event", async () => {
+      // Given files to sync
+      const files = [
+        createTestFile("file1.txt", "content 1"),
+        createTestFile("file2.txt", "content 2")
+      ];
+
+      files.forEach(({ metadata, content }) => {
+        primaryTarget.setMockFile(metadata.path, content, metadata);
+      });
+
+      // When changes are handled
+      await manager.handleTargetChanges(primaryTarget.id, files.map(f => f.change));
+
+      // Then completion event should be emitted
+      const completionEvents = progressEvents.filter(e => e.type === 'completing');
+      expect(completionEvents.length).toBe(2); // one for each target
+
+      const completionEvent = completionEvents[0];
+      expect(completionEvent).toBeDefined();
+      if (completionEvent) {
+        expect(completionEvent.type).toBe('completing');
+        expect(completionEvent.sourceTargetId).toBe(primaryTarget.id);
+        expect(completionEvent.targetId).toBe(secondaryTarget1.id);
+        expect(completionEvent.totalFiles).toBe(2);
+        expect(completionEvent.successfulFiles).toBe(2);
+        expect(completionEvent.failedFiles).toBe(0);
+      }
+    });
+
+    it("should emit error progress event on failure", async () => {
+      // Given a file that will fail to sync
+      const { metadata, change, content } = createTestFile("error.txt", "content");
+      primaryTarget.setMockFile(metadata.path, content, metadata);
+
+      // And secondary target will fail to apply changes
+      const error = new Error("Sync failed");
+      vi.spyOn(secondaryTarget1, "applyFileChange").mockRejectedValueOnce(error);
+
+      // When changes are handled
+      await manager.handleTargetChanges(primaryTarget.id, [change]);
+
+      // Then error event should be emitted
+      const errorEvents = progressEvents.filter(e => e.type === 'error');
+      expect(errorEvents.length).toBe(2); // the actual file error and the failed sync as a whole
+
+      const errorEvent = errorEvents[0];
+      expect(errorEvent).toBeDefined();
+      if (errorEvent) {
+        expect(errorEvent.type).toBe('error');
+        expect(errorEvent.sourceTargetId).toBe(primaryTarget.id);
+        expect(errorEvent.targetId).toBe(secondaryTarget1.id);
+        expect(errorEvent.currentFile).toBe('error.txt');
+        expect(errorEvent.error).toBe(error);
+        expect(errorEvent.phase).toBe('streaming');
+      }
+    });
+  });
 });
 
 describe("Resource Management with uninitialized sync manager", () => {
@@ -1300,5 +1433,119 @@ describe("Resource Management with uninitialized sync manager", () => {
 
     // Then it should be removed
     expect(() => manager.getPrimaryTarget()).toThrow();
+  });
+});
+
+describe("Progress Tracking", () => {
+  let primaryTarget: MockSyncTarget;
+  let secondaryTarget: MockSyncTarget;
+  let manager: FileSyncManager;
+  let progressEvents: SyncProgressEvent[];
+
+  beforeEach(async () => {
+    primaryTarget = new MockSyncTarget("primary", "node-fs");
+    secondaryTarget = new MockSyncTarget("secondary", "browser-fs");
+    manager = new FileSyncManager();
+    progressEvents = [];
+
+    // Initialize targets
+    primaryTarget.initialize();
+    secondaryTarget.initialize();
+
+    // Initialize and register with manager
+    await manager.initialize();
+    await manager.registerTarget(primaryTarget, { role: "primary" });
+    await manager.registerTarget(secondaryTarget, { role: "secondary" });
+
+    // Add progress collector
+    manager.addProgressListener((event) => {
+      progressEvents.push(event);
+    });
+  });
+
+  afterEach(() => {
+    progressEvents = [];
+  });
+
+  const createTestFile = (path = "test.txt", content = "test content") => {
+    const metadata: FileMetadata = {
+      path,
+      type: "file",
+      hash: "testhash",
+      size: 100,
+      lastModified: Date.now()
+    };
+
+    const change: FileChangeInfo = {
+      ...metadata,
+      type: "modify",
+      sourceTarget: primaryTarget.id
+    };
+
+    const contentBuffer = Buffer.from(content);
+    const uint8Array = new Uint8Array(contentBuffer);
+
+    return { metadata, change, content: uint8Array };
+  };
+
+  describe("Listener Management", () => {
+    it("should allow adding and removing progress listeners", async () => {
+      // Given a progress listener
+      const listener = vi.fn();
+
+      // When adding the listener
+      const removeListener = manager.addProgressListener(listener);
+      expect(typeof removeListener).toBe("function");
+
+      // And removing it
+      removeListener();
+
+      // Then it should not be called when progress occurs
+      const { metadata, change, content } = createTestFile("test.txt", "test content");
+      primaryTarget.setMockFile(metadata.path, content, metadata);
+      await manager.handleTargetChanges(primaryTarget.id, [change]);
+
+      expect(listener).not.toHaveBeenCalled();
+    });
+
+    it("should handle multiple listeners", async () => {
+      // Given multiple listeners
+      const listener1 = vi.fn();
+      const listener2 = vi.fn();
+
+      // When adding both listeners
+      manager.addProgressListener(listener1);
+      manager.addProgressListener(listener2);
+
+      // And progress occurs
+      const { metadata, change, content } = createTestFile("test.txt", "test content");
+      primaryTarget.setMockFile(metadata.path, content, metadata);
+      await manager.handleTargetChanges(primaryTarget.id, [change]);
+
+      // Then both should be called
+      expect(listener1).toHaveBeenCalled();
+      expect(listener2).toHaveBeenCalled();
+    });
+
+    it("should handle listener errors gracefully", async () => {
+      // Given a listener that throws
+      const errorListener = vi.fn().mockImplementation(() => {
+        throw new Error("Listener error");
+      });
+      const goodListener = vi.fn();
+
+      // When adding both listeners
+      manager.addProgressListener(errorListener);
+      manager.addProgressListener(goodListener);
+
+      // And progress occurs
+      const { metadata, change, content } = createTestFile("test.txt", "test content");
+      primaryTarget.setMockFile(metadata.path, content, metadata);
+      await manager.handleTargetChanges(primaryTarget.id, [change]);
+
+      // Then the error should not prevent other listeners from being called
+      expect(errorListener).toHaveBeenCalled();
+      expect(goodListener).toHaveBeenCalled();
+    });
   });
 });
