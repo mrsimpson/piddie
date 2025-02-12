@@ -428,14 +428,12 @@ export abstract class BaseSyncTarget implements SyncTarget {
     const content =
       metadata.type === "file" ? await this.fileSystem.readFile(path) : "";
 
+    const encoder = new TextEncoder();
     const stream = new ReadableStream({
       start(controller) {
-        controller.enqueue({
-          content,
-          chunkIndex: 0,
-          totalChunks: 1,
-          chunkHash: metadata.hash
-        });
+        controller.enqueue(
+          encoder.encode(content),
+        );
         controller.close();
       }
     });

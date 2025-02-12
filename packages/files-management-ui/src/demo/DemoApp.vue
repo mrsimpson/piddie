@@ -14,6 +14,7 @@ import { WATCHER_PRIORITIES } from "@piddie/shared-types";
 import FileExplorer from "../components/FileExplorer.vue";
 import ErrorDisplay from "../components/ErrorDisplay.vue";
 import { handleUIError } from "../utils/error-handling";
+import SyncProgress from "../components/SyncProgress.vue";
 
 const COMPONENT_ID = "DemoApp";
 const systems = ref<SynchronizedFileSystem[]>([]);
@@ -162,7 +163,9 @@ onMounted(initializeBrowserSystem);
           <div class="empty-panel">
             <div class="empty-state">
               <sl-button variant="primary" size="large" @click="addNativeSystem">
-                <sl-icon slot="prefix" name="folder"></sl-icon>
+                <template v-slot:prefix>
+<sl-icon  name="folder"></sl-icon>
+</template>
                 Add Local Directory
               </sl-button>
               <p class="hint">Add a local directory to enable file synchronization</p>
@@ -173,6 +176,7 @@ onMounted(initializeBrowserSystem);
     </main>
 
     <ErrorDisplay />
+    <SyncProgress :sync-manager="syncManager" />
   </div>
 </template>
 

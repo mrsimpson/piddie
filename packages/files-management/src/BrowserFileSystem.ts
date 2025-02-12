@@ -95,7 +95,7 @@ export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
           if (error instanceof Error && error.message.includes("ENOENT")) {
             if (!options?.recursive) {
               // For non-recursive, verify parent exists
-              const parentPath = browserPath.dirname(path);
+              const parentPath = this.getAbsolutePath(browserPath.dirname(path));
               try {
                 const parentStats = await fs.promises.stat(parentPath);
                 if (!parentStats.isDirectory()) {
