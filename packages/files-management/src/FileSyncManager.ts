@@ -218,7 +218,7 @@ export class FileSyncManager implements SyncManager {
       const content = await sourceTarget.getFileContent(change.path);
 
       // Track streaming progress if content has size information
-      if (content.size !== undefined) {
+      if (content.metadata.size) {
         let bytesTransferred = 0;
         const reader = content.stream.getReader();
         const self = this; // Store reference to FileSyncManager
@@ -237,7 +237,7 @@ export class FileSyncManager implements SyncManager {
                   type: 'streaming',
                   sourceTargetId: sourceTarget.id,
                   targetId: target.id,
-                  totalBytes: content.size,
+                  totalBytes: content.metadata.size,
                   processedBytes: bytesTransferred,
                   currentFile: change.path,
                   timestamp: Date.now()
@@ -254,12 +254,9 @@ export class FileSyncManager implements SyncManager {
         // Create wrapped content with progress tracking
         const streamContent: FileContentStream = {
           stream: newStream,
-          size: content.size,
-          lastModified: content.lastModified
+          metadata: content.metadata,
+          getReader: () => newStream.getReader()
         };
-        if (content.mimeType) {
-          streamContent.mimeType = content.mimeType;
-        }
 
         const conflict = await target.applyFileChange(change, streamContent);
         if (conflict) return conflict;
@@ -317,8 +314,8 @@ export class FileSyncManager implements SyncManager {
         return depthA - depthB; // Shallowest first
       }
       // At same depth, directories before files
-      const aIsDir = a.hash === "" && a.size === 0;
-      const bIsDir = b.hash === "" && b.size === 0;
+      const aIsDir = a.metadata.type === "directory";
+      const bIsDir = b.metadata.type === "directory";
       if (aIsDir && !bIsDir) return -1;
       if (!aIsDir && bIsDir) return 1;
       return a.path.localeCompare(b.path);
@@ -471,10 +468,14 @@ export class FileSyncManager implements SyncManager {
           (path) => ({
             path,
             type: "delete",
-            hash: "",
-            size: 0,
-            lastModified: Date.now(),
-            sourceTarget: primary.id
+            sourceTarget: primary.id,
+            metadata: {
+              path,
+              type: "file",
+              hash: "",
+              size: 0,
+              lastModified: Date.now()
+            }
           })
         );
 
@@ -489,10 +490,8 @@ export class FileSyncManager implements SyncManager {
       const changes: FileChangeInfo[] = allFiles.map((file) => ({
         path: file.path,
         type: "create" as const, // Always treat as create for initialization
-        hash: file.type === "directory" ? "" : file.hash,
-        size: file.type === "directory" ? 0 : file.size,
-        lastModified: file.lastModified,
-        sourceTarget: primary.id
+        sourceTarget: primary.id,
+        metadata: file
       }));
 
       // Apply changes to target

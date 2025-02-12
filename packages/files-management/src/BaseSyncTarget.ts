@@ -276,12 +276,14 @@ export abstract class BaseSyncTarget implements SyncTarget {
       // Read and apply content for files
       try {
         const reader = contentStream.getReader();
+        const decoder = new TextDecoder();
         let content = "";
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          content += value.content;
+          content += decoder.decode(value, { stream: true });
         }
+        content += decoder.decode(); // Flush the stream
 
         await this.fileSystem.writeFile(metadata.path, content, true);
         this.lastKnownFiles.set(metadata.path, {
@@ -426,24 +428,23 @@ export abstract class BaseSyncTarget implements SyncTarget {
     const content =
       metadata.type === "file" ? await this.fileSystem.readFile(path) : "";
 
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue({
+          content,
+          chunkIndex: 0,
+          totalChunks: 1,
+          chunkHash: metadata.hash
+        });
+        controller.close();
+      }
+    });
+
     return {
       metadata,
+      stream,
       getReader: () => {
-        const stream = new ReadableStream({
-          start(controller) {
-            controller.enqueue({
-              content,
-              chunkIndex: 0,
-              totalChunks: 1,
-              chunkHash: metadata.hash
-            });
-            controller.close();
-          }
-        });
         return stream.getReader();
-      },
-      close: async () => {
-        /* No cleanup needed */
       }
     };
   }
@@ -464,12 +465,12 @@ export abstract class BaseSyncTarget implements SyncTarget {
       };
       filter?: (change: FileChangeInfo) => boolean;
     } = {
-      priority: WATCHER_PRIORITIES.OTHER,
-      metadata: {
-        registeredBy: "external",
-        type: "other-watcher"
+        priority: WATCHER_PRIORITIES.OTHER,
+        metadata: {
+          registeredBy: "external",
+          type: "other-watcher"
+        }
       }
-    }
   ): Promise<void> {
     const watcherOptions: WatcherOptions = {
       priority: options.priority ?? WATCHER_PRIORITIES.OTHER,

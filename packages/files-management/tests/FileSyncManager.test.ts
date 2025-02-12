@@ -19,6 +19,7 @@ class MockFileContentStream implements FileContentStream {
   metadata: FileMetadata;
   lastModified: number;
   private content: Uint8Array;
+  getReader: () => ReadableStreamDefaultReader<Uint8Array> = () => this.stream.getReader();
 
   constructor(content: Uint8Array, metadata: FileMetadata) {
     this.metadata = metadata;
@@ -126,7 +127,7 @@ class MockSyncTarget implements SyncTarget {
       return null;
     }
 
-    const isDirectory = changeInfo.hash === "" && changeInfo.size === 0;
+    const isDirectory = changeInfo.metadata.hash === "" && changeInfo.metadata.size === 0;
     let content = new Uint8Array();
 
     // Only process content stream for files
@@ -152,9 +153,9 @@ class MockSyncTarget implements SyncTarget {
       metadata: {
         path: changeInfo.path,
         type: isDirectory ? "directory" : "file",
-        hash: changeInfo.hash,
-        size: changeInfo.size,
-        lastModified: changeInfo.lastModified
+        hash: changeInfo.metadata.hash,
+        size: changeInfo.metadata.size,
+        lastModified: changeInfo.metadata.lastModified
       }
     });
     return null;
@@ -239,7 +240,8 @@ describe("FileSyncManager", () => {
     };
 
     const change: FileChangeInfo = {
-      ...metadata,
+      path,
+      metadata,
       type: "modify",
       sourceTarget: primaryTarget.id
     };
@@ -825,17 +827,25 @@ describe("FileSyncManager", () => {
           {
             path: "nested/file.txt",
             type: "create",
-            hash: "filehash",
-            size: 100,
-            lastModified: Date.now(),
+            metadata: {
+              path: "nested/file.txt",
+              type: "file",
+              hash: "filehash",
+              size: 100,
+              lastModified: Date.now()
+            },
             sourceTarget: primaryTarget.id
           },
           {
             path: "nested",
             type: "create",
-            hash: "",
-            size: 0,
-            lastModified: Date.now(),
+            metadata: {
+              path: "nested",
+              type: "directory",
+              hash: "",
+              size: 0,
+              lastModified: Date.now()
+            },
             sourceTarget: primaryTarget.id
           }
         ];
@@ -883,14 +893,22 @@ describe("FileSyncManager", () => {
         });
 
         // When deleting the structure
-        const deleteChanges: FileChangeInfo[] = paths.map((path) => ({
-          path,
-          type: "delete",
-          hash: "",
-          size: 0,
-          lastModified: Date.now(),
-          sourceTarget: primaryTarget.id
-        }));
+        const deleteChanges: FileChangeInfo[] = paths.map((path, index) => {
+          const isFile = index === 1;
+          const metadata: FileMetadata = {
+            path,
+            type: isFile ? "file" : "directory",
+            hash: isFile ? "filehash" : "",
+            size: isFile ? 100 : 0,
+            lastModified: Date.now()
+          };
+          return {
+            path,
+            type: "delete",
+            metadata,
+            sourceTarget: primaryTarget.id
+          }
+        });
 
         await manager.handleTargetChanges(primaryTarget.id, deleteChanges);
 
@@ -923,33 +941,49 @@ describe("FileSyncManager", () => {
           {
             path: "dir1/file1.txt",
             type: "delete",
-            hash: "",
-            size: 0,
-            lastModified: Date.now(),
+            metadata: {
+              path: "dir1/file1.txt",
+              type: "file",
+              hash: "",
+              size: 0,
+              lastModified: Date.now()
+            },
             sourceTarget: primaryTarget.id
           },
           {
             path: "dir1",
             type: "delete",
-            hash: "",
-            size: 0,
-            lastModified: Date.now(),
+            metadata: {
+              path: "dir1",
+              type: "directory",
+              hash: "",
+              size: 0,
+              lastModified: Date.now(),
+            },
             sourceTarget: primaryTarget.id
           },
           {
             path: "dir3",
             type: "create",
-            hash: "",
-            size: 0,
-            lastModified: Date.now(),
+            metadata: {
+              path: "dir3",
+              type: "directory",
+              hash: "",
+              size: 0,
+              lastModified: Date.now(),
+            },
             sourceTarget: primaryTarget.id
           },
           {
             path: "dir3/newfile.txt",
             type: "create",
-            hash: "newhash",
-            size: 100,
-            lastModified: Date.now(),
+            metadata: {
+              path: "dir3/newfile.txt",
+              type: "file",
+              hash: "newhash",
+              size: 100,
+              lastModified: Date.now()
+            },
             sourceTarget: primaryTarget.id
           }
         ];
@@ -1023,17 +1057,13 @@ describe("FileSyncManager", () => {
           {
             path: folderPath,
             type: "create",
-            hash: "",
-            size: 0,
-            lastModified: folderMetadata.lastModified,
+            metadata: folderMetadata,
             sourceTarget: secondaryTarget1.id
           },
           {
             path: filePath,
             type: "create",
-            hash: fileMetadata.hash,
-            size: fileMetadata.size,
-            lastModified: fileMetadata.lastModified,
+            metadata: fileMetadata,
             sourceTarget: secondaryTarget1.id
           }
         ];
@@ -1477,7 +1507,8 @@ describe("Progress Tracking", () => {
     };
 
     const change: FileChangeInfo = {
-      ...metadata,
+      path,
+      metadata,
       type: "modify",
       sourceTarget: primaryTarget.id
     };
@@ -1502,7 +1533,8 @@ describe("Progress Tracking", () => {
 
       // Then it should not be called when progress occurs
       const { metadata, change, content } = createTestFile("test.txt", "test content");
-      primaryTarget.setMockFile(metadata.path, content, metadata);
+      const decoder = new TextDecoder();
+      primaryTarget.setMockFile(metadata.path, decoder.decode(content), metadata);
       await manager.handleTargetChanges(primaryTarget.id, [change]);
 
       expect(listener).not.toHaveBeenCalled();
@@ -1519,7 +1551,8 @@ describe("Progress Tracking", () => {
 
       // And progress occurs
       const { metadata, change, content } = createTestFile("test.txt", "test content");
-      primaryTarget.setMockFile(metadata.path, content, metadata);
+      const decoder = new TextDecoder();
+      primaryTarget.setMockFile(metadata.path, decoder.decode(content), metadata);
       await manager.handleTargetChanges(primaryTarget.id, [change]);
 
       // Then both should be called
@@ -1540,7 +1573,8 @@ describe("Progress Tracking", () => {
 
       // And progress occurs
       const { metadata, change, content } = createTestFile("test.txt", "test content");
-      primaryTarget.setMockFile(metadata.path, content, metadata);
+      const decoder = new TextDecoder();
+      primaryTarget.setMockFile(metadata.path, decoder.decode(content), metadata);
       await manager.handleTargetChanges(primaryTarget.id, [change]);
 
       // Then the error should not prevent other listeners from being called

@@ -1,14 +1,14 @@
 import type {
   FileMetadata,
   FileContentStream,
-  FileSystemItem
+  FileSystemItem,
+  LockMode
 } from "@piddie/shared-types";
-import { ReadableStream } from "node:stream/web";
 import { MockInstance, vi } from "vitest";
 
 export interface MockFileSystemContext {
-  mockFiles: Map<string, Partial<FileSystemHandle>>;
-  mockMetadata: Map<string, Partial<FileMetadata>>;
+  mockFiles: Map<string, FileSystemHandle>;
+  mockMetadata: Map<string, FileMetadata>;
   rootDir: string;
   timestamp?: number;
 }
@@ -33,23 +33,21 @@ export function createMockStream(
   metadata: FileMetadata,
   content: string = "test content"
 ): FileContentStream {
+
+  const encoder = new TextEncoder();
+
+  const stream: ReadableStream<Uint8Array> = new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(content));
+      controller.close();
+    }
+  });
   return {
     metadata,
+    stream,
     getReader: () => {
-      const stream = new ReadableStream({
-        start(controller) {
-          controller.enqueue({
-            content,
-            chunkIndex: 0,
-            totalChunks: 1,
-            chunkHash: metadata.hash
-          });
-          controller.close();
-        }
-      });
       return stream.getReader();
-    },
-    close: vi.fn().mockResolvedValue(undefined)
+    }
   };
 }
 
@@ -89,13 +87,21 @@ export function setupDefaultSpyBehavior(
   });
   spies.lock.mockResolvedValue(undefined);
   spies.forceUnlock.mockResolvedValue(undefined);
-  spies.listDirectory.mockImplementation(async (path: string) => {
+  spies.listDirectory.mockImplementation(async (path: string): Promise<FileSystemItem[]> => {
     if (path === context.rootDir || path === "/") {
       // Convert the mockFiles map entries to FileMetadata array
       return Array.from(context.mockFiles.entries()).map(
         ([filePath, handle]) => {
           if (handle.kind === "file") {
-            return context.mockMetadata.get(filePath);
+            const metadata = context.mockMetadata.get(filePath);
+            if (!metadata) throw new Error(`Metadata not found for file: ${filePath}`);
+            return {
+              path: filePath,
+              type: metadata.type,
+              hash: metadata.hash,
+              size: metadata.size,
+              lastModified: metadata.lastModified
+            }
           }
           return {
             path: filePath,
@@ -109,10 +115,10 @@ export function setupDefaultSpyBehavior(
     }
     return [];
   });
-  spies.getMetadata.mockImplementation((path: string) => {
+  spies.getMetadata.mockImplementation(async (path: string): Promise<FileMetadata> => {
     const file = context.mockFiles.get(path);
     const metadata = context.mockMetadata.get(path);
-    if (!file) throw new Error("File not found");
+    if (!file || !metadata) throw new Error("File not found");
 
     return metadata;
   });
@@ -132,7 +138,8 @@ export function createMockFileHandle(
       .mockResolvedValue(new File([content], name, { lastModified })),
     createWritable: vi.fn(),
     queryPermission: vi.fn().mockResolvedValue("granted"),
-    requestPermission: vi.fn().mockResolvedValue("granted")
+    requestPermission: vi.fn().mockResolvedValue("granted"),
+    isSameEntry: vi.fn()
   };
 }
 

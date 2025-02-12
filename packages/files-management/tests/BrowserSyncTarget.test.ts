@@ -26,8 +26,8 @@ vi.mock("@isomorphic-git/lightning-fs", () => {
 });
 
 const TEST_ROOT = "/test/root";
-const mockFiles = new Map<string, Partial<FileSystemHandle>>();
-const mockMetadata = new Map<string, Partial<FileMetadata>>();
+const mockFiles = new Map<string, FileSystemHandle>();
+const mockMetadata = new Map<string, FileMetadata>();
 
 const context: SyncTargetTestContext<BrowserSyncTarget> = {
   reset: () => mockFiles.clear(),

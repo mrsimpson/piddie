@@ -14,7 +14,7 @@
     "format:fix": "prettier --write .",
     "test": "vitest --run",
     "test:watch": "vitest",
-    "type-check": "tsc --noEmit"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@isomorphic-git/lightning-fs": "4.6.0",

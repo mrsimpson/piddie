@@ -21,24 +21,14 @@ export interface FileChangeInfo {
   type: "create" | "modify" | "delete";
 
   /**
-   * Hash of the file content
-   */
-  hash: string;
-
-  /**
-   * Size in bytes
-   */
-  size: number;
-
-  /**
-   * Last modification time
-   */
-  lastModified: number;
-
-  /**
    * Source target that detected the change
    */
   sourceTarget: string;
+
+  /**
+   * File metadata containing hash, size, lastModified, and mimeType
+   */
+  metadata: FileMetadata;
 }
 
 /**

@@ -89,18 +89,20 @@ export class NodeSyncTarget extends BaseSyncTarget {
               path: filePath,
               type: event.eventType === "rename" ? "delete" : "modify",
               sourceTarget: this.id,
-              lastModified: metadata.lastModified,
-              hash: metadata.hash,
-              size: metadata.size
+              metadata
             };
           } else if (event.eventType === "rename") {
             change = {
               path: filePath,
               type: "delete",
               sourceTarget: this.id,
-              lastModified: Date.now(),
-              hash: "",
-              size: 0
+              metadata: {
+                path: filePath,
+                type: "file",
+                hash: "",
+                size: 0,
+                lastModified: Date.now()
+              }
             };
           } else {
             const metadata = await this.fileSystem.getMetadata(filePath);
@@ -108,9 +110,7 @@ export class NodeSyncTarget extends BaseSyncTarget {
               path: filePath,
               type: "create",
               sourceTarget: this.id,
-              lastModified: metadata.lastModified,
-              hash: metadata.hash,
-              size: metadata.size
+              metadata
             };
           }
 

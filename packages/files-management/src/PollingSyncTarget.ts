@@ -92,10 +92,14 @@ export abstract class PollingSyncTarget extends BaseSyncTarget {
           changes.push({
             path,
             type: "delete",
-            hash: "",
-            size: 0,
-            lastModified: Date.now(),
-            sourceTarget: this.id
+            sourceTarget: this.id,
+            metadata: {
+              path,
+              type: "file",
+              hash: "",
+              size: 0,
+              lastModified: Date.now()
+            }
           });
         }
       }
@@ -109,10 +113,8 @@ export abstract class PollingSyncTarget extends BaseSyncTarget {
           changes.push({
             path,
             type: "create",
-            hash: metadata.hash,
-            size: metadata.size,
-            lastModified: currentState.lastModified,
-            sourceTarget: this.id
+            sourceTarget: this.id,
+            metadata
           });
         } else if (
           currentState.lastModified !== knownState.lastModified ||
@@ -123,10 +125,8 @@ export abstract class PollingSyncTarget extends BaseSyncTarget {
           changes.push({
             path,
             type: "modify",
-            hash: metadata.hash,
-            size: metadata.size,
-            lastModified: currentState.lastModified,
-            sourceTarget: this.id
+            sourceTarget: this.id,
+            metadata
           });
         }
       }

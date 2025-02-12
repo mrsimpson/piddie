@@ -10,7 +10,6 @@ export interface FileSystemItem {
   path: string;
   type: "file" | "directory";
   lastModified: number;
-  content?: string;
 }
 
 /**
@@ -41,6 +40,11 @@ export interface FileMetadata {
    * Last modification time
    */
   lastModified: number;
+
+  /**
+   * MIME type of the file, if known
+   */
+  mimeType?: string;
 }
 
 /**
@@ -72,14 +76,12 @@ export interface FileChunk {
  * Stream of file content with metadata
  */
 export interface FileContentStream {
-  /** ReadableStream of the file content */
+  /** The actual content stream */
   stream: ReadableStream<Uint8Array>;
-  /** Size of the file in bytes, if known */
-  size?: number;
-  /** MIME type of the file, if known */
-  mimeType?: string;
-  /** Last modified timestamp */
-  lastModified: number;
+  /** File metadata */
+  metadata: FileMetadata;
+  /** Get a reader for the stream */
+  getReader(): ReadableStreamDefaultReader<Uint8Array>;
 }
 
 /**
