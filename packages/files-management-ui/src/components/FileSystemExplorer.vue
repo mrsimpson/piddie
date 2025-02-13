@@ -279,11 +279,11 @@ onUnmounted(async () => {
     >
       <sl-input label="File Name" v-model="newItemName" @keyup.enter="createNewFile"></sl-input>
       <template v-slot:footer>
-<div >
-        <sl-button @click="showNewFileDialog = false">Cancel</sl-button>
-        <sl-button variant="primary" @click="createNewFile">Create</sl-button>
-      </div>
-</template>
+        <div>
+          <sl-button @click="showNewFileDialog = false">Cancel</sl-button>
+          <sl-button variant="primary" @click="createNewFile">Create</sl-button>
+        </div>
+      </template>
     </sl-dialog>
 
     <!-- New Folder Dialog -->
@@ -294,11 +294,11 @@ onUnmounted(async () => {
     >
       <sl-input label="Folder Name" v-model="newItemName" @keyup.enter="createNewFolder"></sl-input>
       <template v-slot:footer>
-<div >
-        <sl-button @click="showNewFolderDialog = false">Cancel</sl-button>
-        <sl-button variant="primary" @click="createNewFolder">Create</sl-button>
-      </div>
-</template>
+        <div>
+          <sl-button @click="showNewFolderDialog = false">Cancel</sl-button>
+          <sl-button variant="primary" @click="createNewFolder">Create</sl-button>
+        </div>
+      </template>
     </sl-dialog>
 
     <!-- Delete Confirmation Dialog -->
@@ -310,11 +310,11 @@ onUnmounted(async () => {
       <p>Are you sure you want to delete "{{ selectedFile }}"?</p>
       <p class="warning">This action cannot be undone.</p>
       <template v-slot:footer>
-<div >
-        <sl-button @click="showDeleteConfirmDialog = false">Cancel</sl-button>
-        <sl-button variant="danger" @click="deleteSelectedFile">Delete</sl-button>
-      </div>
-</template>
+        <div>
+          <sl-button @click="showDeleteConfirmDialog = false">Cancel</sl-button>
+          <sl-button variant="danger" @click="deleteSelectedFile">Delete</sl-button>
+        </div>
+      </template>
     </sl-dialog>
   </div>
 </template>

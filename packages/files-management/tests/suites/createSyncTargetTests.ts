@@ -4,9 +4,7 @@ import type {
   FileSystem,
   FileMetadata,
   FileContentStream,
-  FileChunk,
-  SyncTarget,
-  FileChangeInfo
+  SyncTarget
 } from "@piddie/shared-types";
 
 export interface SyncTargetTestContext<T extends SyncTarget> {
@@ -174,16 +172,17 @@ export function createSyncTargetTests<T extends SyncTarget>(
         expect(stream).toHaveProperty("getReader");
 
         const reader = stream.getReader();
-        const chunks: FileChunk[] = [];
+        const decoder = new TextDecoder();
+        let totalContent = "";
 
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           if (value) {
-            chunks.push(value as unknown as FileChunk);
+            totalContent += decoder.decode(value);
           }
         }
-        expect(chunks.map((c) => c.content).join("")).toBe("test content");
+        expect(totalContent).toBe("test content");
       });
 
       it("should apply file changes", async () => {
@@ -338,9 +337,7 @@ export function createSyncTargetTests<T extends SyncTarget>(
       });
 
       it("should detect new files with proper debouncing", async () => {
-        const callback = vi.fn().mockImplementation((args: FileChangeInfo[]) => {
-          console.log('Callback')
-        });
+        const callback = vi.fn();
         await target.watch(callback, DEFAULT_WATCH_OPTIONS);
 
         // First poll with empty directory - no need to mock, directory is empty by default
@@ -370,7 +367,7 @@ export function createSyncTargetTests<T extends SyncTarget>(
             path: metadata.path,
             type: "create",
             metadata: metadata,
-            sourceTarget: target.id,
+            sourceTarget: target.id
           })
         ]);
       });
@@ -383,7 +380,7 @@ export function createSyncTargetTests<T extends SyncTarget>(
         const modifiedTimestamp = initialTimestamp + 5000;
 
         // Setup initial file and let it be detected
-        const { metadata: initialMetadata } = await context.setupFileWithMetadata(
+        await context.setupFileWithMetadata(
           spies,
           "test.txt",
           {

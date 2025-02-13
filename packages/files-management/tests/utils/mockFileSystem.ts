@@ -33,7 +33,6 @@ export function createMockStream(
   metadata: FileMetadata,
   content: string = "test content"
 ): FileContentStream {
-
   const encoder = new TextEncoder();
 
   const stream: ReadableStream<Uint8Array> = new ReadableStream({
@@ -87,41 +86,46 @@ export function setupDefaultSpyBehavior(
   });
   spies.lock.mockResolvedValue(undefined);
   spies.forceUnlock.mockResolvedValue(undefined);
-  spies.listDirectory.mockImplementation(async (path: string): Promise<FileSystemItem[]> => {
-    if (path === context.rootDir || path === "/") {
-      // Convert the mockFiles map entries to FileMetadata array
-      return Array.from(context.mockFiles.entries()).map(
-        ([filePath, handle]) => {
-          if (handle.kind === "file") {
-            const metadata = context.mockMetadata.get(filePath);
-            if (!metadata) throw new Error(`Metadata not found for file: ${filePath}`);
+  spies.listDirectory.mockImplementation(
+    async (path: string): Promise<FileSystemItem[]> => {
+      if (path === context.rootDir || path === "/") {
+        // Convert the mockFiles map entries to FileMetadata array
+        return Array.from(context.mockFiles.entries()).map(
+          ([filePath, handle]) => {
+            if (handle.kind === "file") {
+              const metadata = context.mockMetadata.get(filePath);
+              if (!metadata)
+                throw new Error(`Metadata not found for file: ${filePath}`);
+              return {
+                path: filePath,
+                type: metadata.type,
+                hash: metadata.hash,
+                size: metadata.size,
+                lastModified: metadata.lastModified
+              };
+            }
             return {
               path: filePath,
-              type: metadata.type,
-              hash: metadata.hash,
-              size: metadata.size,
-              lastModified: metadata.lastModified
-            }
+              type: "directory" as const,
+              hash: "",
+              size: 0,
+              lastModified: context.timestamp ?? Date.now()
+            };
           }
-          return {
-            path: filePath,
-            type: "directory" as const,
-            hash: "",
-            size: 0,
-            lastModified: context.timestamp ?? Date.now()
-          };
-        }
-      );
+        );
+      }
+      return [];
     }
-    return [];
-  });
-  spies.getMetadata.mockImplementation(async (path: string): Promise<FileMetadata> => {
-    const file = context.mockFiles.get(path);
-    const metadata = context.mockMetadata.get(path);
-    if (!file || !metadata) throw new Error("File not found");
+  );
+  spies.getMetadata.mockImplementation(
+    async (path: string): Promise<FileMetadata> => {
+      const file = context.mockFiles.get(path);
+      const metadata = context.mockMetadata.get(path);
+      if (!file || !metadata) throw new Error("File not found");
 
-    return metadata;
-  });
+      return metadata;
+    }
+  );
 }
 
 // File System Access API specific mocks

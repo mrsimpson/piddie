@@ -177,7 +177,7 @@ export class FileSyncManager implements SyncManager {
       try {
         listener(progress);
       } catch (error) {
-        console.error('Error in progress listener:', error);
+        console.error("Error in progress listener:", error);
       }
     }
   }
@@ -221,7 +221,7 @@ export class FileSyncManager implements SyncManager {
       if (content.metadata.size) {
         let bytesTransferred = 0;
         const reader = content.stream.getReader();
-        const self = this; // Store reference to FileSyncManager
+        const syncManager = this; //eslint-disable-line @typescript-eslint/no-this-alias
 
         const newStream = new ReadableStream<Uint8Array>({
           async start(controller) {
@@ -233,8 +233,8 @@ export class FileSyncManager implements SyncManager {
                 controller.enqueue(value);
 
                 // Emit streaming progress
-                self.emitProgress({
-                  type: 'streaming',
+                syncManager.emitProgress({
+                  type: "streaming",
                   sourceTargetId: sourceTarget.id,
                   targetId: target.id,
                   totalBytes: content.metadata.size,
@@ -269,12 +269,12 @@ export class FileSyncManager implements SyncManager {
     } catch (error) {
       // Emit error progress
       this.emitProgress({
-        type: 'error',
+        type: "error",
         sourceTargetId: sourceTarget.id,
         targetId: target.id,
         currentFile: change.path,
         error: error as Error,
-        phase: 'streaming',
+        phase: "streaming",
         timestamp: Date.now()
       });
 
@@ -342,12 +342,12 @@ export class FileSyncManager implements SyncManager {
 
       // Emit initial syncing progress
       this.emitProgress({
-        type: 'syncing',
+        type: "syncing",
         sourceTargetId: sourceTarget.id,
         targetId: target.id,
         totalFiles: orderedChanges.length,
         syncedFiles: 0,
-        currentFile: '',
+        currentFile: "",
         timestamp: Date.now()
       });
 
@@ -356,7 +356,7 @@ export class FileSyncManager implements SyncManager {
         try {
           // Emit progress for current file
           this.emitProgress({
-            type: 'syncing',
+            type: "syncing",
             sourceTargetId: sourceTarget.id,
             targetId: target.id,
             totalFiles: orderedChanges.length,
@@ -379,12 +379,12 @@ export class FileSyncManager implements SyncManager {
 
             // Emit error progress
             this.emitProgress({
-              type: 'error',
+              type: "error",
               sourceTargetId: sourceTarget.id,
               targetId: target.id,
               currentFile: change.path,
               error: result.error,
-              phase: 'syncing',
+              phase: "syncing",
               timestamp: Date.now()
             });
 
@@ -398,12 +398,12 @@ export class FileSyncManager implements SyncManager {
 
           // Emit error progress
           this.emitProgress({
-            type: 'error',
+            type: "error",
             sourceTargetId: sourceTarget.id,
             targetId: target.id,
             currentFile: change.path,
             error: error as Error,
-            phase: 'syncing',
+            phase: "syncing",
             timestamp: Date.now()
           });
 
@@ -413,7 +413,7 @@ export class FileSyncManager implements SyncManager {
 
       // Emit completion progress
       this.emitProgress({
-        type: 'completing',
+        type: "completing",
         sourceTargetId: sourceTarget.id,
         targetId: target.id,
         totalFiles: orderedChanges.length,
@@ -421,7 +421,6 @@ export class FileSyncManager implements SyncManager {
         failedFiles: orderedChanges.length - result.appliedChanges.length,
         timestamp: Date.now()
       });
-
     } catch (error) {
       result.success = false;
       result.error = error as Error;
@@ -429,12 +428,12 @@ export class FileSyncManager implements SyncManager {
 
       // Emit error progress
       this.emitProgress({
-        type: 'error',
+        type: "error",
         sourceTargetId: sourceTarget.id,
         targetId: target.id,
-        currentFile: '',
+        currentFile: "",
         error: error as Error,
-        phase: 'syncing',
+        phase: "syncing",
         timestamp: Date.now()
       });
     }

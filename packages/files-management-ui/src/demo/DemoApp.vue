@@ -83,7 +83,10 @@ async function addNativeSystem() {
     });
 
     // Create and initialize native file system
-    const nativeFs = new BrowserNativeFileSystem({ rootHandle: dirHandle });
+    const nativeFs = new BrowserNativeFileSystem({
+      //@ts-ignore-next-line - there are two properties require by the FileSystemDirectoryHandle interface which are not returned from the window.showDirectoryPicker
+      rootHandle: dirHandle
+    });
     await nativeFs.initialize();
 
     // Create and initialize native sync target
@@ -164,8 +167,8 @@ onMounted(initializeBrowserSystem);
             <div class="empty-state">
               <sl-button variant="primary" size="large" @click="addNativeSystem">
                 <template v-slot:prefix>
-<sl-icon  name="folder"></sl-icon>
-</template>
+                  <sl-icon name="folder"></sl-icon>
+                </template>
                 Add Local Directory
               </sl-button>
               <p class="hint">Add a local directory to enable file synchronization</p>

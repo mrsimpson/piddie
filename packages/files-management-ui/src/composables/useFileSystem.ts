@@ -1,5 +1,5 @@
 import { ref, computed } from "vue";
-import type { FileSystem } from "@piddie/shared-types";
+import type { FileSystem, FileSystemItem } from "@piddie/shared-types";
 import type { FileViewModel } from "../types/file-explorer";
 
 export function useFileSystem() {
@@ -31,7 +31,7 @@ export function useFileSystem() {
       }
 
       const entries = await fileSystem.value.listDirectory(path);
-      const metadataPromises = entries.map((entry: FileSystemEntry) =>
+      const metadataPromises = entries.map((entry: FileSystemItem) =>
         fileSystem.value!.getMetadata(entry.path)
       );
 

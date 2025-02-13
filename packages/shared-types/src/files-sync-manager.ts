@@ -108,7 +108,7 @@ interface BaseSyncProgressEvent {
  * Progress event for file collection phase
  */
 interface CollectingProgressEvent extends BaseSyncProgressEvent {
-  type: 'collecting';
+  type: "collecting";
   /** Total number of files to collect */
   totalFiles: number;
   /** Number of files collected so far */
@@ -121,7 +121,7 @@ interface CollectingProgressEvent extends BaseSyncProgressEvent {
  * Progress event for file sync phase
  */
 interface SyncingProgressEvent extends BaseSyncProgressEvent {
-  type: 'syncing';
+  type: "syncing";
   /** Total number of files to sync */
   totalFiles: number;
   /** Number of files synced so far */
@@ -134,7 +134,7 @@ interface SyncingProgressEvent extends BaseSyncProgressEvent {
  * Progress event for file streaming
  */
 interface StreamingProgressEvent extends BaseSyncProgressEvent {
-  type: 'streaming';
+  type: "streaming";
   /** Total size in bytes */
   totalBytes: number;
   /** Number of bytes transferred */
@@ -147,7 +147,7 @@ interface StreamingProgressEvent extends BaseSyncProgressEvent {
  * Progress event for sync completion
  */
 interface CompletionProgressEvent extends BaseSyncProgressEvent {
-  type: 'completing';
+  type: "completing";
   /** Total number of files processed */
   totalFiles: number;
   /** Number of files successfully synced */
@@ -160,13 +160,13 @@ interface CompletionProgressEvent extends BaseSyncProgressEvent {
  * Progress event for sync errors
  */
 interface ErrorProgressEvent extends BaseSyncProgressEvent {
-  type: 'error';
+  type: "error";
   /** The file that caused the error */
   currentFile: string;
   /** The error that occurred */
   error: Error;
   /** Operation phase when error occurred */
-  phase: 'collecting' | 'syncing' | 'streaming';
+  phase: "collecting" | "syncing" | "streaming";
 }
 
 /**
@@ -207,10 +207,10 @@ type SyncManagerStateTransition =
   | { from: "resolving"; to: "ready"; via: "conflictResolved" }
   | { from: "resolving"; to: "ready"; via: "resolutionComplete" }
   | {
-    from: "ready" | "syncing" | "conflict" | "resolving";
-    to: "error";
-    via: "error";
-  }
+      from: "ready" | "syncing" | "conflict" | "resolving";
+      to: "error";
+      via: "error";
+    }
   | { from: "error"; to: "ready"; via: "recovery" };
 
 export const VALID_SYNC_MANAGER_TRANSITIONS: SyncManagerStateTransition[] = [

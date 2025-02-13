@@ -5,7 +5,6 @@ import type {
   FileContentStream,
   FileChangeInfo,
   TargetState,
-  SyncManagerConfig,
   FileSystemItem,
   FileConflict,
   SyncTargetType,
@@ -19,7 +18,8 @@ class MockFileContentStream implements FileContentStream {
   metadata: FileMetadata;
   lastModified: number;
   private content: Uint8Array;
-  getReader: () => ReadableStreamDefaultReader<Uint8Array> = () => this.stream.getReader();
+  getReader: () => ReadableStreamDefaultReader<Uint8Array> = () =>
+    this.stream.getReader();
 
   constructor(content: Uint8Array, metadata: FileMetadata) {
     this.metadata = metadata;
@@ -47,8 +47,10 @@ class MockSyncTarget implements SyncTarget {
   type: SyncTargetType;
   private state: TargetState;
   private watchCallback: ((changes: FileChangeInfo[]) => void) | null = null;
-  private mockFiles: Map<string, { content: Uint8Array; metadata: FileMetadata }> =
-    new Map();
+  private mockFiles: Map<
+    string,
+    { content: Uint8Array; metadata: FileMetadata }
+  > = new Map();
 
   constructor(id: string, type: SyncTargetType) {
     this.id = id;
@@ -111,8 +113,8 @@ class MockSyncTarget implements SyncTarget {
     if (!file) throw new Error(`File not found: ${path}`);
 
     // Return empty content for directories
-    if (file.metadata.type === 'directory') {
-      return new MockFileContentStream(new Uint8Array(), file.metadata,);
+    if (file.metadata.type === "directory") {
+      return new MockFileContentStream(new Uint8Array(), file.metadata);
     }
 
     return new MockFileContentStream(file.content, file.metadata);
@@ -127,7 +129,8 @@ class MockSyncTarget implements SyncTarget {
       return null;
     }
 
-    const isDirectory = changeInfo.metadata.hash === "" && changeInfo.metadata.size === 0;
+    const isDirectory =
+      changeInfo.metadata.hash === "" && changeInfo.metadata.size === 0;
     let content = new Uint8Array();
 
     // Only process content stream for files
@@ -194,27 +197,35 @@ class MockSyncTarget implements SyncTarget {
 
   setMockFile(path: string, content: string, metadata: FileMetadata): void {
     // Create parent directories if they don't exist
-    const parts = path.split('/');
+    const parts = path.split("/");
     if (parts.length > 1) {
-      const dirPath = parts.slice(0, -1).join('/');
+      const dirPath = parts.slice(0, -1).join("/");
       const dirMetadata: FileMetadata = {
         path: dirPath,
-        type: 'directory',
-        hash: '',
+        type: "directory",
+        hash: "",
         size: 0,
         lastModified: Date.now()
       };
-      this.mockFiles.set(dirPath, { content: new Uint8Array(), metadata: dirMetadata });
+      this.mockFiles.set(dirPath, {
+        content: new Uint8Array(),
+        metadata: dirMetadata
+      });
     }
 
     // Set the actual file with correct type
     const fileMetadata = {
       ...metadata,
-      type: metadata.type || (path.includes('.') ? "file" : "directory") as FileMetadata["type"],
+      type:
+        metadata.type ||
+        ((path.includes(".") ? "file" : "directory") as FileMetadata["type"])
     };
     const textEncoder = new TextEncoder();
     const encodedContent = textEncoder.encode(content);
-    this.mockFiles.set(path, { content: encodedContent, metadata: fileMetadata });
+    this.mockFiles.set(path, {
+      content: encodedContent,
+      metadata: fileMetadata
+    });
   }
 }
 
@@ -222,7 +233,6 @@ describe("FileSyncManager", () => {
   let primaryTarget: MockSyncTarget;
   let secondaryTarget1: MockSyncTarget;
   let secondaryTarget2: MockSyncTarget;
-  let config: SyncManagerConfig;
   let manager: FileSyncManager;
   let progressEvents: SyncProgressEvent[];
 
@@ -253,7 +263,6 @@ describe("FileSyncManager", () => {
     primaryTarget = new MockSyncTarget("primary", "node-fs");
     secondaryTarget1 = new MockSyncTarget("secondary1", "browser-fs");
     secondaryTarget2 = new MockSyncTarget("secondary2", "container-fs");
-    config = { inactivityDelay: 1000, maxRetries: 3 };
     manager = new FileSyncManager();
     progressEvents = [];
     await manager.initialize();
@@ -638,7 +647,9 @@ describe("FileSyncManager", () => {
         await manager.handleTargetChanges(secondaryTarget1.id, [change]);
 
         // Then primary should receive changes first
-        const [primaryMetadata] = await primaryTarget.getMetadata([metadata.path]);
+        const [primaryMetadata] = await primaryTarget.getMetadata([
+          metadata.path
+        ]);
         expect(primaryMetadata!.hash).toBe(metadata.hash);
 
         // And other secondary should receive changes after
@@ -692,11 +703,15 @@ describe("FileSyncManager", () => {
         await manager.handleTargetChanges(secondaryTarget1.id, [change]);
 
         // Then primary should have changes
-        const [primaryMetadata] = await primaryTarget.getMetadata([metadata.path]);
+        const [primaryMetadata] = await primaryTarget.getMetadata([
+          metadata.path
+        ]);
         expect(primaryMetadata!.hash).toBe(metadata.hash);
 
         // And secondary2 should receive changes
-        const [secondary2Metadata] = await secondaryTarget2.getMetadata([metadata.path]);
+        const [secondary2Metadata] = await secondaryTarget2.getMetadata([
+          metadata.path
+        ]);
         expect(secondary2Metadata!.hash).toBe(metadata.hash);
       });
     });
@@ -740,8 +755,12 @@ describe("FileSyncManager", () => {
         await manager.fullSyncFromPrimaryToTarget(secondaryTarget1);
 
         // Then the directory should be created before the file
-        const [dirContent] = await secondaryTarget1.getMetadata([dirMetadata.path]);
-        const [fileContent] = await secondaryTarget1.getMetadata([fileMetadata.path]);
+        const [dirContent] = await secondaryTarget1.getMetadata([
+          dirMetadata.path
+        ]);
+        const [fileContent] = await secondaryTarget1.getMetadata([
+          fileMetadata.path
+        ]);
         expect(dirContent!.type).toBe("directory");
         expect(fileContent!.type).toBe("file");
       });
@@ -871,7 +890,9 @@ describe("FileSyncManager", () => {
 
         // Then directory should be created before file in secondary
         const [dirMetadata] = await secondaryTarget1.getMetadata(["nested"]);
-        const [fileMetadata] = await secondaryTarget1.getMetadata(["nested/file.txt"]);
+        const [fileMetadata] = await secondaryTarget1.getMetadata([
+          "nested/file.txt"
+        ]);
         expect(dirMetadata!.type).toBe("directory");
         expect(fileMetadata!.type).toBe("file");
       });
@@ -907,7 +928,7 @@ describe("FileSyncManager", () => {
             type: "delete",
             metadata,
             sourceTarget: primaryTarget.id
-          }
+          };
         });
 
         await manager.handleTargetChanges(primaryTarget.id, deleteChanges);
@@ -958,7 +979,7 @@ describe("FileSyncManager", () => {
               type: "directory",
               hash: "",
               size: 0,
-              lastModified: Date.now(),
+              lastModified: Date.now()
             },
             sourceTarget: primaryTarget.id
           },
@@ -970,7 +991,7 @@ describe("FileSyncManager", () => {
               type: "directory",
               hash: "",
               size: 0,
-              lastModified: Date.now(),
+              lastModified: Date.now()
             },
             sourceTarget: primaryTarget.id
           },
@@ -1015,12 +1036,16 @@ describe("FileSyncManager", () => {
 
         // Creations
         const [dir3Metadata] = await secondaryTarget1.getMetadata(["dir3"]);
-        const [newFileMetadata] = await secondaryTarget1.getMetadata(["dir3/newfile.txt"]);
+        const [newFileMetadata] = await secondaryTarget1.getMetadata([
+          "dir3/newfile.txt"
+        ]);
         expect(dir3Metadata!.type).toBe("directory");
         expect(newFileMetadata!.type).toBe("file");
 
         // Unchanged files should remain
-        const [unchangedMetadata] = await secondaryTarget1.getMetadata(["dir2/file2.txt"]);
+        const [unchangedMetadata] = await secondaryTarget1.getMetadata([
+          "dir2/file2.txt"
+        ]);
         expect(unchangedMetadata!.hash).toBe("hash");
       });
 
@@ -1072,12 +1097,16 @@ describe("FileSyncManager", () => {
         await manager.handleTargetChanges(secondaryTarget1.id, changes);
 
         // Then the primary target should have the new folder
-        const [primaryFolderMetadata] = await primaryTarget.getMetadata([folderPath]);
+        const [primaryFolderMetadata] = await primaryTarget.getMetadata([
+          folderPath
+        ]);
         expect(primaryFolderMetadata!.type).toBe("directory");
         expect(primaryFolderMetadata!.path).toBe(folderPath);
 
         // And the primary target should have the new file within the folder
-        const [primaryFileMetadata] = await primaryTarget.getMetadata([filePath]);
+        const [primaryFileMetadata] = await primaryTarget.getMetadata([
+          filePath
+        ]);
         expect(primaryFileMetadata!.type).toBe("file");
         expect(primaryFileMetadata!.path).toBe(filePath);
         expect(primaryFileMetadata!.hash).toBe(fileMetadata.hash);
@@ -1143,7 +1172,7 @@ describe("FileSyncManager", () => {
 
       // Then old files should be deleted
       for (const file of secondaryFiles) {
-        const metadata = await expect(
+        await expect(
           secondaryTarget1.getMetadata([file.path])
         ).rejects.toThrow();
       }
@@ -1151,7 +1180,9 @@ describe("FileSyncManager", () => {
       // And new files should be copied
       for (const file of primaryFiles) {
         const [metadata] = await secondaryTarget1.getMetadata([file.path]);
-        expect(metadata!.type).toBe(file.path.includes(".") ? "file" : "directory");
+        expect(metadata!.type).toBe(
+          file.path.includes(".") ? "file" : "directory"
+        );
         const content = await secondaryTarget1.getFileContent(file.path);
         const reader = content.stream.getReader();
         const { value, done } = await reader.read();
@@ -1236,8 +1267,12 @@ describe("FileSyncManager", () => {
       await manager.fullSyncFromPrimaryToTarget(secondaryTarget1);
 
       // Then it should have all files from primary
-      const [metadata1] = await secondaryTarget1.getMetadata([file1.metadata.path]);
-      const [metadata2] = await secondaryTarget1.getMetadata([file2.metadata.path]);
+      const [metadata1] = await secondaryTarget1.getMetadata([
+        file1.metadata.path
+      ]);
+      const [metadata2] = await secondaryTarget1.getMetadata([
+        file2.metadata.path
+      ]);
       expect(metadata1!.hash).toBe(file1.metadata.hash);
       expect(metadata2!.hash).toBe(file2.metadata.hash);
     });
@@ -1262,11 +1297,15 @@ describe("FileSyncManager", () => {
       await manager.confirmPrimarySync();
 
       // Then primary should have the changes
-      const [primaryMetadata] = await primaryTarget.getMetadata([metadata.path]);
+      const [primaryMetadata] = await primaryTarget.getMetadata([
+        metadata.path
+      ]);
       expect(primaryMetadata!.hash).toBe(metadata.hash);
 
       // And other secondary should be reinitialized with changes
-      const [secondary2Metadata] = await secondaryTarget2.getMetadata([metadata.path]);
+      const [secondary2Metadata] = await secondaryTarget2.getMetadata([
+        metadata.path
+      ]);
       expect(secondary2Metadata!.hash).toBe(metadata.hash);
     });
   });
@@ -1285,33 +1324,36 @@ describe("FileSyncManager", () => {
 
     it("should emit syncing progress events", async () => {
       // Given a file to sync
-      const { metadata, change, content } = createTestFile("test.txt", "test content");
+      const { metadata, change, content } = createTestFile(
+        "test.txt",
+        "test content"
+      );
       primaryTarget.setMockFile(metadata.path, content, metadata);
 
       // When changes are handled
       await manager.handleTargetChanges(primaryTarget.id, [change]);
 
       // Then syncing events should be emitted
-      const syncingEvents = progressEvents.filter(e => e.type === 'syncing');
+      const syncingEvents = progressEvents.filter((e) => e.type === "syncing");
       expect(syncingEvents.length).toBeGreaterThan(0);
 
       // Verify initial syncing event
       const initialEvent = syncingEvents[0];
       expect(initialEvent).toBeDefined();
       if (initialEvent) {
-        expect(initialEvent.type).toBe('syncing');
+        expect(initialEvent.type).toBe("syncing");
         expect(initialEvent.sourceTargetId).toBe(primaryTarget.id);
         expect(initialEvent.targetId).toBe(secondaryTarget1.id);
         expect(initialEvent.totalFiles).toBe(1);
         expect(initialEvent.syncedFiles).toBe(0);
-        expect(initialEvent.currentFile).toBe('');
+        expect(initialEvent.currentFile).toBe("");
       }
 
       // Verify file syncing event
       const fileEvent = syncingEvents[1];
       expect(fileEvent).toBeDefined();
       if (fileEvent) {
-        expect(fileEvent.currentFile).toBe('test.txt');
+        expect(fileEvent.currentFile).toBe("test.txt");
         expect(fileEvent.syncedFiles).toBe(0);
         expect(fileEvent.totalFiles).toBe(1);
       }
@@ -1320,26 +1362,32 @@ describe("FileSyncManager", () => {
     it.skip("should emit streaming progress events for file content", async () => {
       // Given a larger file to sync
       const content = "x".repeat(1000); // 1KB of content
-      const { metadata, change, content: binaryContent } = createTestFile("large.txt", content);
+      const {
+        metadata,
+        change,
+        content: binaryContent
+      } = createTestFile("large.txt", content);
       primaryTarget.setMockFile(metadata.path, binaryContent, metadata);
 
       // When changes are handled
       await manager.handleTargetChanges(primaryTarget.id, [change]);
 
       // Then streaming events should be emitted
-      const streamingEvents = progressEvents.filter(e => e.type === 'streaming');
+      const streamingEvents = progressEvents.filter(
+        (e) => e.type === "streaming"
+      );
       expect(streamingEvents.length).toBeGreaterThan(0);
 
       // Verify streaming progress
       const streamEvent = streamingEvents[0];
       expect(streamEvent).toBeDefined();
       if (streamEvent) {
-        expect(streamEvent.type).toBe('streaming');
+        expect(streamEvent.type).toBe("streaming");
         expect(streamEvent.sourceTargetId).toBe(primaryTarget.id);
         expect(streamEvent.targetId).toBe(secondaryTarget1.id);
         expect(streamEvent.totalBytes).toBe(metadata.size);
         expect(streamEvent.processedBytes).toBeGreaterThan(0);
-        expect(streamEvent.currentFile).toBe('large.txt');
+        expect(streamEvent.currentFile).toBe("large.txt");
       }
     });
 
@@ -1355,16 +1403,21 @@ describe("FileSyncManager", () => {
       });
 
       // When changes are handled
-      await manager.handleTargetChanges(primaryTarget.id, files.map(f => f.change));
+      await manager.handleTargetChanges(
+        primaryTarget.id,
+        files.map((f) => f.change)
+      );
 
       // Then completion event should be emitted
-      const completionEvents = progressEvents.filter(e => e.type === 'completing');
+      const completionEvents = progressEvents.filter(
+        (e) => e.type === "completing"
+      );
       expect(completionEvents.length).toBe(2); // one for each target
 
       const completionEvent = completionEvents[0];
       expect(completionEvent).toBeDefined();
       if (completionEvent) {
-        expect(completionEvent.type).toBe('completing');
+        expect(completionEvent.type).toBe("completing");
         expect(completionEvent.sourceTargetId).toBe(primaryTarget.id);
         expect(completionEvent.targetId).toBe(secondaryTarget1.id);
         expect(completionEvent.totalFiles).toBe(2);
@@ -1375,29 +1428,34 @@ describe("FileSyncManager", () => {
 
     it("should emit error progress event on failure", async () => {
       // Given a file that will fail to sync
-      const { metadata, change, content } = createTestFile("error.txt", "content");
+      const { metadata, change, content } = createTestFile(
+        "error.txt",
+        "content"
+      );
       primaryTarget.setMockFile(metadata.path, content, metadata);
 
       // And secondary target will fail to apply changes
       const error = new Error("Sync failed");
-      vi.spyOn(secondaryTarget1, "applyFileChange").mockRejectedValueOnce(error);
+      vi.spyOn(secondaryTarget1, "applyFileChange").mockRejectedValueOnce(
+        error
+      );
 
       // When changes are handled
       await manager.handleTargetChanges(primaryTarget.id, [change]);
 
       // Then error event should be emitted
-      const errorEvents = progressEvents.filter(e => e.type === 'error');
+      const errorEvents = progressEvents.filter((e) => e.type === "error");
       expect(errorEvents.length).toBe(2); // the actual file error and the failed sync as a whole
 
       const errorEvent = errorEvents[0];
       expect(errorEvent).toBeDefined();
       if (errorEvent) {
-        expect(errorEvent.type).toBe('error');
+        expect(errorEvent.type).toBe("error");
         expect(errorEvent.sourceTargetId).toBe(primaryTarget.id);
         expect(errorEvent.targetId).toBe(secondaryTarget1.id);
-        expect(errorEvent.currentFile).toBe('error.txt');
+        expect(errorEvent.currentFile).toBe("error.txt");
         expect(errorEvent.error).toBe(error);
-        expect(errorEvent.phase).toBe('streaming');
+        expect(errorEvent.phase).toBe("streaming");
       }
     });
   });
@@ -1532,9 +1590,16 @@ describe("Progress Tracking", () => {
       removeListener();
 
       // Then it should not be called when progress occurs
-      const { metadata, change, content } = createTestFile("test.txt", "test content");
+      const { metadata, change, content } = createTestFile(
+        "test.txt",
+        "test content"
+      );
       const decoder = new TextDecoder();
-      primaryTarget.setMockFile(metadata.path, decoder.decode(content), metadata);
+      primaryTarget.setMockFile(
+        metadata.path,
+        decoder.decode(content),
+        metadata
+      );
       await manager.handleTargetChanges(primaryTarget.id, [change]);
 
       expect(listener).not.toHaveBeenCalled();
@@ -1550,9 +1615,16 @@ describe("Progress Tracking", () => {
       manager.addProgressListener(listener2);
 
       // And progress occurs
-      const { metadata, change, content } = createTestFile("test.txt", "test content");
+      const { metadata, change, content } = createTestFile(
+        "test.txt",
+        "test content"
+      );
       const decoder = new TextDecoder();
-      primaryTarget.setMockFile(metadata.path, decoder.decode(content), metadata);
+      primaryTarget.setMockFile(
+        metadata.path,
+        decoder.decode(content),
+        metadata
+      );
       await manager.handleTargetChanges(primaryTarget.id, [change]);
 
       // Then both should be called
@@ -1572,9 +1644,16 @@ describe("Progress Tracking", () => {
       manager.addProgressListener(goodListener);
 
       // And progress occurs
-      const { metadata, change, content } = createTestFile("test.txt", "test content");
+      const { metadata, change, content } = createTestFile(
+        "test.txt",
+        "test content"
+      );
       const decoder = new TextDecoder();
-      primaryTarget.setMockFile(metadata.path, decoder.decode(content), metadata);
+      primaryTarget.setMockFile(
+        metadata.path,
+        decoder.decode(content),
+        metadata
+      );
       await manager.handleTargetChanges(primaryTarget.id, [change]);
 
       // Then the error should not prevent other listeners from being called

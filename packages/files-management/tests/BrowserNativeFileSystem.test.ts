@@ -54,8 +54,6 @@ interface MockFileSystemFileHandle extends MockFileSystemHandle {
   createWritable: () => Promise<FileSystemWritableFileStream>;
 }
 
-const kAdapter = Symbol.for("kAdapter") as unique symbol;
-
 interface MockFileSystemDirectoryHandle extends MockFileSystemHandle {
   kind: "directory";
   name: string;
@@ -161,7 +159,6 @@ const createMockDirectoryHandle = (
     kind: "directory",
     name,
     path,
-    [kAdapter]: vi.fn(),
     queryPermission: vi.fn().mockImplementation(async ({ mode }) => {
       if (mode === "read") return permissions.read ? "granted" : "denied";
       return permissions.write ? "granted" : "denied";
@@ -299,9 +296,6 @@ const createMockDirectoryHandle = (
           yield [handle.name, handle];
         }
       }
-    }),
-    remove: vi.fn().mockImplementation(async () => {
-      mockState.directories.delete(path);
     }),
     isSameEntry: vi.fn().mockImplementation(async (other) => {
       return other.path === path;

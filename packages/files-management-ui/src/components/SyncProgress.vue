@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue';
-import type { SyncProgressEvent, SyncManager } from '@piddie/shared-types';
+import { ref, onMounted, onBeforeUnmount } from "vue";
+import type { SyncProgressEvent, SyncManager } from "@piddie/shared-types";
 
 const props = defineProps<{
   syncManager: SyncManager;
@@ -21,13 +21,13 @@ function getProgressPercentage(): number {
   if (!currentProgress.value) return 0;
 
   switch (currentProgress.value.type) {
-    case 'syncing':
+    case "syncing":
       return (currentProgress.value.syncedFiles / currentProgress.value.totalFiles) * 100;
     // case 'streaming':
     //   return (currentProgress.value.processedBytes / currentProgress.value.totalBytes) * 100;
     // case 'collecting':
     //   return (currentProgress.value.collectedFiles / currentProgress.value.totalFiles) * 100;
-    case 'completing':
+    case "completing":
       return 100;
     default:
       return 0;
@@ -37,12 +37,12 @@ function getProgressPercentage(): number {
 // Progress listener
 function handleProgress(progress: SyncProgressEvent) {
   currentProgress.value = progress;
-  
+
   // Show progress for all events except completion
-  isVisible.value = progress.type !== 'completing';
-  
+  isVisible.value = progress.type !== "completing";
+
   // Hide progress after completion
-  if (progress.type === 'completing') {
+  if (progress.type === "completing") {
     setTimeout(() => {
       isVisible.value = false;
       currentProgress.value = null;
@@ -61,19 +61,19 @@ onBeforeUnmount(() => {
 
 // Add this function in the script section after formatBytes:
 function getFileName(): string {
-  if (!currentProgress.value) return '';
-  
+  if (!currentProgress.value) return "";
+
   switch (currentProgress.value.type) {
-    case 'syncing':
-    case 'streaming':
-    case 'error':
+    case "syncing":
+    case "streaming":
+    case "error":
       return currentProgress.value.currentFile;
-    case 'collecting':
-      return 'Scanning files...';
-    case 'completing':
-      return 'Finalizing...';
+    case "collecting":
+      return "Scanning files...";
+    case "completing":
+      return "Finalizing...";
     default:
-      return '';
+      return "";
   }
 }
 </script>
@@ -97,7 +97,9 @@ function getFileName(): string {
             {{ currentProgress.syncedFiles }}/{{ currentProgress.totalFiles }} files
           </template>
           <template v-else-if="currentProgress?.type === 'streaming'">
-            {{ formatBytes(currentProgress.processedBytes) }}/{{ formatBytes(currentProgress.totalBytes) }}
+            {{ formatBytes(currentProgress.processedBytes) }}/{{
+              formatBytes(currentProgress.totalBytes)
+            }}
           </template>
           <template v-else-if="currentProgress?.type === 'collecting'">
             {{ currentProgress.collectedFiles }}/{{ currentProgress.totalFiles }} files
@@ -181,4 +183,4 @@ sl-icon {
   margin-right: var(--sl-spacing-2x-small);
   color: var(--sl-color-danger-600);
 }
-</style> 
+</style>

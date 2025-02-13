@@ -183,8 +183,8 @@ async function handleReload() {
       <div v-if="hasExternalChanges" class="external-changes-warning">
         <sl-alert variant="warning" open>
           <template v-slot:icon>
-<sl-icon  name="exclamation-triangle"></sl-icon>
-</template>
+            <sl-icon name="exclamation-triangle"></sl-icon>
+          </template>
           This file has been modified externally. Click 'Reload' to load the latest version (your
           changes will be lost).
         </sl-alert>

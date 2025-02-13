@@ -48,31 +48,6 @@ export interface FileMetadata {
 }
 
 /**
- * Information about a chunk of file content
- */
-export interface FileChunk {
-  /**
-   * Content of this chunk
-   */
-  content: string;
-
-  /**
-   * Index of this chunk (0-based)
-   */
-  chunkIndex: number;
-
-  /**
-   * Total number of chunks for this file
-   */
-  totalChunks: number;
-
-  /**
-   * Hash of this chunk for verification
-   */
-  chunkHash: string;
-}
-
-/**
  * Stream of file content with metadata
  */
 export interface FileContentStream {

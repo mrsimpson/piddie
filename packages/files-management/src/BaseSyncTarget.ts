@@ -431,9 +431,7 @@ export abstract class BaseSyncTarget implements SyncTarget {
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       start(controller) {
-        controller.enqueue(
-          encoder.encode(content),
-        );
+        controller.enqueue(encoder.encode(content));
         controller.close();
       }
     });
@@ -463,12 +461,12 @@ export abstract class BaseSyncTarget implements SyncTarget {
       };
       filter?: (change: FileChangeInfo) => boolean;
     } = {
-        priority: WATCHER_PRIORITIES.OTHER,
-        metadata: {
-          registeredBy: "external",
-          type: "other-watcher"
-        }
+      priority: WATCHER_PRIORITIES.OTHER,
+      metadata: {
+        registeredBy: "external",
+        type: "other-watcher"
       }
+    }
   ): Promise<void> {
     const watcherOptions: WatcherOptions = {
       priority: options.priority ?? WATCHER_PRIORITIES.OTHER,
