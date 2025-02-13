@@ -1,6 +1,6 @@
 import { createApp } from "vue";
 import DemoApp from "./demo/DemoApp.vue";
-//@ts-ignore-next-line - don't know why this is not working – I can find the types and at runtime it works
+//@ts-expect-error - don't know why this is not working – I can find the types and at runtime it works
 import { setBasePath } from "@shoelace-style/shoelace/dist/utilities/base-path";
 import "./assets/main.css";
 
