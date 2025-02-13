@@ -451,11 +451,118 @@ The sync system uses a primary target overwrite strategy to maintain consistency
 
 This approach ensures that the system can always return to a consistent state through a well-defined process, with the primary target serving as the ultimate source of truth.
 
+## Progress Indication
+
+The sync system provides comprehensive progress tracking through a flexible event system. Progress events are emitted during various phases of the synchronization process:
+
+### Progress Event Types
+
+1. **Collecting**
+
+   ```typescript
+   {
+     type: "collecting";
+     totalFiles: number;
+     collectedFiles: number;
+     currentFile: string;
+   }
+   ```
+
+   Emitted during the initial phase when gathering files to sync.
+
+2. **Syncing**
+
+   ```typescript
+   {
+     type: "syncing";
+     totalFiles: number;
+     syncedFiles: number;
+     currentFile: string;
+   }
+   ```
+
+   Emitted for each file being synchronized between targets.
+
+3. **Streaming**
+
+   ```typescript
+   {
+     type: "streaming";
+     totalBytes: number;
+     processedBytes: number;
+     currentFile: string;
+   }
+   ```
+
+   Emitted during file content transfer, providing byte-level progress.
+
+4. **Completing**
+
+   ```typescript
+   {
+     type: "completing";
+     totalFiles: number;
+     successfulFiles: number;
+     failedFiles: number;
+   }
+   ```
+
+   Emitted when synchronization is finishing, summarizing results.
+
+5. **Error**
+   ```typescript
+   {
+     type: "error";
+     currentFile: string;
+     error: Error;
+     phase: "collecting" | "syncing" | "streaming";
+   }
+   ```
+   Emitted when an error occurs during any phase.
+
+### Progress Tracking Usage
+
+```typescript
+// Add a progress listener
+const removeListener = syncManager.addProgressListener((progress) => {
+  switch (progress.type) {
+    case "collecting":
+      console.log(
+        `Collecting files: ${progress.collectedFiles}/${progress.totalFiles}`
+      );
+      break;
+    case "syncing":
+      console.log(
+        `Syncing ${progress.currentFile}: ${progress.syncedFiles}/${progress.totalFiles} files`
+      );
+      break;
+    case "streaming":
+      console.log(
+        `Transferring ${progress.currentFile}: ${progress.processedBytes}/${progress.totalBytes} bytes`
+      );
+      break;
+    case "completing":
+      console.log(
+        `Sync complete: ${progress.successfulFiles}/${progress.totalFiles} files succeeded`
+      );
+      break;
+    case "error":
+      console.error(
+        `Error in ${progress.phase} phase: ${progress.error.message}`
+      );
+      break;
+  }
+});
+
+// Later: Remove the listener when no longer needed
+removeListener();
+```
+
 ## Large File Handling
 
-The system uses a streaming approach to handle large files efficiently, separating metadata from content.
+The system uses native ReadableStream for efficient file transfer, providing built-in streaming capabilities:
 
-### File Change Flow
+### File Transfer Flow
 
 ```mermaid
 sequenceDiagram
@@ -468,40 +575,12 @@ sequenceDiagram
     Note over SM: Collect changes
 
     SM->>ST: Request content stream
+    ST-->>SM: Return ReadableStream
+    SM->>DT: Forward stream
+    Note over DT: Apply changes
 
-    loop Streaming
-        ST->>SM: Stream chunk
-        SM->>DT: Forward chunk
-        Note over DT: Verify chunk hash
-    end
-
-    Note over DT: Verify complete file hash
     DT-->>SM: Sync result
 ```
-
-### Metadata and Streaming
-
-1. **Change Detection**
-
-   ```mermaid
-   graph TD
-       A[File Change] --> B[Extract Metadata]
-       B --> C[Calculate Hash]
-       B --> D[Determine Size]
-       C --> E[Report to Manager]
-       D --> E
-   ```
-
-2. **Content Transfer**
-   ```mermaid
-   graph TD
-       A[Request Content] --> B[Create Stream]
-       B --> C[Read Chunk]
-       C --> D{More Data?}
-       D -->|Yes| E[Send Chunk]
-       E --> C
-       D -->|No| F[Close Stream]
-   ```
 
 ### Key Components
 
@@ -515,46 +594,15 @@ sequenceDiagram
 
 2. **Content Streaming**
 
-   - Chunk-based transfer
-   - Individual chunk hashes
+   - Native ReadableStream support
    - Progress tracking
    - Resource management
    - Memory efficient
 
 3. **Verification**
-   - Per-chunk hash verification
    - Complete file hash validation
    - Size verification
    - Atomic operations
-
-### Implementation Details
-
-```mermaid
-sequenceDiagram
-    participant SM as Sync Manager
-    participant ST as Source Target
-    participant DT as Destination Target
-
-    Note over SM,DT: Change Detection
-    ST->>SM: FileMetadata[]
-
-    Note over SM,DT: Content Transfer
-    SM->>ST: getFileContent(path)
-    activate ST
-    ST-->>SM: FileContentStream
-
-    loop For each chunk
-        SM->>ST: readNextChunk()
-        ST-->>SM: FileChunk
-        SM->>DT: applyFileChange()
-        Note over DT: Verify chunk
-    end
-
-    deactivate ST
-
-    Note over DT: Verify complete file
-    DT-->>SM: Sync result
-```
 
 ### Benefits
 
@@ -566,9 +614,9 @@ sequenceDiagram
 
 2. **Progress Tracking**
 
-   - Chunk-level progress
-   - Size-based progress
+   - Byte-level progress
    - Time estimation
+   - Detailed status updates
 
 3. **Data Integrity**
 
@@ -580,27 +628,6 @@ sequenceDiagram
    - Controlled streaming
    - Proper cleanup
    - Error handling
-
-### Error Handling
-
-1. **Stream Failures**
-
-   ```mermaid
-   graph TD
-       A[Stream Error] --> B{Error Type}
-       B -->|Read| C[Source Error]
-       B -->|Write| D[Destination Error]
-       B -->|Transfer| E[Network Error]
-       C --> F[Cleanup & Retry]
-       D --> F
-       E --> F
-   ```
-
-2. **Recovery Strategies**
-   - Chunk retry
-   - Stream restart
-   - Partial file recovery
-   - Clean rollback
 
 ## Git Operations
 
