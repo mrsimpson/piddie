@@ -6,12 +6,17 @@ import type { FileConflict } from "./files-sync-target";
  * Configuration for the file management service
  */
 export interface FileManagementConfig {
-  paths?: {
-    include: string[];
-    ignore: string[];
-  };
+  /**
+   * Sync configuration
+   */
   sync?: {
+    /**
+     * Delay in milliseconds before syncing after detecting changes
+     */
     inactivityDelay: number;
+    /**
+     * Maximum number of changes to process in a single batch
+     */
     maxBatchSize: number;
   };
 }

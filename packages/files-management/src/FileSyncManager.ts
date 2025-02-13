@@ -11,10 +11,12 @@ import type {
   FileConflict,
   SyncManagerStateType,
   SyncProgressEvent,
-  SyncProgressListener
+  SyncProgressListener,
+  IgnoreService
 } from "@piddie/shared-types";
 import { VALID_SYNC_MANAGER_TRANSITIONS } from "@piddie/shared-types";
 import { WATCHER_PRIORITIES } from "@piddie/shared-types";
+import { DefaultIgnoreService } from "./DefaultIgnoreService";
 
 /**
  * Result of applying changes to a target
@@ -43,6 +45,7 @@ export class FileSyncManager implements SyncManager {
   private activeWatchers: Map<string, () => Promise<void>> = new Map();
   private currentState: SyncManagerStateType = "uninitialized";
   private progressListeners: Set<SyncProgressListener> = new Set();
+  private ignoreService: IgnoreService;
 
   validateStateTransition(
     from: SyncManagerStateType,
@@ -354,6 +357,20 @@ export class FileSyncManager implements SyncManager {
       // Process changes sequentially to maintain hierarchy
       for (const change of orderedChanges) {
         try {
+          // Skip ignored files
+          try {
+            if (this.ignoreService.isIgnored(change.path)) {
+              console.debug(`Skipping ignored file: ${change.path}`);
+              continue;
+            }
+          } catch (error) {
+            // Log error but don't block operations if ignore check fails
+            console.error(
+              `Error checking ignore pattern for ${change.path}:`,
+              error
+            );
+          }
+
           // Emit progress for current file
           this.emitProgress({
             type: "syncing",
@@ -450,10 +467,32 @@ export class FileSyncManager implements SyncManager {
     try {
       const primary = this.primaryTarget; // Store reference to avoid null checks
       // Get all paths from primary first to know what changes are coming
-      const filesInPrimary = await this.getAllPaths(primary);
+      const allPaths = await this.getAllPaths(primary);
+
+      // Filter out ignored paths
+      const filesInPrimary = allPaths.filter((path) => {
+        try {
+          return !this.ignoreService.isIgnored(path);
+        } catch (error) {
+          // Log error but don't block operations if ignore check fails
+          console.error(`Error checking ignore pattern for ${path}:`, error);
+          return true; // Include file if ignore check fails
+        }
+      });
 
       // First, get all existing files in the target and delete them
-      const existingFilesInTarget = await this.getAllPaths(target);
+      const allExistingPaths = await this.getAllPaths(target);
+
+      // Filter out ignored paths from existing files
+      const existingFilesInTarget = allExistingPaths.filter((path) => {
+        try {
+          return !this.ignoreService.isIgnored(path);
+        } catch (error) {
+          // Log error but don't block operations if ignore check fails
+          console.error(`Error checking ignore pattern for ${path}:`, error);
+          return true; // Include file if ignore check fails
+        }
+      });
 
       // Notify target about incoming changes
       if (filesInPrimary.length === 0 && existingFilesInTarget.length === 0) {
@@ -665,9 +704,29 @@ export class FileSyncManager implements SyncManager {
       );
     }
 
+    // Filter out ignored files
+    const filteredChanges = changes.filter((change) => {
+      try {
+        return !this.ignoreService.isIgnored(change.path);
+      } catch (error) {
+        // Log error but don't block operations if ignore check fails
+        console.error(
+          `Error checking ignore pattern for ${change.path}:`,
+          error
+        );
+        return true; // Include file if ignore check fails
+      }
+    });
+
+    // If all changes are ignored, return early
+    if (filteredChanges.length === 0) {
+      this.transitionTo("ready", "syncComplete");
+      return;
+    }
+
     const state: SyncOperationState = {
       sourceTarget,
-      changes,
+      changes: filteredChanges,
       results: []
     };
 
@@ -676,11 +735,13 @@ export class FileSyncManager implements SyncManager {
         // Changes from primary - propagate to all secondaries
         for (const target of this.secondaryTargets.values()) {
           // Notify target about incoming changes
-          await target.notifyIncomingChanges(changes.map((c) => c.path));
+          await target.notifyIncomingChanges(
+            filteredChanges.map((c) => c.path)
+          );
           const result = await this.applyChangesToTarget(
             target,
             sourceTarget,
-            changes
+            filteredChanges
           );
           if (result.success) {
             await target.syncComplete();
@@ -690,12 +751,12 @@ export class FileSyncManager implements SyncManager {
       } else {
         // Changes from secondary - sync to primary first
         await this.primaryTarget.notifyIncomingChanges(
-          changes.map((c) => c.path)
+          filteredChanges.map((c) => c.path)
         );
         const primaryResult = await this.applyChangesToTarget(
           this.primaryTarget,
           sourceTarget,
-          changes
+          filteredChanges
         );
         if (primaryResult.success) {
           await this.primaryTarget.syncComplete();
@@ -706,11 +767,13 @@ export class FileSyncManager implements SyncManager {
         if (primaryResult.success) {
           for (const target of this.secondaryTargets.values()) {
             if (target !== sourceTarget) {
-              await target.notifyIncomingChanges(changes.map((c) => c.path));
+              await target.notifyIncomingChanges(
+                filteredChanges.map((c) => c.path)
+              );
               const result = await this.applyChangesToTarget(
                 target,
                 this.primaryTarget,
-                changes
+                filteredChanges
               );
               if (result.success) {
                 await target.syncComplete();
@@ -895,7 +958,9 @@ export class FileSyncManager implements SyncManager {
     return result;
   }
 
-  async initialize(): Promise<void> {
+  async initialize(
+    ignoreService: IgnoreService = new DefaultIgnoreService()
+  ): Promise<void> {
     // Verify all targets are initialized
     if (
       this.primaryTarget &&
@@ -915,6 +980,9 @@ export class FileSyncManager implements SyncManager {
         );
       }
     }
+
+    this.ignoreService = ignoreService;
+    console.log(this.ignoreService.getPatterns());
 
     this.transitionTo("ready", "initialize");
   }

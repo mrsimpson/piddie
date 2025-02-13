@@ -8,7 +8,8 @@ import type {
   FileSystemItem,
   FileConflict,
   SyncTargetType,
-  SyncProgressEvent
+  SyncProgressEvent,
+  IgnoreService
 } from "@piddie/shared-types";
 import { SyncManagerError, SyncManagerStateType } from "@piddie/shared-types";
 import { FileSyncManager } from "../src/FileSyncManager";
@@ -1659,6 +1660,163 @@ describe("Progress Tracking", () => {
       // Then the error should not prevent other listeners from being called
       expect(errorListener).toHaveBeenCalled();
       expect(goodListener).toHaveBeenCalled();
+    });
+  });
+});
+
+describe("FileSyncManager with IgnoreService", () => {
+  let primaryTarget: MockSyncTarget;
+  let secondaryTarget: MockSyncTarget;
+  let manager: FileSyncManager;
+  let ignoreService: IgnoreService;
+
+  beforeEach(async () => {
+    // Create mock targets
+    primaryTarget = new MockSyncTarget("primary", "node-fs");
+    secondaryTarget = new MockSyncTarget("secondary", "browser-fs");
+    primaryTarget.getState().status = "idle";
+    secondaryTarget.getState().status = "idle";
+
+    // Create mock IgnoreService
+    ignoreService = {
+      isIgnored: vi.fn(),
+      setPatterns: vi.fn(),
+      getPatterns: vi.fn()
+    };
+    // Initialize manager with ignore service
+    manager = new FileSyncManager();
+    await manager.initialize(ignoreService);
+    await manager.registerTarget(primaryTarget, { role: "primary" });
+    await manager.registerTarget(secondaryTarget, { role: "secondary" });
+  });
+
+  describe("Initialization", () => {
+    it("should initialize with pre-configured ignore service", async () => {
+      // Given a pre-configured ignore service
+      const patterns = ["*.tmp", "node_modules/**"];
+      (ignoreService.getPatterns as ReturnType<typeof vi.fn>).mockReturnValue(
+        patterns
+      );
+
+      // When initializing a new manager
+      const newManager = new FileSyncManager();
+      await newManager.initialize(ignoreService);
+
+      // Then the service should be used as-is
+      expect(ignoreService.setPatterns).not.toHaveBeenCalled();
+      expect(ignoreService.getPatterns).toHaveBeenCalled();
+    });
+  });
+
+  describe("Change Detection", () => {
+    it("should use ignore service to filter changes", async () => {
+      // Given a configured ignore service
+      (ignoreService.isIgnored as ReturnType<typeof vi.fn>).mockImplementation(
+        (path: string) => {
+          return path.endsWith(".tmp") || path.startsWith("node_modules/");
+        }
+      );
+
+      // And some test files in the primary target
+      const files = [
+        { path: "test.tmp", content: "temp content" },
+        { path: "node_modules/package/index.js", content: "module content" },
+        { path: "src/main.ts", content: "source content" }
+      ];
+
+      files.forEach((file) => {
+        primaryTarget.setMockFile(file.path, file.content, {
+          path: file.path,
+          type: "file",
+          hash: "mock-hash",
+          size: file.content.length,
+          lastModified: Date.now()
+        });
+      });
+
+      // When primary reports changes
+      const changes = files.map((file) => ({
+        path: file.path,
+        type: "create" as const,
+        sourceTarget: primaryTarget.id,
+        metadata: {
+          path: file.path,
+          type: "file" as const,
+          hash: "mock-hash",
+          size: file.content.length,
+          lastModified: Date.now()
+        }
+      }));
+
+      await manager.handleTargetChanges(primaryTarget.id, changes);
+
+      // Then ignore service should be consulted for each file
+      expect(ignoreService.isIgnored).toHaveBeenCalledWith("test.tmp");
+      expect(ignoreService.isIgnored).toHaveBeenCalledWith(
+        "node_modules/package/index.js"
+      );
+      expect(ignoreService.isIgnored).toHaveBeenCalledWith("src/main.ts");
+
+      // And only non-ignored files should be synced to secondary
+      await expect(
+        secondaryTarget.getFileContent("test.tmp")
+      ).rejects.toThrow();
+      await expect(
+        secondaryTarget.getFileContent("node_modules/package/index.js")
+      ).rejects.toThrow();
+      const [mainContent] = await secondaryTarget.getMetadata(["src/main.ts"]);
+      expect(mainContent).toBeDefined();
+      expect(mainContent!.hash).toBe("mock-hash");
+    });
+  });
+
+  describe("Error Handling", () => {
+    it("should handle ignore service errors gracefully", async () => {
+      // Given an ignore service that throws errors
+      (ignoreService.isIgnored as ReturnType<typeof vi.fn>).mockImplementation(
+        () => {
+          throw new Error("Invalid pattern");
+        }
+      );
+
+      // And a test file in primary
+      const testFile = {
+        path: "test.ts",
+        content: "test content",
+        metadata: {
+          path: "test.ts",
+          type: "file" as const,
+          hash: "mock-hash",
+          size: 11,
+          lastModified: Date.now()
+        }
+      };
+
+      primaryTarget.setMockFile(
+        testFile.path,
+        testFile.content,
+        testFile.metadata
+      );
+
+      // When primary reports changes
+      const change = {
+        path: testFile.path,
+        type: "create" as const,
+        sourceTarget: primaryTarget.id,
+        metadata: testFile.metadata
+      };
+
+      // Then it should not throw and process the change
+      await expect(
+        manager.handleTargetChanges(primaryTarget.id, [change])
+      ).resolves.not.toThrow();
+
+      // And the file should be synced despite the ignore service error
+      const [syncedMetadata] = await secondaryTarget.getMetadata([
+        testFile.path
+      ]);
+      expect(syncedMetadata).toBeDefined();
+      expect(syncedMetadata!.hash).toBe(testFile.metadata.hash);
     });
   });
 });

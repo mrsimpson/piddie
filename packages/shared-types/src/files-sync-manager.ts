@@ -45,21 +45,6 @@ export interface PendingSync {
 }
 
 /**
- * Configuration for the sync manager
- */
-export interface SyncManagerConfig {
-  /**
-   * Delay in ms to wait for more changes before starting sync
-   */
-  inactivityDelay: number;
-
-  /**
-   * Maximum number of retries for failed sync operations
-   */
-  maxRetries: number;
-}
-
-/**
  * Represents the current phase of synchronization
  */
 export type SyncPhase =
@@ -207,10 +192,10 @@ type SyncManagerStateTransition =
   | { from: "resolving"; to: "ready"; via: "conflictResolved" }
   | { from: "resolving"; to: "ready"; via: "resolutionComplete" }
   | {
-      from: "ready" | "syncing" | "conflict" | "resolving";
-      to: "error";
-      via: "error";
-    }
+    from: "ready" | "syncing" | "conflict" | "resolving";
+    to: "error";
+    via: "error";
+  }
   | { from: "error"; to: "ready"; via: "recovery" };
 
 export const VALID_SYNC_MANAGER_TRANSITIONS: SyncManagerStateTransition[] = [
@@ -229,7 +214,31 @@ export const VALID_SYNC_MANAGER_TRANSITIONS: SyncManagerStateTransition[] = [
 ];
 
 /**
- * Interface for sync manager
+ * Service for managing file ignore patterns
+ */
+export interface IgnoreService {
+  /**
+   * Check if a path should be ignored
+   * @param path The path to check
+   * @returns true if the path should be ignored
+   */
+  isIgnored(path: string): boolean;
+
+  /**
+   * Set ignore patterns
+   * @param patterns Array of gitignore-style patterns
+   */
+  setPatterns(patterns: string[]): void;
+
+  /**
+   * Get current patterns
+   * @returns Array of current patterns
+   */
+  getPatterns(): string[];
+}
+
+/**
+ * Interface for the sync manager that coordinates sync operations
  */
 export interface SyncManager {
   /**
@@ -299,10 +308,10 @@ export interface SyncManager {
 
   /**
    * Initialize the sync manager
-   * Verifies all targets are in valid state
-   * @throws {SyncManagerError} if any target is in error state
+   * @param config Configuration for the sync manager
+   * @param ignoreService Service for managing ignored files
    */
-  initialize(): Promise<void>;
+  initialize(ignoreService: IgnoreService): Promise<void>;
 
   /**
    * Clean up resources

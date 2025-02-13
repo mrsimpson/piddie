@@ -5,6 +5,7 @@ import type {
   FileManagementService as IFileManagementService,
   SyncTarget
 } from "@piddie/shared-types";
+import { DefaultIgnoreService } from "./DefaultIgnoreService";
 
 /**
  * Factory configuration for creating a FileManagementService
@@ -84,7 +85,7 @@ export class FileManagementService implements IFileManagementService {
     await primaryTarget.initialize(this._fileSystem, true);
 
     // Initialize sync manager with config
-    await this._syncManager.initialize();
+    await this._syncManager.initialize(new DefaultIgnoreService());
 
     this._initialized = true;
   }

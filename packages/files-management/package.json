@@ -19,9 +19,11 @@
   "dependencies": {
     "@isomorphic-git/lightning-fs": "4.6.0",
     "@piddie/shared-types": "workspace:*",
-    "native-file-system-adapter": "3.0.1"
+    "native-file-system-adapter": "3.0.1",
+    "ignore": "^7.0.3"
   },
   "devDependencies": {
-    "typescript": "~5.3.3"
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0"
   }
 }
