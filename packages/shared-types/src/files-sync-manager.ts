@@ -192,10 +192,10 @@ type SyncManagerStateTransition =
   | { from: "resolving"; to: "ready"; via: "conflictResolved" }
   | { from: "resolving"; to: "ready"; via: "resolutionComplete" }
   | {
-    from: "ready" | "syncing" | "conflict" | "resolving";
-    to: "error";
-    via: "error";
-  }
+      from: "ready" | "syncing" | "conflict" | "resolving";
+      to: "error";
+      via: "error";
+    }
   | { from: "error"; to: "ready"; via: "recovery" };
 
 export const VALID_SYNC_MANAGER_TRANSITIONS: SyncManagerStateTransition[] = [

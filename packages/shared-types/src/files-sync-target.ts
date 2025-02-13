@@ -116,10 +116,7 @@ export interface SyncTarget {
    * @param isPrimary Whether this is the primary target
    * @throws {Error} if initialization fails
    */
-  initialize(
-    fileSystem: FileSystem,
-    isPrimary: boolean
-  ): Promise<void>;
+  initialize(fileSystem: FileSystem, isPrimary: boolean): Promise<void>;
 
   /**
    * Set the ignore service for this target

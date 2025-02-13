@@ -15,10 +15,12 @@ import FileExplorer from "../components/FileExplorer.vue";
 import ErrorDisplay from "../components/ErrorDisplay.vue";
 import { handleUIError } from "../utils/error-handling";
 import SyncProgress from "../components/SyncProgress.vue";
+import IgnorePatternsModal from "../components/IgnorePatternsModal.vue";
 
 const COMPONENT_ID = "DemoApp";
 const systems = ref<SynchronizedFileSystem[]>([]);
 const syncManager = new FileSyncManager();
+const showIgnorePatterns = ref(false);
 
 // Monitor sync status
 function monitorSync() {
@@ -153,7 +155,13 @@ onMounted(initializeBrowserSystem);
 <template>
   <div class="demo-app">
     <header>
-      <h1>File Management Demo</h1>
+      <div class="header-content">
+        <h1>File Management Demo</h1>
+        <sl-button variant="neutral" size="small" @click="showIgnorePatterns = true">
+          <sl-icon slot="prefix" name="filter"></sl-icon>
+          Show Ignore Patterns
+        </sl-button>
+      </div>
     </header>
 
     <main>
@@ -179,6 +187,11 @@ onMounted(initializeBrowserSystem);
 
     <ErrorDisplay />
     <SyncProgress :sync-manager="syncManager" />
+    <IgnorePatternsModal
+      :sync-manager="syncManager"
+      :open="showIgnorePatterns"
+      @sl-after-hide="showIgnorePatterns = false"
+    />
   </div>
 </template>
 
@@ -192,6 +205,12 @@ onMounted(initializeBrowserSystem);
 
 header {
   margin-bottom: var(--sl-spacing-medium);
+}
+
+.header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 h1 {

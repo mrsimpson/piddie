@@ -194,6 +194,62 @@ graph TD
     PT --> ST3[Secondary Target 3]
 ```
 
+### Ignore Mechanism
+
+The sync system includes a flexible ignore mechanism that allows excluding files and directories from synchronization based on patterns. This is implemented through a dedicated `IgnoreService` that follows these principles:
+
+1. **Centralized Pattern Management**
+
+   ```mermaid
+   graph TD
+       IS[Ignore Service] --> PT[Primary Target]
+       IS --> ST1[Secondary Target 1]
+       IS --> ST2[Secondary Target 2]
+       IS[Ignore Service] --> FSM[File Sync Manager]
+   ```
+
+2. **Pattern Application Points**
+
+   - During file watching to prevent change detection for ignored files
+   - During sync operations to skip ignored files
+   - During full target synchronization
+   - At both source and destination targets
+
+3. **Hierarchical Filtering**
+
+   ```mermaid
+   graph TD
+       subgraph "Ignore Flow"
+           FD[File Detected] --> IC{Is Ignored?}
+           IC -->|Yes| Skip[Skip File]
+           IC -->|No| Process[Process Change]
+           Process --> Sync[Sync to Targets]
+           Sync --> TIC{Is Ignored?}
+           TIC -->|Yes| SkipTarget[Skip Target]
+           TIC -->|No| Apply[Apply Change]
+       end
+   ```
+
+4. **Error Handling**
+
+   - Graceful degradation if ignore checks fail
+   - Logging of pattern matching errors
+   - Fallback to including files if pattern check fails
+   - Non-blocking operation to maintain sync reliability
+
+5. **Pattern Propagation**
+   - Patterns are set at the manager level
+   - Automatically propagated to all targets during registration
+   - Updated across all targets when patterns change
+   - Maintained consistently across the sync system
+
+This mechanism ensures that:
+
+- Files matching ignore patterns are consistently excluded across the system
+- Performance is optimized by filtering early in the sync process
+- The system remains robust even if ignore pattern matching fails
+- Ignore patterns can be updated without disrupting active synchronization
+
 ### Sync States
 
 ```mermaid

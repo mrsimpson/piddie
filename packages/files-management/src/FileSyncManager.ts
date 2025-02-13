@@ -45,7 +45,7 @@ export class FileSyncManager implements SyncManager {
   private activeWatchers: Map<string, () => Promise<void>> = new Map();
   private currentState: SyncManagerStateType = "uninitialized";
   private progressListeners: Set<SyncProgressListener> = new Set();
-  private ignoreService: IgnoreService;
+  private ignoreService: IgnoreService = new DefaultIgnoreService();
 
   validateStateTransition(
     from: SyncManagerStateType,
@@ -1022,5 +1022,15 @@ export class FileSyncManager implements SyncManager {
       this.transitionTo("error", "error");
       throw error;
     }
+  }
+
+  /**
+   * Get the current ignore patterns from the ignore service
+   */
+  getIgnorePatterns(): string[] {
+    if (!this.ignoreService) {
+      return [];
+    }
+    return this.ignoreService.getPatterns();
   }
 }
