@@ -13,6 +13,7 @@ import type {
 } from "@piddie/shared-types";
 import { SyncManagerError, SyncManagerStateType } from "@piddie/shared-types";
 import { FileSyncManager } from "../src/FileSyncManager";
+import { DefaultIgnoreService } from "../src/DefaultIgnoreService";
 
 class MockFileContentStream implements FileContentStream {
   stream: ReadableStream<Uint8Array>;
@@ -52,6 +53,8 @@ class MockSyncTarget implements SyncTarget {
     string,
     { content: Uint8Array; metadata: FileMetadata }
   > = new Map();
+
+  setIgnoreService = vi.fn();
 
   constructor(id: string, type: SyncTargetType) {
     this.id = id;
@@ -228,6 +231,11 @@ class MockSyncTarget implements SyncTarget {
       metadata: fileMetadata
     });
   }
+}
+
+// Helper function to create mock targets
+function createMockTarget(id: string): MockSyncTarget {
+  return new MockSyncTarget(id, "node-fs");
 }
 
 describe("FileSyncManager", () => {
@@ -1460,6 +1468,54 @@ describe("FileSyncManager", () => {
       }
     });
   });
+
+  describe("Ignore Service Propagation", () => {
+    it("should propagate ignore service to targets during initialization", async () => {
+      const mockPrimary = createMockTarget("primary");
+      const mockSecondary = createMockTarget("secondary");
+      const mockIgnoreService = new DefaultIgnoreService();
+
+      const manager = new FileSyncManager();
+      await manager.registerTarget(mockPrimary, { role: "primary" });
+      await manager.registerTarget(mockSecondary, { role: "secondary" });
+      await manager.initialize(mockIgnoreService);
+
+      expect(mockPrimary.setIgnoreService).toHaveBeenCalledWith(
+        mockIgnoreService
+      );
+      expect(mockSecondary.setIgnoreService).toHaveBeenCalledWith(
+        mockIgnoreService
+      );
+    });
+
+    it("should propagate ignore service to new targets after initialization", async () => {
+      const mockPrimary = createMockTarget("primary");
+      const mockIgnoreService = new DefaultIgnoreService();
+
+      const manager = new FileSyncManager();
+      await manager.registerTarget(mockPrimary, { role: "primary" });
+      await manager.initialize(mockIgnoreService);
+
+      const mockSecondary = createMockTarget("secondary");
+      await manager.registerTarget(mockSecondary, { role: "secondary" });
+
+      expect(mockSecondary.setIgnoreService).toHaveBeenCalledWith(
+        mockIgnoreService
+      );
+    });
+
+    it("should not propagate ignore service to targets before initialization", async () => {
+      const mockPrimary = createMockTarget("primary");
+      const mockSecondary = createMockTarget("secondary");
+
+      const manager = new FileSyncManager();
+      await manager.registerTarget(mockPrimary, { role: "primary" });
+      await manager.registerTarget(mockSecondary, { role: "secondary" });
+
+      expect(mockPrimary.setIgnoreService).not.toHaveBeenCalled();
+      expect(mockSecondary.setIgnoreService).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe("Resource Management with uninitialized sync manager", () => {
@@ -1685,9 +1741,9 @@ describe("FileSyncManager with IgnoreService", () => {
     };
     // Initialize manager with ignore service
     manager = new FileSyncManager();
+    manager.registerTarget(primaryTarget, { role: "primary" });
+    manager.registerTarget(secondaryTarget, { role: "secondary" });
     await manager.initialize(ignoreService);
-    await manager.registerTarget(primaryTarget, { role: "primary" });
-    await manager.registerTarget(secondaryTarget, { role: "secondary" });
   });
 
   describe("Initialization", () => {
@@ -1704,7 +1760,8 @@ describe("FileSyncManager with IgnoreService", () => {
 
       // Then the service should be used as-is
       expect(ignoreService.setPatterns).not.toHaveBeenCalled();
-      expect(ignoreService.getPatterns).toHaveBeenCalled();
+      expect(primaryTarget.setIgnoreService).toHaveBeenCalled();
+      expect(secondaryTarget.setIgnoreService).toHaveBeenCalled();
     });
   });
 

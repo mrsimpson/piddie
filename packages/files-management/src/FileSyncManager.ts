@@ -559,6 +559,11 @@ export class FileSyncManager implements SyncManager {
     // Run synchronous validations first
     this.validateTarget(target, options);
 
+    // Set ignore service if already initialized
+    if (this.currentState !== "uninitialized" && this.ignoreService) {
+      target.setIgnoreService(this.ignoreService);
+    }
+
     if (options.role === "primary") {
       // Set primary target first
       this.primaryTarget = target;
@@ -982,7 +987,14 @@ export class FileSyncManager implements SyncManager {
     }
 
     this.ignoreService = ignoreService;
-    console.log(this.ignoreService.getPatterns());
+
+    // Propagate ignore service to all targets
+    if (this.primaryTarget) {
+      this.primaryTarget.setIgnoreService(this.ignoreService);
+    }
+    for (const target of this.secondaryTargets.values()) {
+      target.setIgnoreService(this.ignoreService);
+    }
 
     this.transitionTo("ready", "initialize");
   }

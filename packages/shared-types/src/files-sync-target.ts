@@ -5,6 +5,7 @@ import type {
   FileContentStream,
   FileSystemItem
 } from "./file-system";
+import type { IgnoreService } from "./files-sync-manager";
 
 /**
  * Information about a file change
@@ -110,10 +111,21 @@ export interface SyncTarget {
   type: SyncTargetType;
 
   /**
-   * Initialize target with file system
+   * Initialize target with file system and configuration
+   * @param fileSystem The file system to use
+   * @param isPrimary Whether this is the primary target
    * @throws {Error} if initialization fails
    */
-  initialize(fileSystem: FileSystem, isPrimary: boolean): Promise<void>;
+  initialize(
+    fileSystem: FileSystem,
+    isPrimary: boolean
+  ): Promise<void>;
+
+  /**
+   * Set the ignore service for this target
+   * @param ignoreService The ignore service to use
+   */
+  setIgnoreService(ignoreService: IgnoreService): void;
 
   /**
    * Prepare target for incoming changes and lock operations

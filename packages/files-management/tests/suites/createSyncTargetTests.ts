@@ -4,7 +4,8 @@ import type {
   FileSystem,
   FileMetadata,
   FileContentStream,
-  SyncTarget
+  SyncTarget,
+  IgnoreService
 } from "@piddie/shared-types";
 
 export interface SyncTargetTestContext<T extends SyncTarget> {
@@ -291,6 +292,145 @@ export function createSyncTargetTests<T extends SyncTarget>(
           "new content",
           true
         );
+      });
+    });
+
+    describe("Ignore Service", () => {
+      let mockIgnoreService: IgnoreService;
+      let isIgnoredMock: MockInstance;
+
+      beforeEach(async () => {
+        isIgnoredMock = vi.fn().mockReturnValue(false);
+        mockIgnoreService = {
+          isIgnored: isIgnoredMock as unknown as (path: string) => boolean,
+          setPatterns: vi.fn(),
+          getPatterns: vi.fn().mockReturnValue([])
+        };
+        await target.initialize(fileSystem, true);
+        target.setIgnoreService(mockIgnoreService);
+      });
+
+      it("should properly initialize with ignore service", async () => {
+        const state = target.getState();
+        expect(state.status).toBe("idle");
+      });
+
+      it("should filter out ignored files during watch", async () => {
+        const callback = vi.fn();
+        await target.watch(callback, DEFAULT_WATCH_OPTIONS);
+
+        // Setup mock files
+        const { metadata: ignoredFile } = await context.setupFileWithMetadata(
+          spies,
+          "ignored.txt",
+          {
+            path: "ignored.txt",
+            type: "file",
+            hash: "ignoredhash",
+            size: 100,
+            lastModified: Date.now()
+          },
+          "ignored content"
+        );
+
+        const { metadata: allowedFile } = await context.setupFileWithMetadata(
+          spies,
+          "allowed.txt",
+          {
+            path: "allowed.txt",
+            type: "file",
+            hash: "allowedhash",
+            size: 100,
+            lastModified: Date.now()
+          },
+          "allowed content"
+        );
+
+        // Configure ignore service behavior
+        isIgnoredMock.mockImplementation(
+          (path: string) => path === "ignored.txt"
+        );
+
+        // Mock the poll to include both files
+        spies.listDirectory.mockResolvedValueOnce([
+          {
+            path: ignoredFile.path,
+            type: ignoredFile.type,
+            size: ignoredFile.size,
+            lastModified: ignoredFile.lastModified
+          },
+          {
+            path: allowedFile.path,
+            type: allowedFile.type,
+            size: allowedFile.size,
+            lastModified: allowedFile.lastModified
+          }
+        ]);
+
+        // Wait for poll and debounce
+        await vi.advanceTimersByTimeAsync(1000);
+        await vi.advanceTimersByTimeAsync(100);
+
+        // Should only get changes for non-ignored files
+        expect(callback).toHaveBeenCalledWith([
+          expect.objectContaining({
+            path: allowedFile.path,
+            type: "create",
+            sourceTarget: target.id
+          })
+        ]);
+
+        // Verify ignore service was consulted
+        expect(isIgnoredMock).toHaveBeenCalledWith("ignored.txt");
+        expect(isIgnoredMock).toHaveBeenCalledWith("allowed.txt");
+      });
+
+      it("should handle ignore service errors gracefully", async () => {
+        const callback = vi.fn();
+        await target.watch(callback, DEFAULT_WATCH_OPTIONS);
+
+        // Setup a file
+        const { metadata: testFile } = await context.setupFileWithMetadata(
+          spies,
+          "test.txt",
+          {
+            path: "test.txt",
+            type: "file",
+            hash: "testhash",
+            size: 100,
+            lastModified: Date.now()
+          },
+          "test content"
+        );
+
+        // Make ignore service throw an error
+        isIgnoredMock.mockImplementation(() => {
+          throw new Error("Ignore service error");
+        });
+
+        // Mock the poll to include the file
+        spies.listDirectory.mockResolvedValueOnce([
+          {
+            path: testFile.path,
+            type: testFile.type,
+            hash: testFile.hash,
+            size: testFile.size,
+            lastModified: testFile.lastModified
+          }
+        ]);
+
+        // Wait for poll and debounce
+        await vi.advanceTimersByTimeAsync(1000);
+        await vi.advanceTimersByTimeAsync(100);
+
+        // Should still get changes even if ignore service fails
+        expect(callback).toHaveBeenCalledWith([
+          expect.objectContaining({
+            path: testFile.path,
+            type: "create",
+            sourceTarget: target.id
+          })
+        ]);
       });
     });
 

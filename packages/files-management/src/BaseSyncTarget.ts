@@ -9,7 +9,8 @@ import type {
   FileSystemItem,
   TargetStateType,
   WatcherOptions,
-  SyncTargetType
+  SyncTargetType,
+  IgnoreService
 } from "@piddie/shared-types";
 import { SyncOperationError } from "@piddie/shared-types";
 import { VALID_TARGET_STATE_TRANSITIONS } from "@piddie/shared-types";
@@ -36,6 +37,7 @@ export abstract class BaseSyncTarget implements SyncTarget {
   protected isPrimaryTarget = true;
   protected pendingChanges: FileChangeInfo[] = [];
   protected watcherRegistry = new WatcherRegistry();
+  protected ignoreService: IgnoreService | undefined = undefined;
 
   constructor(targetId: string) {
     this.id = targetId;
@@ -489,10 +491,45 @@ export abstract class BaseSyncTarget implements SyncTarget {
     this.watcherRegistry.clear();
   }
 
+  setIgnoreService(ignoreService: IgnoreService): void {
+    this.ignoreService = ignoreService;
+  }
+
   protected async notifyWatchers(changes: FileChangeInfo[]): Promise<void> {
-    if (this.watcherRegistry.hasWatchers()) {
-      await this.watcherRegistry.notify(changes);
+    // Start with a copy of the changes
+    let filteredChanges: FileChangeInfo[] = [...changes];
+
+    // Get a local reference to the ignore service
+    const ignoreService = this.ignoreService;
+
+    // Only filter if we have a valid ignore service
+    if (ignoreService) {
+      try {
+        filteredChanges = filteredChanges.filter((change) => {
+          try {
+            return !ignoreService.isIgnored(change.path);
+          } catch (error) {
+            // Log error but don't block operations if ignore check fails
+            console.error(
+              `Error checking ignore pattern for ${change.path}:`,
+              error
+            );
+            return true; // Include file if ignore check fails
+          }
+        });
+      } catch (error) {
+        // Log error but don't block operations if ignore check fails
+        console.error(`Error filtering changes:`, error);
+      }
     }
+
+    // If all changes are ignored, return early
+    if (filteredChanges.length === 0) {
+      return;
+    }
+
+    // Notify watchers with filtered changes
+    await this.watcherRegistry.notify(filteredChanges);
   }
 
   protected async getCurrentFilesState(): Promise<Map<string, KnownFileState>> {
