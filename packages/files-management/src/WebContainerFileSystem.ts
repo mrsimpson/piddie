@@ -9,16 +9,7 @@ import {
   LockState,
   LockMode
 } from "@piddie/shared-types";
-
-interface WebContainerInstance {
-  fs: {
-    readFile(path: string, encoding?: string): Promise<Uint8Array | string>;
-    readdir(path: string): Promise<string[]>;
-    rm(path: string): Promise<void>;
-    writeFile(path: string, contents: string): Promise<void>;
-    mkdir(path: string): Promise<void>;
-  };
-}
+import type { WebContainer } from "@webcontainer/api";
 
 export class WebContainerFileSystem implements FileSystem {
   protected currentState: FileSystemStateType = "uninitialized";
@@ -26,7 +17,7 @@ export class WebContainerFileSystem implements FileSystem {
   protected lastOperation?: FileSystemState["lastOperation"];
   protected pendingOperations = 0;
 
-  constructor(private webcontainerInstance: WebContainerInstance) {}
+  constructor(private webcontainerInstance: WebContainer) {}
 
   validateStateTransition(
     from: FileSystemStateType,
@@ -76,7 +67,7 @@ export class WebContainerFileSystem implements FileSystem {
         timestamp: Date.now()
       };
       return content.toString();
-    } catch (error) {
+    } catch {
       throw new FileSystemError(`Failed to read file ${path}`, "NOT_FOUND");
     }
   }
@@ -147,7 +138,7 @@ export class WebContainerFileSystem implements FileSystem {
         );
       }
       return; // Directory exists and recursive is true
-    } catch (error) {
+    } catch {
       // Directory doesn't exist, check parent
       const parentPath = path.split("/").slice(0, -1).join("/") || "/";
       if (parentPath !== "/") {
@@ -307,7 +298,7 @@ export class WebContainerFileSystem implements FileSystem {
       };
 
       return items;
-    } catch (error) {
+    } catch {
       throw new FileSystemError(
         `Failed to list directory ${path}`,
         "NOT_FOUND"
@@ -338,7 +329,7 @@ export class WebContainerFileSystem implements FileSystem {
           lastModified: Date.now()
         };
       }
-    } catch (error) {
+    } catch {
       throw new FileSystemError(
         `Failed to get metadata for ${path}`,
         "NOT_FOUND"

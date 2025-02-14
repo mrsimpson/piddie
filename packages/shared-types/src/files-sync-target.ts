@@ -101,6 +101,7 @@ export type SyncTargetType =
   | "browser-fs"
   | "browser-native"
   | "node-fs"
+  | "webcontainer-fs"
   | "container-fs";
 
 /**

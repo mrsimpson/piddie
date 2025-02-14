@@ -53,15 +53,20 @@ export abstract class PollingSyncTarget extends BaseSyncTarget {
       );
     }
 
+    console.log("[POLLING] Starting watch cycle");
     // Reset watch state
     this.shouldContinueWatching = true;
 
     const scheduleNextCheck = () => {
       if (this.shouldContinueWatching) {
+        console.log("[POLLING] Scheduling next check");
         this.watchTimeout = globalThis.setTimeout(async () => {
+          console.log("[POLLING] Timer triggered, performing check");
           await this.performCheck();
           scheduleNextCheck();
         }, this.WATCH_INTERVAL);
+      } else {
+        console.log("[POLLING] Watch cycle stopped");
       }
     };
 
@@ -72,23 +77,28 @@ export abstract class PollingSyncTarget extends BaseSyncTarget {
   private async performCheck(): Promise<void> {
     // Skip if already running or should stop
     if (this.isWatcherRunning || !this.shouldContinueWatching) {
+      console.log("[POLLING] Skipping check - already running or stopped");
       return;
     }
 
     try {
       this.isWatcherRunning = true;
+      console.log("[POLLING] Starting check");
 
       // Don't check for changes if we're not in idle state
       if (this.getCurrentState() !== "idle") {
+        console.log("[POLLING] Skipping check - not in idle state");
         return;
       }
 
       const currentFiles = await this.getCurrentFilesState();
+      console.log("[POLLING] Current files state:", currentFiles);
       const changes: FileChangeInfo[] = [];
 
       // First check for deleted files before updating lastKnownFiles
       for (const [path] of this.lastKnownFiles) {
         if (!currentFiles.has(path)) {
+          console.log("[POLLING] Detected deleted file:", path);
           changes.push({
             path,
             type: "delete",
@@ -109,6 +119,7 @@ export abstract class PollingSyncTarget extends BaseSyncTarget {
         const knownState = this.lastKnownFiles.get(path);
         if (!knownState) {
           // New file
+          console.log("[POLLING] Detected new file:", path);
           const metadata = await this.fileSystem!.getMetadata(path);
           changes.push({
             path,
@@ -121,6 +132,7 @@ export abstract class PollingSyncTarget extends BaseSyncTarget {
           currentState.hash !== knownState.hash
         ) {
           // Modified file - detect changes by either timestamp or hash
+          console.log("[POLLING] Detected modified file:", path);
           const metadata = await this.fileSystem!.getMetadata(path);
           changes.push({
             path,
@@ -132,33 +144,41 @@ export abstract class PollingSyncTarget extends BaseSyncTarget {
       }
 
       if (changes.length > 0) {
+        console.log("[POLLING] Detected changes:", changes);
         await this.handleFileChanges(changes);
         this.updateLastKnownFiles(currentFiles);
+      } else {
+        console.log("[POLLING] No changes detected");
       }
     } catch (error) {
-      console.warn("Error during file watch:", error);
+      console.warn("[POLLING] Error during file watch:", error);
     } finally {
       this.isWatcherRunning = false;
     }
   }
 
   protected async handleFileChanges(changes: FileChangeInfo[]): Promise<void> {
+    console.log("[POLLING] Handling file changes:", changes);
     for (const change of changes) {
       this.changeBuffer.set(change.path, change);
     }
 
     // Clear existing timeout if any
     if (this.changeTimeout !== null) {
+      console.log("[POLLING] Clearing existing change timeout");
       globalThis.clearTimeout(this.changeTimeout);
     }
 
     // Set new timeout to process changes
+    console.log("[POLLING] Setting new change timeout");
     this.changeTimeout = globalThis.setTimeout(async () => {
+      console.log("[POLLING] Change timeout triggered");
       const bufferedChanges = Array.from(this.changeBuffer.values());
       this.changeBuffer.clear();
       this.changeTimeout = null;
 
       // Notify watchers of the changes
+      console.log("[POLLING] Notifying watchers of changes:", bufferedChanges);
       await this.notifyWatchers(bufferedChanges);
     }, 100); // 100ms debounce
   }

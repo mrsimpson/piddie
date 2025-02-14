@@ -95,6 +95,9 @@ importers:
       '@piddie/shared-types':
         specifier: workspace:*
         version: link:../shared-types
+      '@webcontainer/api':
+        specifier: 1.5.1-internal.6
+        version: 1.5.1-internal.6
       ignore:
         specifier: ^7.0.3
         version: 7.0.3
