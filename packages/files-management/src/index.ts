@@ -13,3 +13,5 @@ export { BrowserSyncTarget } from "./BrowserSyncTarget";
 export { BrowserNativeSyncTarget } from "./BrowserNativeSyncTarget";
 export { BrowserFileSystem } from "./BrowserFileSystem";
 export { BrowserNativeFileSystem } from "./BrowserNativeFileSystem";
+export { WebContainerFileSystem } from "./WebContainerFileSystem";
+export { WebContainerSyncTarget } from "./WebContainerSyncTarget";

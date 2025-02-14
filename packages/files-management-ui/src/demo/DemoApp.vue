@@ -8,9 +8,12 @@ import {
   BrowserFileSystem,
   BrowserNativeFileSystem,
   BrowserSyncTarget,
-  BrowserNativeSyncTarget
+  BrowserNativeSyncTarget,
+  WebContainerFileSystem,
+  WebContainerSyncTarget
 } from "@piddie/files-management";
 import { WATCHER_PRIORITIES } from "@piddie/shared-types";
+import { WebContainer } from "@webcontainer/api";
 import FileExplorer from "../components/FileExplorer.vue";
 import ErrorDisplay from "../components/ErrorDisplay.vue";
 import { handleUIError } from "../utils/error-handling";
@@ -126,6 +129,48 @@ async function addNativeSystem() {
   }
 }
 
+async function addWebContainerSystem() {
+  try {
+    // Create and initialize WebContainer filesystem
+    const webcontainerInstance = await WebContainer.boot();
+    const webcontainerFs = new WebContainerFileSystem(webcontainerInstance);
+    await webcontainerFs.initialize();
+
+    // Create and initialize WebContainer sync target
+    const webcontainerTarget = new WebContainerSyncTarget("webcontainer");
+    await webcontainerTarget.initialize(webcontainerFs, false);
+
+    // Create synchronized system
+    const webcontainerSystem = await createSynchronizedFileSystem({
+      id: "webcontainer",
+      title: "WebContainer",
+      fileSystem: webcontainerFs,
+      syncTarget: webcontainerTarget,
+      watcherOptions: {
+        priority: WATCHER_PRIORITIES.UI_UPDATES,
+        metadata: {
+          registeredBy: "DemoApp",
+          type: "ui-explorer"
+        }
+      }
+    });
+
+    // Initialize sync manager if this is the second system
+    if (systems.value.length === 1) {
+      try {
+        await initializeSyncManager(systems.value[0].syncTarget, webcontainerSystem.syncTarget);
+      } catch (syncError) {
+        handleUIError(syncError, "Failed to initialize sync", COMPONENT_ID);
+      }
+    }
+
+    // Add WebContainer system to the list
+    systems.value = [...systems.value, webcontainerSystem];
+  } catch (err) {
+    handleUIError(err, "Failed to initialize WebContainer system", COMPONENT_ID);
+  }
+}
+
 async function initializeSyncManager(primaryTarget: SyncTarget, secondaryTarget: SyncTarget) {
   try {
     await syncManager.initialize();
@@ -174,12 +219,21 @@ onMounted(initializeBrowserSystem);
         <template v-if="systems.length === 1" #after-explorer>
           <div class="empty-panel">
             <div class="empty-state">
-              <sl-button variant="primary" size="large" @click="addNativeSystem">
-                <!-- eslint-disable-next-line vue/no-deprecated-slot-attribute -->
-                <sl-icon slot="prefix" name="folder"></sl-icon>
-                Add Local Directory
-              </sl-button>
-              <p class="hint">Add a local directory to enable file synchronization</p>
+              <div class="button-group">
+                <sl-button variant="primary" size="large" @click="addNativeSystem">
+                  <!-- eslint-disable-next-line vue/no-deprecated-slot-attribute -->
+                  <sl-icon slot="prefix" name="folder"></sl-icon>
+                  Add Local Directory
+                </sl-button>
+                <sl-button variant="primary" size="large" @click="addWebContainerSystem">
+                  <!-- eslint-disable-next-line vue/no-deprecated-slot-attribute -->
+                  <sl-icon slot="prefix" name="code"></sl-icon>
+                  Add WebContainer
+                </sl-button>
+              </div>
+              <p class="hint">
+                Add a local directory or WebContainer to enable file synchronization
+              </p>
             </div>
           </div>
         </template>
@@ -258,5 +312,10 @@ main {
   color: var(--sl-color-neutral-600);
   font-size: var(--sl-font-size-small);
   margin: 0;
+}
+
+.button-group {
+  display: flex;
+  gap: var(--sl-spacing-medium);
 }
 </style>

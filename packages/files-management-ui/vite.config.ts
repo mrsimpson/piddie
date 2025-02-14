@@ -27,6 +27,10 @@ export default defineConfig({
       usePolling: true,
       interval: 100,
       ignored: ['!**/node_modules/@piddie/**']
+    },
+    headers: {
+      'Cross-Origin-Embedder-Policy': 'require-corp',
+      'Cross-Origin-Opener-Policy': 'same-origin'
     }
   }
 })

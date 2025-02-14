@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import type { SynchronizedFileSystem } from "../types/file-explorer";
 import type { FileChangeInfo } from "@piddie/shared-types";
-import { BrowserSyncTarget, BrowserNativeSyncTarget } from "@piddie/files-management";
+import {
+  BrowserSyncTarget,
+  BrowserNativeSyncTarget,
+  WebContainerSyncTarget
+} from "@piddie/files-management";
 import { WATCHER_PRIORITIES } from "@piddie/shared-types";
 import FileSystemExplorer from "./FileSystemExplorer.vue";
 import SyncTargetStatus from "./SyncTargetStatus.vue";
@@ -14,16 +18,21 @@ const props = defineProps<{
 }>();
 
 const explorerRef = ref<InstanceType<typeof FileSystemExplorer> | null>(null);
-const uiSyncTarget = ref<BrowserSyncTarget | BrowserNativeSyncTarget | null>(null);
+const uiSyncTarget = ref<
+  BrowserSyncTarget | BrowserNativeSyncTarget | WebContainerSyncTarget | null
+>(null);
 
 // Initialize UI sync target
 async function initializeUISyncTarget() {
   try {
     // Create UI sync target of the same type as the main sync target
-    uiSyncTarget.value =
-      props.system.syncTarget instanceof BrowserNativeSyncTarget
-        ? new BrowserNativeSyncTarget(`ui-${props.system.id}`)
-        : new BrowserSyncTarget(`ui-${props.system.id}`);
+    if (props.system.syncTarget instanceof BrowserNativeSyncTarget) {
+      uiSyncTarget.value = new BrowserNativeSyncTarget(`ui-${props.system.id}`);
+    } else if (props.system.syncTarget instanceof WebContainerSyncTarget) {
+      uiSyncTarget.value = new WebContainerSyncTarget(`ui-${props.system.id}`);
+    } else {
+      uiSyncTarget.value = new BrowserSyncTarget(`ui-${props.system.id}`);
+    }
 
     // Initialize with the SAME file system instance as the main sync target
     await uiSyncTarget.value.initialize(props.system.fileSystem, false);

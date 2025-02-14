@@ -4,7 +4,9 @@ import type { FileSystem, FileChangeInfo } from "@piddie/shared-types";
 import {
   BrowserSyncTarget,
   BrowserNativeSyncTarget,
-  BrowserNativeFileSystem
+  BrowserNativeFileSystem,
+  WebContainerSyncTarget,
+  WebContainerFileSystem
 } from "@piddie/files-management";
 import { WATCHER_PRIORITIES } from "@piddie/shared-types";
 import { handleUIError } from "../utils/error-handling";
@@ -25,7 +27,9 @@ const content = ref("");
 const loading = ref(false);
 const error = ref<string | null>(null);
 const isDirty = ref(false);
-const uiSyncTarget = ref<BrowserSyncTarget | BrowserNativeSyncTarget | null>(null);
+const uiSyncTarget = ref<
+  BrowserSyncTarget | BrowserNativeSyncTarget | WebContainerSyncTarget | null
+>(null);
 const hasExternalChanges = ref(false);
 
 async function loadContent() {
@@ -67,10 +71,13 @@ function handleContentChange(event: Event) {
 async function initializeFileWatcher() {
   try {
     // Create UI sync target matching the filesystem type
-    const isNativeFs = props.fileSystem instanceof BrowserNativeFileSystem;
-    uiSyncTarget.value = isNativeFs
-      ? new BrowserNativeSyncTarget(`editor-${props.filePath}`)
-      : new BrowserSyncTarget(`editor-${props.filePath}`);
+    if (props.fileSystem instanceof BrowserNativeFileSystem) {
+      uiSyncTarget.value = new BrowserNativeSyncTarget(`editor-${props.filePath}`);
+    } else if (props.fileSystem instanceof WebContainerFileSystem) {
+      uiSyncTarget.value = new WebContainerSyncTarget(`editor-${props.filePath}`);
+    } else {
+      uiSyncTarget.value = new BrowserSyncTarget(`editor-${props.filePath}`);
+    }
 
     // Initialize with the same filesystem
     await uiSyncTarget.value.initialize(props.fileSystem, false);
