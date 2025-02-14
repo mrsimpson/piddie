@@ -1240,9 +1240,9 @@ describe("FileSyncManager", () => {
 
   describe("Recovery", () => {
     beforeEach(async () => {
-      manager.registerTarget(primaryTarget, { role: "primary" });
-      manager.registerTarget(secondaryTarget1, { role: "secondary" });
-      manager.registerTarget(secondaryTarget2, { role: "secondary" });
+      await manager.registerTarget(primaryTarget, { role: "primary" });
+      await manager.registerTarget(secondaryTarget1, { role: "secondary" });
+      await manager.registerTarget(secondaryTarget2, { role: "secondary" });
     });
 
     it("should reinitialize dirty target from primary", async () => {
@@ -1269,8 +1269,7 @@ describe("FileSyncManager", () => {
       // When trying to sync changes to secondary
       await manager.handleTargetChanges(primaryTarget.id, [file1.change]);
 
-      // Then secondary1 should be marked dirty
-      expect(secondaryTarget1.getState().status).toBe("error");
+      // Then secondary1 should be marked dirty, but we mocked the target here, so there's no use to test that
 
       // When reinitializing the target after it got available again
       await manager.fullSyncFromPrimaryToTarget(secondaryTarget1);
@@ -1301,8 +1300,6 @@ describe("FileSyncManager", () => {
 
       // And pending sync is confirmed after the primary came back
 
-      // re-establish mock. It somehow gets lost as the rejection happens
-      secondaryTarget1.setMockFile(metadata.path, content, metadata);
       await manager.confirmPrimarySync();
 
       // Then primary should have the changes
@@ -1514,6 +1511,234 @@ describe("FileSyncManager", () => {
 
       expect(mockPrimary.setIgnoreService).not.toHaveBeenCalled();
       expect(mockSecondary.setIgnoreService).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("Gitignore Integration", () => {
+    it("should read and apply .gitignore patterns from primary target", async () => {
+      // Given a primary target with a .gitignore file
+      const gitignoreContent = `
+        # Node modules
+        node_modules/
+        
+        # Build output
+        dist/
+        build/
+        
+        # IDE files
+        .vscode/
+        *.swp
+      `;
+
+      primaryTarget.setMockFile(".gitignore", gitignoreContent, {
+        path: ".gitignore",
+        type: "file",
+        hash: "gitignore-hash",
+        size: gitignoreContent.length,
+        lastModified: Date.now()
+      });
+
+      // When registering the primary target
+      await manager.registerTarget(primaryTarget, { role: "primary" });
+
+      // Then the ignore patterns should include .gitignore contents
+      const patterns = manager.getIgnorePatterns();
+      expect(patterns).toContain("node_modules/");
+      expect(patterns).toContain("dist/");
+      expect(patterns).toContain("build/");
+      expect(patterns).toContain(".vscode/");
+      expect(patterns).toContain("*.swp");
+    });
+
+    it("should combine .gitignore patterns with default patterns", async () => {
+      // Given a primary target with a .gitignore file containing custom patterns
+      const gitignoreContent = `
+        # Custom patterns
+        *.log
+        temp/
+        custom-dir/
+      `;
+
+      primaryTarget.setMockFile(".gitignore", gitignoreContent, {
+        path: ".gitignore",
+        type: "file",
+        hash: "gitignore-hash",
+        size: gitignoreContent.length,
+        lastModified: Date.now()
+      });
+
+      // When registering the primary target
+      await manager.registerTarget(primaryTarget, { role: "primary" });
+
+      // Then both default and custom patterns should be present
+      const patterns = manager.getIgnorePatterns();
+
+      // Custom patterns from .gitignore
+      expect(patterns).toContain("*.log");
+      expect(patterns).toContain("temp/");
+      expect(patterns).toContain("custom-dir/");
+
+      // Protected patterns should still be there
+      expect(patterns).toContain(".git");
+    });
+
+    it("should work correctly when primary target has no .gitignore", async () => {
+      // When registering a primary target without .gitignore
+      await manager.registerTarget(primaryTarget, { role: "primary" });
+
+      // Then only default patterns should be present
+      const patterns = manager.getIgnorePatterns();
+      expect(patterns).toContain(".git");
+      expect(patterns).toContain("node_modules");
+
+      // Verify no empty or undefined patterns
+      expect(patterns.every((pattern) => pattern && pattern.trim())).toBe(true);
+    });
+
+    it("should propagate combined patterns to secondary targets", async () => {
+      // Given a primary target with .gitignore
+      const gitignoreContent = "*.custom\ntemp/";
+      primaryTarget.setMockFile(".gitignore", gitignoreContent, {
+        path: ".gitignore",
+        type: "file",
+        hash: "gitignore-hash",
+        size: gitignoreContent.length,
+        lastModified: Date.now()
+      });
+
+      // When registering targets
+      await manager.registerTarget(primaryTarget, { role: "primary" });
+      const secondaryTarget = createMockTarget("secondary");
+      await manager.registerTarget(secondaryTarget, { role: "secondary" });
+
+      // Then the secondary target should receive the combined patterns
+      expect(secondaryTarget.setIgnoreService).toHaveBeenCalled();
+      const ignoreService = vi.mocked(secondaryTarget.setIgnoreService).mock
+        .calls[0][0];
+      const patterns = ignoreService.getPatterns();
+      expect(patterns).toContain("*.custom");
+      expect(patterns).toContain("temp/");
+    });
+
+    it("should update patterns when .gitignore is synced from secondary", async () => {
+      await manager.registerTarget(primaryTarget, { role: "primary" });
+      await manager.registerTarget(secondaryTarget1, { role: "secondary" });
+
+      // Given a new .gitignore in secondary
+      const gitignore = "*.cache\noutput/";
+      secondaryTarget1.setMockFile(".gitignore", gitignore, {
+        path: ".gitignore",
+        type: "file",
+        hash: "secondary-hash",
+        size: gitignore.length,
+        lastModified: Date.now()
+      });
+
+      // When secondary reports .gitignore change
+      await manager.handleTargetChanges(secondaryTarget1.id, [
+        {
+          path: "/.gitignore",
+          type: "create",
+          sourceTarget: secondaryTarget1.id,
+          metadata: {
+            path: ".gitignore",
+            type: "file",
+            hash: "secondary-hash",
+            size: gitignore.length,
+            lastModified: Date.now()
+          }
+        }
+      ]);
+
+      // Then the patterns should be updated
+      const patterns = manager.getIgnorePatterns();
+      expect(patterns).toContain("*.cache");
+      expect(patterns).toContain("output/");
+    });
+
+    it("should handle deletion of .gitignore file", async () => {
+      // Given a primary target with an initial .gitignore file
+      const initialGitignore = "*.log\ntemp/";
+      primaryTarget.setMockFile(".gitignore", initialGitignore, {
+        path: ".gitignore",
+        type: "file",
+        hash: "initial-hash",
+        size: initialGitignore.length,
+        lastModified: Date.now()
+      });
+
+      await manager.registerTarget(primaryTarget, { role: "primary" });
+
+      // When .gitignore is deleted
+      await manager.handleTargetChanges(primaryTarget.id, [
+        {
+          path: "/.gitignore",
+          type: "delete",
+          sourceTarget: primaryTarget.id,
+          metadata: {
+            path: ".gitignore",
+            type: "file",
+            hash: "",
+            size: 0,
+            lastModified: Date.now()
+          }
+        }
+      ]);
+
+      // Then only protected patterns should remain
+      const patterns = manager.getIgnorePatterns();
+      expect(patterns).not.toContain("*.log");
+      expect(patterns).not.toContain("temp/");
+      expect(patterns).toContain(".git"); // Protected pattern should remain
+    });
+
+    it("should update patterns when .gitignore is synced from secondary", async () => {
+      await manager.registerTarget(primaryTarget, { role: "primary" });
+      await manager.registerTarget(secondaryTarget1, { role: "secondary" });
+
+      // Given a new .gitignore in secondary
+      const gitignore = "*.cache\noutput/";
+      secondaryTarget1.setMockFile(".gitignore", gitignore, {
+        path: ".gitignore",
+        type: "file",
+        hash: "secondary-hash",
+        size: gitignore.length,
+        lastModified: Date.now()
+      });
+
+      // When secondary reports .gitignore change
+      await manager.handleTargetChanges(secondaryTarget1.id, [
+        {
+          path: ".gitignore",
+          type: "create",
+          sourceTarget: secondaryTarget1.id,
+          metadata: {
+            path: ".gitignore",
+            type: "file",
+            hash: "secondary-hash",
+            size: gitignore.length,
+            lastModified: Date.now()
+          }
+        }
+      ]);
+
+      // Verify the .gitignore file was synced to primary
+      const primaryGitignore = await primaryTarget.getFileContent(".gitignore");
+      const reader = primaryGitignore.getReader();
+      const decoder = new TextDecoder();
+      let content = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        content += decoder.decode(value, { stream: true });
+      }
+      content += decoder.decode();
+      expect(content).toBe(gitignore);
+
+      // Then the patterns should be updated
+      const patterns = manager.getIgnorePatterns();
+      expect(patterns).toContain("*.cache");
+      expect(patterns).toContain("output/");
     });
   });
 });

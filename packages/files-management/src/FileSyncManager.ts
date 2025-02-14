@@ -45,7 +45,7 @@ export class FileSyncManager implements SyncManager {
   private activeWatchers: Map<string, () => Promise<void>> = new Map();
   private currentState: SyncManagerStateType = "uninitialized";
   private progressListeners: Set<SyncProgressListener> = new Set();
-  private ignoreService: IgnoreService = new DefaultIgnoreService();
+  private ignoreService: IgnoreService;
 
   validateStateTransition(
     from: SyncManagerStateType,
@@ -355,7 +355,7 @@ export class FileSyncManager implements SyncManager {
       });
 
       // Process changes sequentially to maintain hierarchy
-      for (const change of orderedChanges) {
+      for await (const change of orderedChanges) {
         try {
           // Skip ignored files
           try {
@@ -546,6 +546,31 @@ export class FileSyncManager implements SyncManager {
     }
   }
 
+  private async readGitignorePatterns(target: SyncTarget): Promise<string[]> {
+    try {
+      const content = await target.getFileContent(".gitignore");
+      const reader = content.stream.getReader();
+      const decoder = new TextDecoder();
+      let patterns = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        patterns += decoder.decode(value, { stream: true });
+      }
+      patterns += decoder.decode(); // Flush the stream
+
+      // Split into lines and filter out empty lines and comments
+      return patterns
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line && !line.startsWith("#"));
+    } catch (error) {
+      // If .gitignore doesn't exist, return empty array
+      return [];
+    }
+  }
+
   async registerTarget(
     target: SyncTarget,
     options: TargetRegistrationOptions
@@ -568,6 +593,16 @@ export class FileSyncManager implements SyncManager {
       // Set primary target first
       this.primaryTarget = target;
       console.info(`[FileSyncManager] Set primary target: ${target.id}`);
+
+      // Read .gitignore patterns if they exist
+      const gitignorePatterns = await this.readGitignorePatterns(target);
+      if (gitignorePatterns.length > 0) {
+        // Create new ignore service with both default and gitignore patterns
+        if (!this.ignoreService) {
+          this.ignoreService = new DefaultIgnoreService();
+        }
+        this.ignoreService.setPatterns(gitignorePatterns);
+      }
 
       // Start watching primary
       await this.startWatching(target);
@@ -681,6 +716,34 @@ export class FileSyncManager implements SyncManager {
     }
   }
 
+  private async updateGitignorePatternsIfChanged(
+    changes: FileChangeInfo[],
+    sourceTarget: SyncTarget
+  ): Promise<void> {
+    // Check if any of the changes involve the .gitignore file
+    const gitignoreChange = changes.find(
+      (change) => change.path === "/.gitignore" || change.path === ".gitignore"
+    ); //Unfortunately, we have no consistent absolute / relative path handling yet
+    if (!gitignoreChange) {
+      return;
+    }
+
+    // Only update patterns if the change is a create or modify
+    if (gitignoreChange.type === "delete") {
+      // If .gitignore is deleted, reset to default patterns
+      if (this.ignoreService) {
+        this.ignoreService.setPatterns([]);
+      }
+      return;
+    }
+
+    // Read and update the patterns from the source target
+    const gitignorePatterns = await this.readGitignorePatterns(sourceTarget);
+    if (this.ignoreService) {
+      this.ignoreService.setPatterns(gitignorePatterns);
+    }
+  }
+
   async handleTargetChanges(
     sourceId: string,
     changes: FileChangeInfo[]
@@ -708,6 +771,9 @@ export class FileSyncManager implements SyncManager {
         "NO_PRIMARY_TARGET"
       );
     }
+
+    // Update gitignore patterns from the source target first
+    await this.updateGitignorePatternsIfChanged(changes, sourceTarget);
 
     // Filter out ignored files
     const filteredChanges = changes.filter((change) => {
@@ -767,6 +833,14 @@ export class FileSyncManager implements SyncManager {
           await this.primaryTarget.syncComplete();
         }
         state.results.push(primaryResult);
+
+        // After successful sync to primary, read its .gitignore before propagating to other secondaries
+        if (changes.some((change) => change.path === ".gitignore")) {
+          await this.updateGitignorePatternsIfChanged(
+            changes,
+            this.primaryTarget
+          );
+        }
 
         // Only propagate to other secondaries if primary sync succeeded
         if (primaryResult.success) {
@@ -963,9 +1037,7 @@ export class FileSyncManager implements SyncManager {
     return result;
   }
 
-  async initialize(
-    ignoreService: IgnoreService = new DefaultIgnoreService()
-  ): Promise<void> {
+  async initialize(ignoreService?: IgnoreService): Promise<void> {
     // Verify all targets are initialized
     if (
       this.primaryTarget &&
@@ -986,7 +1058,13 @@ export class FileSyncManager implements SyncManager {
       }
     }
 
-    this.ignoreService = ignoreService;
+    // we might have had an ignore service set previously
+    if (ignoreService) {
+      this.ignoreService = ignoreService;
+    }
+    if (!this.ignoreService) {
+      this.ignoreService = new DefaultIgnoreService();
+    }
 
     // Propagate ignore service to all targets
     if (this.primaryTarget) {
