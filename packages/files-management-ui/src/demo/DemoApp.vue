@@ -158,6 +158,7 @@ onMounted(initializeBrowserSystem);
       <div class="header-content">
         <h1>File Management Demo</h1>
         <sl-button variant="neutral" size="small" @click="showIgnorePatterns = true">
+          <!-- eslint-disable-next-line vue/no-deprecated-slot-attribute -->
           <sl-icon slot="prefix" name="filter"></sl-icon>
           Show Ignore Patterns
         </sl-button>

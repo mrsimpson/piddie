@@ -565,7 +565,7 @@ export class FileSyncManager implements SyncManager {
         .split("\n")
         .map((line) => line.trim())
         .filter((line) => line && !line.startsWith("#"));
-    } catch (error) {
+    } catch {
       // If .gitignore doesn't exist, return empty array
       return [];
     }

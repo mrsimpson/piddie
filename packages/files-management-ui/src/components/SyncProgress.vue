@@ -23,9 +23,9 @@ function getProgressPercentage(): number {
   switch (currentProgress.value.type) {
     case "syncing":
       return (currentProgress.value.syncedFiles / currentProgress.value.totalFiles) * 100;
-    case 'streaming':
+    case "streaming":
       return (currentProgress.value.processedBytes / currentProgress.value.totalBytes) * 100;
-    case 'collecting':
+    case "collecting":
       return (currentProgress.value.collectedFiles / currentProgress.value.totalFiles) * 100;
     case "completing":
       return 100;
@@ -36,7 +36,7 @@ function getProgressPercentage(): number {
 
 // Progress listener
 function handleProgress(progress: SyncProgressEvent) {
-  if(progress.type === "syncing"){
+  if (progress.type === "syncing") {
     currentProgress.value = progress;
   }
 

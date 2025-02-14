@@ -33,6 +33,7 @@ watch(
         </li>
       </ul>
     </div>
+    <!-- eslint-disable-next-line vue/no-deprecated-slot-attribute -->
     <div slot="footer">
       <sl-button @click="emit('sl-after-hide')">Close</sl-button>
     </div>
