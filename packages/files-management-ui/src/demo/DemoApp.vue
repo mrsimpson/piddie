@@ -25,6 +25,14 @@ const systems = ref<SynchronizedFileSystem[]>([]);
 const syncManager = new FileSyncManager();
 const showIgnorePatterns = ref(false);
 
+// Helper functions to check which systems are already added
+function hasNativeSystem(): boolean {
+  return systems.value.some((sys) => sys.syncTarget instanceof BrowserNativeSyncTarget);
+}
+
+function hasWebContainerSystem(): boolean {
+  return systems.value.some((sys) => sys.syncTarget instanceof WebContainerSyncTarget);
+}
 // Monitor sync status
 function monitorSync() {
   const status = syncManager.getStatus();
@@ -113,8 +121,8 @@ async function addNativeSystem() {
       }
     });
 
-    // Initialize sync manager if this is the second system
-    if (systems.value.length === 1) {
+    // Initialize sync manager if not the first system
+    if (systems.value.length >= 1) {
       try {
         await initializeSyncManager(systems.value[0].syncTarget, nativeSystem.syncTarget);
       } catch (syncError) {
@@ -155,8 +163,8 @@ async function addWebContainerSystem() {
       }
     });
 
-    // Initialize sync manager if this is the second system
-    if (systems.value.length === 1) {
+    // Initialize sync manager if not the first system
+    if (systems.value.length >= 1) {
       try {
         await initializeSyncManager(systems.value[0].syncTarget, webcontainerSystem.syncTarget);
       } catch (syncError) {
@@ -173,21 +181,29 @@ async function addWebContainerSystem() {
 
 async function initializeSyncManager(primaryTarget: SyncTarget, secondaryTarget: SyncTarget) {
   try {
-    await syncManager.initialize();
+    const status = syncManager.getStatus();
+    // Check if any targets are registered to determine if sync manager is initialized
+    const hasTargets = status.targets && status.targets.size > 0;
 
-    // Register targets for file syncing
-    await syncManager.registerTarget(primaryTarget, { role: "primary" });
+    // Only initialize if no targets are registered yet
+    if (!hasTargets) {
+      await syncManager.initialize();
+      await syncManager.registerTarget(primaryTarget, { role: "primary" });
+
+      // Monitor sync status
+      const monitorInterval = setInterval(monitorSync, 1000);
+
+      // Clean up on component unmount
+      onBeforeUnmount(() => {
+        clearInterval(monitorInterval);
+      });
+
+      console.log("Sync manager initialized with primary target");
+    }
+
+    // Register the secondary target
     await syncManager.registerTarget(secondaryTarget, { role: "secondary" });
-
-    // Monitor sync status
-    const monitorInterval = setInterval(monitorSync, 1000);
-
-    // Clean up on component unmount
-    onBeforeUnmount(() => {
-      clearInterval(monitorInterval);
-    });
-
-    console.log("Sync manager initialized successfully");
+    console.log("Secondary target registered successfully");
   } catch (err) {
     handleUIError(err, "Failed to initialize sync manager", COMPONENT_ID);
   }
@@ -216,23 +232,37 @@ onMounted(initializeBrowserSystem);
         Initializing file systems...
       </div>
       <FileExplorer v-else :systems="systems" class="panel">
-        <template v-if="systems.length === 1" #after-explorer>
+        <template v-if="!hasNativeSystem() || !hasWebContainerSystem()" #after-explorer>
           <div class="empty-panel">
             <div class="empty-state">
               <div class="button-group">
-                <sl-button variant="primary" size="large" @click="addNativeSystem">
+                <sl-button
+                  v-if="!hasNativeSystem()"
+                  variant="primary"
+                  size="large"
+                  @click="addNativeSystem"
+                >
                   <!-- eslint-disable-next-line vue/no-deprecated-slot-attribute -->
                   <sl-icon slot="prefix" name="folder"></sl-icon>
                   Add Local Directory
                 </sl-button>
-                <sl-button variant="primary" size="large" @click="addWebContainerSystem">
+                <sl-button
+                  v-if="!hasWebContainerSystem()"
+                  variant="primary"
+                  size="large"
+                  @click="addWebContainerSystem"
+                >
                   <!-- eslint-disable-next-line vue/no-deprecated-slot-attribute -->
                   <sl-icon slot="prefix" name="code"></sl-icon>
                   Add WebContainer
                 </sl-button>
               </div>
               <p class="hint">
-                Add a local directory or WebContainer to enable file synchronization
+                {{
+                  systems.length === 1
+                    ? "Add another filesystem to enable synchronization"
+                    : "Add more filesystems to expand synchronization"
+                }}
               </p>
             </div>
           </div>
