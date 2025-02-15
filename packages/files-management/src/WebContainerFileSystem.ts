@@ -16,6 +16,7 @@ export class WebContainerFileSystem implements FileSystem {
   protected lockState: LockState = { isLocked: false };
   protected lastOperation?: FileSystemState["lastOperation"];
   protected pendingOperations = 0;
+  protected lastModifiedMap = new Map<string, number>();
 
   constructor(private webcontainerInstance: WebContainer) {}
 
@@ -91,6 +92,10 @@ export class WebContainerFileSystem implements FileSystem {
       }
 
       await this.webcontainerInstance.fs.writeFile(path, content);
+      // Only update lastModified if it's not a sync operation
+      if (!isSyncOperation) {
+        this.lastModifiedMap.set(path, Date.now());
+      }
       this.lastOperation = {
         type: "write",
         path,
@@ -316,7 +321,7 @@ export class WebContainerFileSystem implements FileSystem {
           type: "file",
           size: content.length,
           hash: await this.calculateHash(content),
-          lastModified: Date.now() // WebContainer doesn't provide lastModified, use current time
+          lastModified: this.lastModifiedMap.get(path) ?? Date.now() // Use stored lastModified if available
         };
       } catch {
         // If not a file, try as directory
@@ -326,7 +331,7 @@ export class WebContainerFileSystem implements FileSystem {
           type: "directory",
           size: 0,
           hash: "",
-          lastModified: Date.now()
+          lastModified: this.lastModifiedMap.get(path) ?? Date.now()
         };
       }
     } catch {

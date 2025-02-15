@@ -293,6 +293,57 @@ export function createSyncTargetTests<T extends SyncTarget>(
           true
         );
       });
+
+      it("should preserve file modification dates during sync", async () => {
+        const originalDate = new Date("2024-01-01").getTime();
+        const filePath = "test.txt";
+        const fileContent = "content1";
+
+        // Setup a file with a specific modification date
+        const { metadata } = await context.setupFileWithMetadata(
+          spies,
+          filePath,
+          {
+            path: filePath,
+            type: "file",
+            size: fileContent.length,
+            hash: "hash1",
+            lastModified: originalDate
+          },
+          fileContent
+        );
+
+        // Create a mock content stream for the sync operation
+        const contentStream = context.createMockStream(metadata, fileContent);
+
+
+        // First collect the changes
+        await target.notifyIncomingChanges([filePath]);
+        expect(target.getState().status).toBe("collecting");
+        await vi.advanceTimersByTimeAsync(1000);
+
+        // Simulate a sync operation
+        await target.applyFileChange(
+          { path: filePath, type: "modify", sourceTarget: target.id, metadata },
+          contentStream
+        );
+        await vi.advanceTimersByTimeAsync(1000);
+
+        // Verify the modification date is preserved
+        expect(spies.writeFile).toHaveBeenCalledWith(
+          filePath,
+          fileContent,
+          true // Should be called with isSyncOperation=true
+        );
+
+        // Get the file metadata after sync
+        spies.getMetadata.mockResolvedValueOnce({
+          ...metadata,
+          lastModified: originalDate // Should maintain original date
+        });
+        const syncedMetadata = await target.getMetadata([filePath]);
+        expect(syncedMetadata[0].lastModified).toBe(originalDate);
+      });
     });
 
     describe("Ignore Service", () => {

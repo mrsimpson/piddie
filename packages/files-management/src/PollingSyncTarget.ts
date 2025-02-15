@@ -56,7 +56,7 @@ export abstract class PollingSyncTarget extends BaseSyncTarget {
       await this.startWatching();
     } catch (error) {
       console.error("Background scan failed:", error);
-      this.transitionTo("error", "error", error.message);
+      this.transitionTo("error", "error", "initialize");
       throw error;
     }
   }
