@@ -1,4 +1,4 @@
-import type { FileSystem, FileChangeInfo } from "@piddie/shared-types";
+import type { FileSystem, FileChangeInfo, ResolutionFunctions } from "@piddie/shared-types";
 import { SyncOperationError } from "@piddie/shared-types";
 import { BaseSyncTarget } from "./BaseSyncTarget";
 
@@ -27,7 +27,15 @@ export abstract class PollingSyncTarget extends BaseSyncTarget {
   override async initialize(
     fileSystem: FileSystem,
     isPrimary: boolean,
-    options: { skipBackgroundScan?: boolean } = {}
+    options: {
+      skipFileScan?: boolean;
+      resolutionFunctions?: ResolutionFunctions;
+    } = {
+      skipFileScan: false,
+      resolutionFunctions: {
+        resolveFromPrimary: () => Promise.resolve()
+      }
+    }
   ): Promise<void> {
     try {
       this.validateFileSystem(fileSystem);
@@ -45,11 +53,11 @@ export abstract class PollingSyncTarget extends BaseSyncTarget {
     this.transitionTo("idle", "initialize");
 
     // Skip background scan if explicitly requested (e.g. for UI targets)
-    if (options.skipBackgroundScan) {
+    if (options.skipFileScan) {
       this.isInitialSync = false;
       await this.startWatching();
-      return;
-    }
+        return;
+      }
 
     try {
       await this.startBackgroundScan();
@@ -58,6 +66,21 @@ export abstract class PollingSyncTarget extends BaseSyncTarget {
       console.error("Background scan failed:", error);
       this.transitionTo("error", "error", "initialize");
       throw error;
+    }
+  }
+
+  protected async checkForExistingFiles(): Promise<boolean> {
+    if (!this.fileSystem) {
+      throw new SyncOperationError("No file system", "INITIALIZATION_FAILED");
+    }
+
+    try {
+      const rootFiles = await this.fileSystem.listDirectory("/");
+      // We consider it a conflict if there are any files in the root directory
+      return rootFiles.length > 0;
+    } catch (error) {
+      console.error("Failed to check for existing files:", error);
+      return false;
     }
   }
 

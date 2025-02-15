@@ -53,7 +53,7 @@ async function initializeUISyncTarget() {
 
     // Initialize with the SAME file system instance as the main sync target
     await uiSyncTarget.value.initialize(props.system.fileSystem, false, {
-      skipBackgroundScan: true
+      skipFileScan: true
     });
     console.log(`UI sync target initialized for ${props.system.id} with existing file system`);
 

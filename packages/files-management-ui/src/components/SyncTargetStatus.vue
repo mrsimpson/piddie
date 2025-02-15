@@ -1,12 +1,17 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from "vue";
-import type { SyncTarget, TargetState } from "@piddie/shared-types";
+import type { SyncTarget } from "@piddie/shared-types";
+import { ref, onMounted, onUnmounted, inject } from "vue";
+import { handleUIError } from "../utils/error-handling";
+import type { FileSyncManager } from "@piddie/files-management";
+
+const COMPONENT_ID = "SyncTargetStatus";
 
 const props = defineProps<{
   target: SyncTarget;
 }>();
 
-const state = ref<TargetState>(props.target.getState());
+const syncManager = inject<FileSyncManager>("syncManager");
+const state = ref(props.target.getState());
 const updateInterval = ref<number>();
 
 function getStatusIcon(status: string): string {
@@ -16,9 +21,22 @@ function getStatusIcon(status: string): string {
     case "scanning":
       return "search";
     case "error":
-      return "exclamation-circle-fill";
+      return "exclamation-triangle-fill";
     default:
       return "circle-fill";
+  }
+}
+
+async function handleResolveFromPrimary() {
+  if (!syncManager) {
+    handleUIError("No sync manager available", COMPONENT_ID);
+    return;
+  }
+
+  try {
+    await syncManager.fullSyncFromPrimaryToTarget(props.target);
+  } catch (err) {
+    handleUIError(err, "Failed to resolve from primary", COMPONENT_ID);
   }
 }
 
@@ -43,6 +61,17 @@ onUnmounted(() => {
       <sl-icon :name="getStatusIcon(state.status)" />
       {{ state.status }}
     </div>
+    
+    <sl-button 
+      v-if="state.status === 'error'"
+      variant="warning"
+      @click="handleResolveFromPrimary"
+    >
+    <!-- eslint-disable-next-line vue/no-deprecated-slot-attribute -->
+      <sl-icon slot="prefix" name="arrow-repeat"></sl-icon>
+      Full Sync from Primary
+    </sl-button>
+
     <div v-if="state.error" class="error">
       {{ state.error }}
     </div>
@@ -57,6 +86,9 @@ onUnmounted(() => {
   padding: var(--sl-spacing-x-small);
   border-radius: var(--sl-border-radius-small);
   background: var(--sl-color-neutral-50);
+  display: flex;
+  align-items: center;
+  gap: var(--sl-spacing-medium);
 }
 
 .status-indicator {
@@ -65,26 +97,28 @@ onUnmounted(() => {
   gap: var(--sl-spacing-x-small);
   font-size: var(--sl-font-size-small);
   color: var(--sl-color-neutral-700);
+  padding: var(--sl-spacing-x-small) var(--sl-spacing-small);
+  border-radius: var(--sl-border-radius-small);
 }
 
 .status-indicator.syncing,
 .status-indicator.scanning {
+  background: var(--sl-color-primary-100);
   color: var(--sl-color-primary-600);
 }
 
 .status-indicator.error {
-  color: var(--sl-color-danger-600);
+  background: var(--sl-color-danger-100);
+  color: var(--sl-color-danger-700);
 }
 
 .error {
-  margin-top: var(--sl-spacing-x-small);
-  font-size: var(--sl-font-size-small);
   color: var(--sl-color-danger-600);
+  font-size: var(--sl-font-size-small);
 }
 
 .pending {
-  margin-top: var(--sl-spacing-x-small);
-  font-size: var(--sl-font-size-small);
   color: var(--sl-color-warning-600);
+  font-size: var(--sl-font-size-small);
 }
 </style>

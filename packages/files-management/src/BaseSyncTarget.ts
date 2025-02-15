@@ -10,7 +10,8 @@ import type {
   TargetStateType,
   WatcherOptions,
   SyncTargetType,
-  IgnoreService
+  IgnoreService,
+  ResolutionFunctions
 } from "@piddie/shared-types";
 import { SyncOperationError } from "@piddie/shared-types";
 import { VALID_TARGET_STATE_TRANSITIONS } from "@piddie/shared-types";
@@ -364,7 +365,11 @@ export abstract class BaseSyncTarget implements SyncTarget {
   // Public Interface Methods
   abstract initialize(
     fileSystem: FileSystem,
-    isPrimary: boolean
+    isPrimary: boolean,
+    options?: {
+      skipFileScan?: boolean;
+      resolutionFunctions?: ResolutionFunctions;
+    }
   ): Promise<void>;
 
   async notifyIncomingChanges(paths: string[]): Promise<void> {

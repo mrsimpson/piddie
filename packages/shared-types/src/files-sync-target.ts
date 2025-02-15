@@ -115,6 +115,13 @@ export type SyncTargetType =
   | "container-fs";
 
 /**
+ * Functions to resolve conflicts
+ */
+export type ResolutionFunctions = {
+  resolveFromPrimary: () => Promise<void>;
+}
+
+/**
  * Core sync target interface
  */
 export interface SyncTarget {
@@ -122,12 +129,20 @@ export interface SyncTarget {
   type: SyncTargetType;
 
   /**
-   * Initialize target with file system and configuration
+   * Initialize the sync target with a file system
    * @param fileSystem The file system to use
    * @param isPrimary Whether this is the primary target
+   * @param options Optional initialization options
    * @throws {Error} if initialization fails
    */
-  initialize(fileSystem: FileSystem, isPrimary: boolean): Promise<void>;
+  initialize(
+    fileSystem: FileSystem,
+    isPrimary: boolean,
+    options?: {
+      skipFileScan?: boolean;
+      resolutionFunctions?: ResolutionFunctions
+    }
+  ): Promise<void>;
 
   /**
    * Set the ignore service for this target

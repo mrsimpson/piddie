@@ -33,8 +33,11 @@ function hasNativeSystem(): boolean {
 function hasWebContainerSystem(): boolean {
   return systems.value.some((sys) => sys.syncTarget instanceof WebContainerSyncTarget);
 }
+
 // Monitor sync status
 function monitorSync() {
+  if (!syncManager) return;
+
   const status = syncManager.getStatus();
   const pendingSync = syncManager.getPendingSync();
 
@@ -65,7 +68,15 @@ async function initializeBrowserSystem() {
 
     // Create and initialize browser sync target
     const browserTarget = new BrowserSyncTarget("browser");
-    await browserTarget.initialize(browserFs, true);
+    await browserTarget.initialize(browserFs, 
+      true, 
+      {skipFileScan:false, 
+        resolutionFunctions: 
+        {
+          resolveFromPrimary: ()=> syncManager.fullSyncFromPrimaryToTarget(browserTarget)
+        }
+      }
+    );
 
     // Create synchronized system
     const browserSystem = await createSynchronizedFileSystem({
@@ -104,7 +115,14 @@ async function addNativeSystem() {
 
     // Create and initialize native sync target
     const nativeTarget = new BrowserNativeSyncTarget("native");
-    await nativeTarget.initialize(nativeFs, false);
+    await nativeTarget.initialize(nativeFs, false, 
+      {skipFileScan:false, 
+        resolutionFunctions: 
+        {
+          resolveFromPrimary: ()=> syncManager.fullSyncFromPrimaryToTarget(nativeTarget)
+        }
+      }
+    );
 
     // Create synchronized system
     const nativeSystem = await createSynchronizedFileSystem({
@@ -159,7 +177,14 @@ async function addWebContainerSystem() {
 
     // Create and initialize WebContainer sync target
     const webcontainerTarget = new WebContainerSyncTarget("webcontainer");
-    await webcontainerTarget.initialize(webcontainerFs, false);
+    await webcontainerTarget.initialize(webcontainerFs, false, 
+      {skipFileScan:false, 
+        resolutionFunctions: 
+        {
+          resolveFromPrimary: ()=> syncManager.fullSyncFromPrimaryToTarget(webcontainerTarget)
+        }
+      }
+    );
 
     // Create synchronized system
     const webcontainerSystem = await createSynchronizedFileSystem({
@@ -204,12 +229,12 @@ async function initializeSyncManager(primaryTarget: SyncTarget, secondaryTarget:
       await syncManager.registerTarget(primaryTarget, { role: "primary" });
 
       // Monitor sync status
-      const monitorInterval = setInterval(monitorSync, 1000);
+    const monitorInterval = setInterval(monitorSync, 1000);
 
       // Clean up on component unmount
-      onBeforeUnmount(() => {
-        clearInterval(monitorInterval);
-      });
+    onBeforeUnmount(() => {
+      clearInterval(monitorInterval);
+    });
 
       console.log("Sync manager initialized with primary target");
     }
