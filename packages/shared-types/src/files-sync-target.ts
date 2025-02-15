@@ -67,7 +67,9 @@ export interface TargetState {
  */
 export type TargetStateType =
   | "uninitialized"
+  | "initializing"
   | "idle"
+  | "scanning"
   | "collecting"
   | "syncing"
   | "error";
@@ -76,21 +78,29 @@ export type TargetStateType =
  * Valid state transitions for sync targets
  */
 export type TargetStateTransition =
-  | { from: "uninitialized"; to: "idle"; via: "initialize" }
+  | { from: "uninitialized"; to: "initializing"; via: "initialize" }
+  | { from: "initializing"; to: "idle"; via: "initialize" }
+  | { from: "idle"; to: "scanning"; via: "scan" }
+  | { from: "scanning"; to: "idle"; via: "finishScan" }
   | { from: "idle"; to: "collecting"; via: "collect" }
   | { from: "collecting"; to: "syncing"; via: "sync" }
   | { from: "syncing"; to: "syncing"; via: "sync" }
   | { from: "syncing"; to: "idle"; via: "finishSync" }
   | { from: "syncing"; to: "error"; via: "error" }
+  | { from: "scanning"; to: "error"; via: "error" }
   | { from: "error"; to: "idle"; via: "recovery" };
 
 export const VALID_TARGET_STATE_TRANSITIONS: TargetStateTransition[] = [
-  { from: "uninitialized", to: "idle", via: "initialize" },
+  { from: "uninitialized", to: "initializing", via: "initialize" },
+  { from: "initializing", to: "idle", via: "initialize" },
+  { from: "idle", to: "scanning", via: "scan" },
+  { from: "scanning", to: "idle", via: "finishScan" },
   { from: "idle", to: "collecting", via: "collect" },
   { from: "collecting", to: "syncing", via: "sync" },
   { from: "syncing", to: "syncing", via: "sync" },
   { from: "syncing", to: "idle", via: "finishSync" },
   { from: "syncing", to: "error", via: "error" },
+  { from: "scanning", to: "error", via: "error" },
   { from: "error", to: "idle", via: "recovery" }
 ];
 

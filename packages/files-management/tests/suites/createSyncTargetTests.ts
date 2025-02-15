@@ -456,7 +456,7 @@ export function createSyncTargetTests<T extends SyncTarget>(
 
         // Second poll (still no changes)
         await vi.advanceTimersByTimeAsync(1000);
-        expect(spies.listDirectory).toHaveBeenCalledTimes(2);
+        expect(spies.listDirectory).toHaveBeenCalledTimes(3);
         expect(callback).not.toHaveBeenCalled();
       });
 
@@ -473,7 +473,7 @@ export function createSyncTargetTests<T extends SyncTarget>(
 
         // No more polls should happen
         await vi.advanceTimersByTimeAsync(5000);
-        expect(spies.listDirectory).toHaveBeenCalledTimes(1);
+        expect(spies.listDirectory).toHaveBeenCalledTimes(2);
       });
 
       it("should detect new files with proper debouncing", async () => {
@@ -633,8 +633,8 @@ export function createSyncTargetTests<T extends SyncTarget>(
         // Try to trigger second check while first is still running
         await vi.advanceTimersByTimeAsync(1000);
 
-        // Should only have one listDirectory call
-        expect(spies.listDirectory).toHaveBeenCalledTimes(1);
+        // Should only have two listDirectory calls
+        expect(spies.listDirectory).toHaveBeenCalledTimes(2);
 
         // Complete the first check
         resolveListDirectory!();
@@ -642,7 +642,7 @@ export function createSyncTargetTests<T extends SyncTarget>(
 
         // Next check should now happen
         await vi.advanceTimersByTimeAsync(1000);
-        expect(spies.listDirectory).toHaveBeenCalledTimes(2);
+        expect(spies.listDirectory).toHaveBeenCalledTimes(3);
       });
 
       it("should buffer multiple changes within debounce period", async () => {

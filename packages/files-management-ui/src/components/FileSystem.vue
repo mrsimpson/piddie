@@ -21,10 +21,18 @@ const explorerRef = ref<InstanceType<typeof FileSystemExplorer> | null>(null);
 const uiSyncTarget = ref<
   BrowserSyncTarget | BrowserNativeSyncTarget | WebContainerSyncTarget | null
 >(null);
+const isInitializing = ref(true);
+const isScanning = ref(false);
+
+// Handle errors from child components
+function handleError(err: Error | string) {
+  handleUIError(err, "File system error", COMPONENT_ID);
+}
 
 // Initialize UI sync target
 async function initializeUISyncTarget() {
   try {
+    isInitializing.value = true;
     // Create UI sync target of the same type as the main sync target
     if (props.system.syncTarget instanceof BrowserNativeSyncTarget) {
       uiSyncTarget.value = new BrowserNativeSyncTarget(`ui-${props.system.id}`);
@@ -38,12 +46,31 @@ async function initializeUISyncTarget() {
     await uiSyncTarget.value.initialize(props.system.fileSystem, false);
     console.log(`UI sync target initialized for ${props.system.id} with existing file system`);
 
+    // Watch for scanning state changes - only after initialization
+    await uiSyncTarget.value.watch(
+      () => {},
+      {
+        priority: WATCHER_PRIORITIES.SYSTEM,
+        metadata: {
+          registeredBy: COMPONENT_ID,
+          type: "state-watcher"
+        },
+        filter: () => {
+          // Update scanning state based on target state
+          isScanning.value = uiSyncTarget.value?.getState().state === "scanning";
+          return false; // Don't actually process any changes
+        }
+      }
+    );
+
     // Set up watching only after successful initialization
     await setupWatcher();
   } catch (err) {
     console.error(`Failed to initialize UI sync target for ${props.system.id}:`, err);
     handleUIError(err, "Failed to initialize UI sync target", COMPONENT_ID);
     throw err; // Re-throw to handle in mount
+  } finally {
+    isInitializing.value = false;
   }
 }
 
@@ -111,49 +138,49 @@ onBeforeUnmount(async () => {
 
 <template>
   <div class="file-system">
-    <header>
-      <h2>{{ system.title }}</h2>
-    </header>
+    <div v-if="isInitializing || isScanning" class="loading-overlay">
+      <sl-spinner></sl-spinner>
+      <div class="loading-text">
+        {{ isInitializing ? 'Initializing...' : 'Scanning files...' }}
+      </div>
+    </div>
     <FileSystemExplorer
-      :file-system="system.fileSystem"
-      :sync-target="system.syncTarget"
-      :title="system.title"
-      class="explorer"
       ref="explorerRef"
+      :system="system"
+      :sync-target="uiSyncTarget"
+      :disabled="isInitializing || isScanning"
+      @error="handleError"
     />
-    <SyncTargetStatus :target="system.syncTarget" class="sync-status" />
+    <SyncTargetStatus :target="system.syncTarget" />
   </div>
 </template>
 
 <style scoped>
 .file-system {
+  position: relative;
+  height: 100%;
+  border: 1px solid var(--sl-color-neutral-300);
+  border-radius: var(--sl-border-radius-medium);
+  padding: var(--sl-spacing-medium);
+}
+
+.loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(var(--sl-color-neutral-0-rgb), 0.8);
   display: flex;
   flex-direction: column;
-  height: 100%;
-  border: 1px solid var(--sl-color-neutral-200);
-  border-radius: var(--sl-border-radius-medium);
-  background: var(--sl-color-neutral-0);
+  align-items: center;
+  justify-content: center;
+  gap: var(--sl-spacing-medium);
+  z-index: 1;
 }
 
-header {
-  padding: var(--sl-spacing-small) var(--sl-spacing-medium);
-  border-bottom: 1px solid var(--sl-color-neutral-200);
-}
-
-h2 {
-  margin: 0;
-  font-size: var(--sl-font-size-large);
-  color: var(--sl-color-neutral-900);
-}
-
-.explorer {
-  flex: 1;
-  min-height: 0;
-  padding: var(--sl-spacing-small);
-}
-
-.sync-status {
-  padding: var(--sl-spacing-small);
-  border-top: 1px solid var(--sl-color-neutral-200);
+.loading-text {
+  color: var(--sl-color-neutral-700);
+  font-size: var(--sl-font-size-small);
 }
 </style>

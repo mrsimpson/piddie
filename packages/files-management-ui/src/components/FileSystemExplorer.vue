@@ -1,14 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from "vue";
-import type { FileSystem, SyncTarget, FileChangeInfo } from "@piddie/shared-types";
+import type { SynchronizedFileSystem, SyncTarget, FileChangeInfo } from "@piddie/shared-types";
 import type { FileViewModel } from "../types/file-explorer";
 import { handleUIError } from "../utils/error-handling";
 import TextFileEditor from "./TextFileEditor.vue";
 
 const props = defineProps<{
-  fileSystem: FileSystem;
-  syncTarget: SyncTarget;
-  title: string;
+  system: SynchronizedFileSystem;
+  syncTarget: SyncTarget | null;
 }>();
 
 const currentPath = ref("/");
@@ -41,18 +40,23 @@ const sortedItems = computed(() => {
 });
 
 async function loadDirectory(path: string) {
+  if (!props.syncTarget) {
+    console.warn("No sync target available, skipping directory load");
+    return;
+  }
+
   try {
     loading.value = true;
     error.value = null;
     currentPath.value = path;
 
     // console.log(`Loading directory ${path}...`);
-    const entries = await props.fileSystem.listDirectory(path);
+    const entries = await props.system.fileSystem.listDirectory(path);
     // console.log(`Found ${entries.length} entries:`, entries);
 
     const metadataPromises = entries.map(async (entry) => {
       try {
-        return await props.fileSystem.getMetadata(entry.path);
+        return await props.system.fileSystem.getMetadata(entry.path);
       } catch (err) {
         console.error(`Failed to get metadata for ${entry.path}:`, err);
         throw err;
@@ -104,11 +108,11 @@ async function createNewFile() {
 
   try {
     error.value = null;
-    if (await props.fileSystem.exists(newItemName.value)) {
+    if (await props.system.fileSystem.exists(newItemName.value)) {
       handleUIError(`File already exists: ${newItemName.value}`, COMPONENT_ID);
     }
     const filePath = `${currentPath.value}/${newItemName.value}`.replace(/\/+/g, "/");
-    await props.fileSystem.writeFile(filePath, "");
+    await props.system.fileSystem.writeFile(filePath, "");
     await loadDirectory(currentPath.value);
     showNewFileDialog.value = false;
     newItemName.value = "";
@@ -123,7 +127,7 @@ async function createNewFolder() {
   try {
     error.value = null;
     const folderPath = `${currentPath.value}/${newItemName.value}`.replace(/\/+/g, "/");
-    await props.fileSystem.createDirectory(folderPath);
+    await props.system.fileSystem.createDirectory(folderPath);
     await loadDirectory(currentPath.value);
     showNewFolderDialog.value = false;
     newItemName.value = "";
@@ -137,7 +141,7 @@ async function deleteSelectedFile() {
 
   try {
     error.value = null;
-    await props.fileSystem.deleteItem(selectedFile.value);
+    await props.system.fileSystem.deleteItem(selectedFile.value);
     await loadDirectory(currentPath.value);
     selectedFile.value = null;
     showDeleteConfirmDialog.value = false;
@@ -265,7 +269,7 @@ onUnmounted(async () => {
     <div v-if="selectedFile" class="editor-panel">
       <TextFileEditor
         :file-path="selectedFile"
-        :file-system="fileSystem"
+        :file-system="props.system.fileSystem"
         @close="selectedFile = null"
         @save="loadDirectory(currentPath)"
       />

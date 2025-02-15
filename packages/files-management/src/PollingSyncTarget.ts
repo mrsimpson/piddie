@@ -37,11 +37,64 @@ export abstract class PollingSyncTarget extends BaseSyncTarget {
 
     this.fileSystem = fileSystem;
     this.isPrimaryTarget = isPrimary;
+    this.isInitialSync = true;
+
+    // Quick initialization
+    this.transitionTo("initializing", "initialize");
     this.transitionTo("idle", "initialize");
 
-    // Start watching for changes if initialized successfully
-    if (this.getCurrentState() === "idle") {
+    // For secondary targets, we don't need to do a full scan
+    if (!isPrimary) {
+      this.isInitialSync = false;
       await this.startWatching();
+      return;
+    }
+
+    // Start background scan for primary target
+    try {
+      await this.startBackgroundScan();
+      await this.startWatching();
+    } catch (error) {
+      console.error("Background scan failed:", error);
+      this.transitionTo("error", "error", error.message);
+      throw error;
+    }
+  }
+
+  private async startBackgroundScan(): Promise<void> {
+    if (!this.fileSystem) {
+      throw new SyncOperationError(
+        "FileSystem not initialized",
+        "INITIALIZATION_FAILED"
+      );
+    }
+
+    // We should already be in idle state from initialize
+    this.transitionTo("scanning", "scan");
+
+    try {
+      // Lock filesystem for scanning
+      await this.lockFileSystem();
+
+      try {
+        const currentFiles = await this.getCurrentFilesState();
+        this.updateLastKnownFiles(currentFiles);
+      } finally {
+        // Always unlock, even if scan fails
+        await this.unlockFileSystem();
+      }
+
+      // Transition back to idle after successful scan
+      this.transitionTo("idle", "finishScan");
+    } catch (error) {
+      // If we can't acquire the lock, just skip the scan
+      if (error instanceof Error && error.message.includes("locked by browser")) {
+        console.warn("Skipping background scan due to file system lock");
+        // Still need to transition back to idle
+        this.transitionTo("idle", "finishScan");
+        return;
+      }
+      throw error;
     }
   }
 
@@ -59,7 +112,10 @@ export abstract class PollingSyncTarget extends BaseSyncTarget {
     const scheduleNextCheck = () => {
       if (this.shouldContinueWatching) {
         this.watchTimeout = globalThis.setTimeout(async () => {
-          await this.performCheck();
+          // Only perform check if not scanning
+          if (this.getCurrentState() !== "scanning") {
+            await this.performCheck();
+          }
           scheduleNextCheck();
         }, this.WATCH_INTERVAL);
       }

@@ -9,6 +9,19 @@ const props = defineProps<{
 const state = ref<TargetState>(props.target.getState());
 const updateInterval = ref<number>();
 
+function getStatusIcon(status: string): string {
+  switch (status) {
+    case "syncing":
+      return "arrow-repeat";
+    case "scanning":
+      return "search";
+    case "error":
+      return "exclamation-circle-fill";
+    default:
+      return "circle-fill";
+  }
+}
+
 function updateState() {
   state.value = props.target.getState();
 }
@@ -27,7 +40,7 @@ onUnmounted(() => {
 <template>
   <div class="sync-target-status">
     <div class="status-indicator" :class="state.status">
-      <sl-icon :name="state.status === 'syncing' ? 'arrow-repeat' : 'circle-fill'" />
+      <sl-icon :name="getStatusIcon(state.status)" />
       {{ state.status }}
     </div>
     <div v-if="state.error" class="error">
@@ -54,7 +67,8 @@ onUnmounted(() => {
   color: var(--sl-color-neutral-700);
 }
 
-.status-indicator.syncing {
+.status-indicator.syncing,
+.status-indicator.scanning {
   color: var(--sl-color-primary-600);
 }
 
