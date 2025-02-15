@@ -121,16 +121,29 @@ async function addNativeSystem() {
       }
     });
 
-    // Initialize sync manager if not the first system
+    // Initialize sync manager first if not the first system
     if (systems.value.length >= 1) {
       try {
-        await initializeSyncManager(systems.value[0].syncTarget, nativeSystem.syncTarget);
+        await initializeSyncManager(systems.value[0].syncTarget, nativeTarget);
+        
+        // Wait for initial sync to complete
+        const maxWaitTime = 30000; // 30 seconds
+        const startTime = Date.now();
+        
+        while (Date.now() - startTime < maxWaitTime) {
+          const status = syncManager.getStatus();
+          if (status.phase === "idle") {
+            break;
+          }
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
       } catch (syncError) {
         handleUIError(syncError, "Failed to initialize sync", COMPONENT_ID);
+        return;
       }
     }
 
-    // Add native system to the list
+    // Only add the system to UI after sync is complete
     systems.value = [...systems.value, nativeSystem];
   } catch (err) {
     handleUIError(err, "Failed to initialize native system", COMPONENT_ID);

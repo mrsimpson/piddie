@@ -9,7 +9,7 @@ import {
 import { WATCHER_PRIORITIES } from "@piddie/shared-types";
 import FileSystemExplorer from "./FileSystemExplorer.vue";
 import SyncTargetStatus from "./SyncTargetStatus.vue";
-import { ref, onMounted, onBeforeUnmount } from "vue";
+import { ref, onMounted, onBeforeUnmount, computed } from "vue";
 import { handleUIError } from "../utils/error-handling";
 
 const COMPONENT_ID = "FileSystem";
@@ -23,6 +23,15 @@ const uiSyncTarget = ref<
 >(null);
 const isInitializing = ref(true);
 const isScanning = ref(false);
+const isSyncing = ref(false);
+
+// Computed loading text based on state
+const loadingText = computed(() => {
+  if (isInitializing.value) return 'Initializing...';
+  if (isScanning.value) return 'Scanning files...';
+  if (isSyncing.value) return 'Synchronizing files...';
+  return '';
+});
 
 // Handle errors from child components
 function handleError(err: Error | string) {
@@ -46,7 +55,7 @@ async function initializeUISyncTarget() {
     await uiSyncTarget.value.initialize(props.system.fileSystem, false);
     console.log(`UI sync target initialized for ${props.system.id} with existing file system`);
 
-    // Watch for scanning state changes - only after initialization
+    // Watch for state changes - only after initialization
     await uiSyncTarget.value.watch(
       () => {},
       {
@@ -56,8 +65,10 @@ async function initializeUISyncTarget() {
           type: "state-watcher"
         },
         filter: () => {
-          // Update scanning state based on target state
-          isScanning.value = uiSyncTarget.value?.getState().state === "scanning";
+          // Update state based on target state
+          const state = uiSyncTarget.value?.getState().state;
+          isScanning.value = state === "scanning";
+          isSyncing.value = state === "syncing";
           return false; // Don't actually process any changes
         }
       }
@@ -138,17 +149,17 @@ onBeforeUnmount(async () => {
 
 <template>
   <div class="file-system">
-    <div v-if="isInitializing || isScanning" class="loading-overlay">
+    <div v-if="isInitializing || isScanning || isSyncing" class="loading-overlay">
       <sl-spinner></sl-spinner>
       <div class="loading-text">
-        {{ isInitializing ? 'Initializing...' : 'Scanning files...' }}
+        {{ loadingText }}
       </div>
     </div>
     <FileSystemExplorer
       ref="explorerRef"
       :system="system"
       :sync-target="uiSyncTarget"
-      :disabled="isInitializing || isScanning"
+      :disabled="isInitializing || isScanning || isSyncing"
       @error="handleError"
     />
     <SyncTargetStatus :target="system.syncTarget" />
