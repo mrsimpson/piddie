@@ -52,14 +52,14 @@ async function initializeUISyncTarget() {
     }
 
     // Initialize with the SAME file system instance as the main sync target
-    await uiSyncTarget.value.initialize(props.system.fileSystem, false);
+    await uiSyncTarget.value.initialize(props.system.fileSystem, false, {skipBackgroundScan: true});
     console.log(`UI sync target initialized for ${props.system.id} with existing file system`);
 
     // Watch for state changes - only after initialization
     await uiSyncTarget.value.watch(
       () => {},
       {
-        priority: WATCHER_PRIORITIES.SYSTEM,
+        priority: WATCHER_PRIORITIES.UI_UPDATES,
         metadata: {
           registeredBy: COMPONENT_ID,
           type: "state-watcher"

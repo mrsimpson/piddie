@@ -26,7 +26,8 @@ export abstract class PollingSyncTarget extends BaseSyncTarget {
 
   override async initialize(
     fileSystem: FileSystem,
-    isPrimary: boolean
+    isPrimary: boolean,
+    options: { skipBackgroundScan?: boolean } = {}
   ): Promise<void> {
     try {
       this.validateFileSystem(fileSystem);
@@ -43,14 +44,13 @@ export abstract class PollingSyncTarget extends BaseSyncTarget {
     this.transitionTo("initializing", "initialize");
     this.transitionTo("idle", "initialize");
 
-    // For secondary targets, we don't need to do a full scan
-    if (!isPrimary) {
+    // Skip background scan if explicitly requested (e.g. for UI targets)
+    if (options.skipBackgroundScan) {
       this.isInitialSync = false;
       await this.startWatching();
       return;
     }
 
-    // Start background scan for primary target
     try {
       await this.startBackgroundScan();
       await this.startWatching();
