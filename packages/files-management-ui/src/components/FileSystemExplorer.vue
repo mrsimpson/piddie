@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from "vue";
-import type { SynchronizedFileSystem, SyncTarget, FileChangeInfo } from "@piddie/shared-types";
-import type { FileViewModel } from "../types/file-explorer";
+import type { SyncTarget, FileChangeInfo, FileSystemItem } from "@piddie/shared-types";
+import type { FileViewModel, SynchronizedFileSystem } from "../types/file-explorer";
 import { handleUIError } from "../utils/error-handling";
 import TextFileEditor from "./TextFileEditor.vue";
 
@@ -54,7 +54,7 @@ async function loadDirectory(path: string) {
     const entries = await props.system.fileSystem.listDirectory(path);
     // console.log(`Found ${entries.length} entries:`, entries);
 
-    const metadataPromises = entries.map(async (entry) => {
+    const metadataPromises = entries.map(async (entry: FileSystemItem) => {
       try {
         return await props.system.fileSystem.getMetadata(entry.path);
       } catch (err) {
@@ -66,7 +66,7 @@ async function loadDirectory(path: string) {
     const metadata = await Promise.all(metadataPromises);
     // console.log(`Got metadata for ${metadata.length} entries:`, metadata);
 
-    items.value = entries.map((entry, index) => {
+    items.value = entries.map((entry: FileSystemItem, index: number) => {
       const meta = metadata[index];
       if (!meta) {
         console.error(`No metadata for ${entry.path}`);

@@ -125,17 +125,17 @@ async function addNativeSystem() {
     if (systems.value.length >= 1) {
       try {
         await initializeSyncManager(systems.value[0].syncTarget, nativeTarget);
-        
+
         // Wait for initial sync to complete
         const maxWaitTime = 30000; // 30 seconds
         const startTime = Date.now();
-        
+
         while (Date.now() - startTime < maxWaitTime) {
           const status = syncManager.getStatus();
           if (status.phase === "idle") {
             break;
           }
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise((resolve) => setTimeout(resolve, 100));
         }
       } catch (syncError) {
         handleUIError(syncError, "Failed to initialize sync", COMPONENT_ID);

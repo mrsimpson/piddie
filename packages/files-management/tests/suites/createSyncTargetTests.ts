@@ -316,7 +316,6 @@ export function createSyncTargetTests<T extends SyncTarget>(
         // Create a mock content stream for the sync operation
         const contentStream = context.createMockStream(metadata, fileContent);
 
-
         // First collect the changes
         await target.notifyIncomingChanges([filePath]);
         expect(target.getState().status).toBe("collecting");

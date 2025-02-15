@@ -88,7 +88,10 @@ export abstract class PollingSyncTarget extends BaseSyncTarget {
       this.transitionTo("idle", "finishScan");
     } catch (error) {
       // If we can't acquire the lock, just skip the scan
-      if (error instanceof Error && error.message.includes("locked by browser")) {
+      if (
+        error instanceof Error &&
+        error.message.includes("locked by browser")
+      ) {
         console.warn("Skipping background scan due to file system lock");
         // Still need to transition back to idle
         this.transitionTo("idle", "finishScan");

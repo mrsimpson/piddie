@@ -27,10 +27,10 @@ const isSyncing = ref(false);
 
 // Computed loading text based on state
 const loadingText = computed(() => {
-  if (isInitializing.value) return 'Initializing...';
-  if (isScanning.value) return 'Scanning files...';
-  if (isSyncing.value) return 'Synchronizing files...';
-  return '';
+  if (isInitializing.value) return "Initializing...";
+  if (isScanning.value) return "Scanning files...";
+  if (isSyncing.value) return "Synchronizing files...";
+  return "";
 });
 
 // Handle errors from child components
@@ -52,27 +52,26 @@ async function initializeUISyncTarget() {
     }
 
     // Initialize with the SAME file system instance as the main sync target
-    await uiSyncTarget.value.initialize(props.system.fileSystem, false, {skipBackgroundScan: true});
+    await uiSyncTarget.value.initialize(props.system.fileSystem, false, {
+      skipBackgroundScan: true
+    });
     console.log(`UI sync target initialized for ${props.system.id} with existing file system`);
 
     // Watch for state changes - only after initialization
-    await uiSyncTarget.value.watch(
-      () => {},
-      {
-        priority: WATCHER_PRIORITIES.UI_UPDATES,
-        metadata: {
-          registeredBy: COMPONENT_ID,
-          type: "state-watcher"
-        },
-        filter: () => {
-          // Update state based on target state
-          const state = uiSyncTarget.value?.getState().state;
-          isScanning.value = state === "scanning";
-          isSyncing.value = state === "syncing";
-          return false; // Don't actually process any changes
-        }
+    await uiSyncTarget.value.watch(() => {}, {
+      priority: WATCHER_PRIORITIES.UI_UPDATES,
+      metadata: {
+        registeredBy: COMPONENT_ID,
+        type: "state-watcher"
+      },
+      filter: () => {
+        // Update state based on target state
+        const state = uiSyncTarget.value?.getState().status;
+        isScanning.value = state === "scanning";
+        isSyncing.value = state === "syncing";
+        return false; // Don't actually process any changes
       }
-    );
+    });
 
     // Set up watching only after successful initialization
     await setupWatcher();
