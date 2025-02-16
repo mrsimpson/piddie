@@ -862,11 +862,16 @@ export class FileSyncManager implements SyncManager {
         await this.primaryTarget.notifyIncomingChanges(
           filteredChanges.map((c) => c.path)
         );
+
+        // Order changes for hierarchical operations (e.g. deleting files before directories)
+        const orderedChanges = this.prepareChangesForHierarchy(filteredChanges);
+
         const primaryResult = await this.applyChangesToTarget(
           this.primaryTarget,
           sourceTarget,
-          filteredChanges
+          orderedChanges
         );
+
         if (primaryResult.success) {
           await this.primaryTarget.syncComplete();
         }
