@@ -134,23 +134,42 @@ stateDiagram-v2
 
 #### 3. FileSyncManager States
 
+The sync manager implements a state machine to track and manage the synchronization process:
+
 ```mermaid
 stateDiagram-v2
-    [*] --> Uninitialized
-    Uninitialized --> Ready: initialize()
-    Ready --> Syncing: changes detected
-
-    state Syncing {
-        [*] --> PrimaryToSecondary
-        [*] --> SecondaryToPrimary
-    }
-
-    Syncing --> Conflict: conflict detected
-    Syncing --> Ready: success
-    Conflict --> Ready: resolution
-    Ready --> Error: on error
-    Error --> Ready: recovery
+    [*] --> uninitialized
+    uninitialized --> ready: initialize
+    ready --> syncing: sync
+    syncing --> ready: finishSync
+    ready --> error: error
+    syncing --> error: error
+    error --> ready: recovery
 ```
+
+States:
+
+- **uninitialized**: Initial state before the manager is initialized
+- **ready**: Manager is ready to handle sync operations
+- **syncing**: Active sync operation in progress
+- **error**: Error state when sync operations fail
+
+Transitions:
+
+- **initialize**: Transition from uninitialized to ready when manager is initialized
+- **sync**: Begin a sync operation when changes are detected
+- **finishSync**: Complete a sync operation successfully
+- **error**: Enter error state due to sync failure
+- **recovery**: Recover from error state using resolution strategies
+
+The state machine ensures that:
+
+- Each target maintains its own state and error information
+- Targets can independently recover from errors
+- The sync manager coordinates overall system health
+- The system transitions to ready only when all targets are healthy
+
+This approach provides clear error states and recovery paths while allowing partial system operation during recovery.
 
 ### Locking and State Transitions
 
@@ -371,143 +390,120 @@ sequenceDiagram
     participant P as Primary Target
     participant S as Secondary Targets
 
-    alt Secondary Target Recovery
-        Note over S: Target is dirty
-        U->>SM: Trigger reinitialization
-        SM->>P: getContents(all paths)
-        P-->>SM: Return contents
-        SM->>S: reinitialize()
-        SM->>S: applyChanges(all files)
-        Note over S: Target clean
+    Note over S: Target enters error state
+    U->>SM: View target status
+    SM-->>U: Show error details
 
-    else Primary Sync Resolution
-        Note over SM: State: conflict
-        U->>SM: Request pending changes
-        SM-->>U: Show changes
+    alt Target Recovery
+        U->>SM: recoverTarget(resolution)
+        SM->>S: recover(resolution)
 
-        alt User Confirms
-            U->>SM: confirmPrimarySync()
-            Note over SM: State: resolving
-            SM->>P: applyChanges(pending)
-
-            alt Apply Success
-                P-->>SM: Success
-                SM->>S: reinitialize()
-                Note over SM: State: ready
-                Note over S: All secondaries reinitialized
-            else Apply Failure
-                P-->>SM: Failure
-                Note over SM: State: error
-            end
-        else User Rejects
-            U->>SM: rejectPendingSync()
-            Note over SM: Clear pending changes
-            Note over SM: State: ready
+        alt Recovery Success
+            S-->>SM: Success
+            Note over S: Target clean
+            Note over SM: If all targets healthy, state: ready
+        else Recovery Failure
+            S-->>SM: Failure
+            Note over S: Target remains in error
+            Note over SM: State: error
         end
     end
 ```
 
-### Conflict Resolution and Primary Target Overwrite
+### Error Recovery and Target Resolution
 
-The sync system uses a primary target overwrite strategy to maintain consistency across all targets. This approach is based on several key principles:
+The sync system uses a robust error recovery strategy to maintain consistency across all targets. This approach is based on several key principles:
 
-1. **Primary Target as Source of Truth**
+1. **Target State Management**
 
-   - The primary target serves as the authoritative source for the entire system
-   - All secondary targets must eventually converge to match the primary's state
-   - This ensures a clear, deterministic resolution path for conflicts
+   - Each target maintains its own state and error information
+   - Targets can independently recover from errors
+   - The sync manager coordinates overall system state
 
 2. **Resolution States**
 
    ```mermaid
    stateDiagram-v2
-       [*] --> Conflict: Sync Failure
-       Conflict --> Resolving: confirmPrimarySync()
-       Resolving --> Ready: Success
-       Resolving --> Error: Failure
-       Ready --> [*]
+       [*] --> Ready: Initialize
+       Ready --> Syncing: Changes detected
+       Syncing --> Ready: Sync complete
+       Ready --> Error: Sync failure
+       Syncing --> Error: Sync failure
+       Error --> Ready: Recovery success
    ```
 
-3. **Resolution Process Flow**
+3. **Recovery Process Flow**
 
    ```mermaid
    sequenceDiagram
        participant U as User
        participant SM as Sync Manager
-       participant P as Primary Target
-       participant S as Secondary Targets
+       participant T as Target
 
-       Note over SM: State: conflict
-       U->>SM: View pending changes
-       SM-->>U: Display changes
-       U->>SM: confirmPrimarySync()
+       Note over T: State: error
+       U->>SM: View target status
+       SM-->>U: Display error
+       U->>SM: recoverTarget(resolution)
 
-       Note over SM: State: resolving
-       SM->>P: Apply changes
+       Note over SM: Begin recovery
+       SM->>T: recover(resolution)
 
        alt Success
-           SM->>S: Reinitialize all secondaries
-           Note over S: Full sync from primary
-           SM->>SM: Clear pending changes
-           Note over SM: State: ready
+           T-->>SM: Success
+           Note over T: Target recovered
+           Note over SM: If all targets healthy: ready
        else Failure
+           T-->>SM: Failure
+           Note over T: Remains in error
            Note over SM: State: error
-           SM-->>U: Report error
        end
    ```
 
 4. **Consistency Guarantees**
 
-   - **Atomic Updates**: Changes to the primary target are atomic - they either fully succeed or fail
-   - **Transactional Behavior**: The resolution process is transactional:
-     1. Lock primary target
-     2. Apply changes
-     3. On success: reinitialize all secondaries
-     4. On failure: rollback to previous state
-   - **State Tracking**: The system maintains explicit states during resolution:
-     - `conflict`: Initial state when changes need resolution
-     - `resolving`: Actively applying changes to primary
-     - `ready`: Resolution complete, system consistent
-     - `error`: Resolution failed, needs recovery
+   - **Independent Recovery**: Each target can recover independently
+   - **Transactional Behavior**: The recovery process is transactional:
+     1. Apply resolution strategy
+     2. Reset target state
+     3. On success: return to normal operation
+     4. On failure: maintain error state
+   - **State Tracking**: The system maintains explicit states during recovery:
+     - `error`: Target needs recovery
+     - `idle`: Target operating normally
+     - `ready`: System fully operational
+     - `syncing`: Active sync in progress
 
 5. **Recovery Strategy**
 
    ```mermaid
    graph TD
-       A[Detect Conflict] --> B{Primary Update}
-       B -->|Success| C[Reinitialize Secondaries]
-       B -->|Failure| D[Error State]
-       C --> E[System Ready]
-       D --> F[Manual Recovery]
+       A[Detect Error] --> B{Apply Resolution}
+       B -->|Success| C[Reset Target State]
+       B -->|Failure| D[Maintain Error]
+       C --> E[Resume Operations]
+       D --> F[Await Recovery]
        F --> A
    ```
 
-6. **Benefits of Primary Overwrite**
+6. **Benefits of Independent Recovery**
 
-   - **Deterministic Resolution**: Clear path to consistency
-   - **Simple Mental Model**: Primary always wins
-   - **Easy Recovery**: Secondary targets can always be reinitialized
-   - **Data Safety**: No automatic merging or loss of changes
-   - **User Control**: Explicit confirmation required for resolution
+   - **Granular Control**: Each target can be recovered independently
+   - **Simple Mental Model**: Clear error states and recovery paths
+   - **Flexible Resolution**: Different strategies for different errors
+   - **System Resilience**: Partial system operation during recovery
+   - **User Control**: Explicit recovery actions
 
 7. **Implementation Details**
-   - Primary target maintains file state including:
-     - File hashes for content verification
-     - Timestamps for change detection
-     - Size and metadata for validation
-   - Secondary targets track their sync state:
-     - Last successful sync timestamp
-     - Pending changes
-     - Current sync status
-   - Resolution process ensures:
-     - All file operations are completed
-     - Proper error handling
-     - State machine transitions
-     - Lock management
+   - Targets maintain error state including:
+     - Error type and message
+     - Last successful operation
+     - Available resolution strategies
+   - Sync manager coordinates recovery:
+     - Tracks overall system health
+     - Transitions to ready when all targets healthy
+     - Manages sync operations during recovery
 
-This approach ensures that the system can always return to a consistent state through a well-defined process, with the primary target serving as the ultimate source of truth.
-
-## Progress Indication
+### Progress Indication
 
 The sync system provides comprehensive progress tracking through a flexible event system. Progress events are emitted during various phases of the synchronization process:
 

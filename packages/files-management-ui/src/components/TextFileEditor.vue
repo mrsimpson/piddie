@@ -80,7 +80,9 @@ async function initializeFileWatcher() {
     }
 
     // Initialize with the same filesystem
-    await uiSyncTarget.value.initialize(props.fileSystem, false);
+    await uiSyncTarget.value.initialize(props.fileSystem, false, {
+      skipFileScan: true
+    });
 
     // Watch for changes on the same filesystem
     await uiSyncTarget.value.watch(

@@ -34,7 +34,7 @@ async function handleResolveFromPrimary() {
   }
 
   try {
-    await syncManager.fullSyncFromPrimaryToTarget(props.target);
+    await syncManager.recoverTarget(props.target.id, "fromPrimary");
   } catch (err) {
     handleUIError(err, "Failed to resolve from primary", COMPONENT_ID);
   }
@@ -61,13 +61,9 @@ onUnmounted(() => {
       <sl-icon :name="getStatusIcon(state.status)" />
       {{ state.status }}
     </div>
-    
-    <sl-button 
-      v-if="state.status === 'error'"
-      variant="warning"
-      @click="handleResolveFromPrimary"
-    >
-    <!-- eslint-disable-next-line vue/no-deprecated-slot-attribute -->
+
+    <sl-button v-if="state.status === 'error'" variant="warning" @click="handleResolveFromPrimary">
+      <!-- eslint-disable-next-line vue/no-deprecated-slot-attribute -->
       <sl-icon slot="prefix" name="arrow-repeat"></sl-icon>
       Full Sync from Primary
     </sl-button>

@@ -258,6 +258,15 @@ export class WebContainerFileSystem implements FileSystem {
   async listDirectory(path: string): Promise<FileSystemItem[]> {
     // Read operations should be allowed while locked
     try {
+      // For root directory, ensure it exists by trying to create it (will fail if exists)
+      if (path === "/") {
+        try {
+          await this.webcontainerInstance.fs.mkdir("/");
+        } catch {
+          // Directory already exists, which is fine
+        }
+      }
+
       const entries = await this.webcontainerInstance.fs.readdir(path);
       const items: FileSystemItem[] = [];
 
@@ -303,7 +312,10 @@ export class WebContainerFileSystem implements FileSystem {
       };
 
       return items;
-    } catch {
+    } catch (error) {
+      if (error instanceof FileSystemError) {
+        throw error;
+      }
       throw new FileSystemError(
         `Failed to list directory ${path}`,
         "NOT_FOUND"

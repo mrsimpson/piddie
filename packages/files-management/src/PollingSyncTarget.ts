@@ -1,4 +1,8 @@
-import type { FileSystem, FileChangeInfo, ResolutionFunctions } from "@piddie/shared-types";
+import type {
+  FileSystem,
+  FileChangeInfo,
+  ResolutionFunctions
+} from "@piddie/shared-types";
 import { SyncOperationError } from "@piddie/shared-types";
 import { BaseSyncTarget } from "./BaseSyncTarget";
 
@@ -47,24 +51,34 @@ export abstract class PollingSyncTarget extends BaseSyncTarget {
     this.fileSystem = fileSystem;
     this.isPrimaryTarget = isPrimary;
     this.isInitialSync = true;
+    this.resolutionFunctions = options.resolutionFunctions;
 
     // Quick initialization
     this.transitionTo("initializing", "initialize");
-    this.transitionTo("idle", "initialize");
 
-    // Skip background scan if explicitly requested (e.g. for UI targets)
-    if (options.skipFileScan) {
-      this.isInitialSync = false;
-      await this.startWatching();
+    try {
+      // For secondary targets, check for existing files unless explicitly skipped
+      if (
+        !isPrimary &&
+        !options.skipFileScan &&
+        (await this.checkForExistingFiles())
+      ) {
+        this.transitionTo("error", "initialize");
         return;
       }
 
-    try {
-      await this.startBackgroundScan();
+      this.transitionTo("idle", "initialize");
+
+      // Start watching for changes
       await this.startWatching();
+
+      // Start background scan if not skipped
+      if (!options.skipFileScan) {
+        await this.startBackgroundScan();
+      }
     } catch (error) {
-      console.error("Background scan failed:", error);
-      this.transitionTo("error", "error", "initialize");
+      console.error("Initialization failed:", error);
+      this.transitionTo("error", "initialize");
       throw error;
     }
   }

@@ -1,5 +1,6 @@
 import type {
   FileChangeInfo,
+  ResolutionType,
   SyncTarget,
   TargetState
 } from "./files-sync-target";
@@ -183,7 +184,7 @@ export type SyncManagerStateType =
 /**
  * Valid state transitions for the sync manager
  */
-type SyncManagerStateTransition =
+export type SyncManagerStateTransition =
   | { from: "uninitialized"; to: "ready"; via: "initialize" }
   | { from: "ready"; to: "syncing"; via: "changesDetected" }
   | { from: "syncing"; to: "ready"; via: "syncComplete" }
@@ -238,9 +239,16 @@ export interface IgnoreService {
 }
 
 /**
- * Interface for the sync manager that coordinates sync operations
+ * Core sync manager interface
  */
 export interface SyncManager {
+  /**
+   * Initialize the sync manager
+   * @param config Configuration for the sync manager
+   * @param ignoreService Service for managing ignored files
+   */
+  initialize(ignoreService?: IgnoreService): Promise<void>;
+
   /**
    * Register a new sync target
    * @param target The target to register
@@ -279,10 +287,19 @@ export interface SyncManager {
   getStatus(): SyncStatus;
 
   /**
-   * Get pending sync information
+   * Get pending sync operation
    * @returns Current pending sync or null if none
    */
   getPendingSync(): PendingSync | null;
+
+  /**
+   * Get file content from a target
+   * @param targetId ID of the target containing the file
+   * @param path Path of the file to get content for
+   * @returns Stream of file content
+   * @throws {SyncManagerError} if target not found or file not available
+   */
+  getFileContent(targetId: string, path: string): Promise<FileContentStream>;
 
   /**
    * Get pending changes
@@ -292,7 +309,7 @@ export interface SyncManager {
   getPendingChanges(): Promise<FileChangeInfo[]>;
 
   /**
-   * Get content for a pending change
+   * Get content of a pending change
    * @param path Path of the file to get content for
    * @returns Stream of file content
    * @throws {SyncManagerError} if no such pending change or source not available
@@ -300,71 +317,20 @@ export interface SyncManager {
   getPendingChangeContent(path: string): Promise<FileContentStream>;
 
   /**
-   * Confirm pending sync to primary
-   * This will apply pending changes to the primary target and reinitialize secondaries
-   * @throws {SyncManagerError} if no pending sync or operation fails
+   * Reinitialize a target
+   * @param targetId ID of the target to reinitialize
    */
-  confirmPrimarySync(): Promise<void>;
+  reinitializeTarget(targetId: string): Promise<void>;
 
   /**
-   * Initialize the sync manager
-   * @param config Configuration for the sync manager
-   * @param ignoreService Service for managing ignored files
+   * Recover a target using specified resolution type
+   * @param targetId ID of the target to recover
+   * @param resolutionType Type of resolution to apply
    */
-  initialize(ignoreService: IgnoreService): Promise<void>;
-
-  /**
-   * Clean up resources
-   * Stops all watchers and clears target references
-   */
-  dispose(): Promise<void>;
-
-  /**
-   * Get content stream for a file
-   * @param targetId ID of the target containing the file
-   * @param path Path of the file to get content for
-   * @returns Stream of file content
-   * @throws {SyncManagerError} if target not found or file not available
-   */
-  getFileContent(targetId: string, path: string): Promise<FileContentStream>;
-
-  /**
-   * Handle changes reported from a target
-   * Changes only include metadata, content must be streamed separately
-   * @param sourceId ID of the target reporting changes
-   * @param changes Array of file changes to process
-   */
-  handleTargetChanges(
-    sourceId: string,
-    changes: FileChangeInfo[]
+  recoverTarget(
+    targetId: string,
+    resolutionType: ResolutionType
   ): Promise<void>;
-
-  /**
-   * Validate if a state transition is allowed
-   * @param from Current state
-   * @param to Target state
-   * @param via Action causing the transition
-   * @returns boolean indicating if the transition is valid
-   */
-  validateStateTransition(
-    from: SyncManagerStateType,
-    to: SyncManagerStateType,
-    via: string
-  ): boolean;
-
-  /**
-   * Get current state type
-   * @returns Current state of the sync manager
-   */
-  getCurrentState(): SyncManagerStateType;
-
-  /**
-   * Transition to a new state
-   * @param newState State to transition to
-   * @param via Action causing the transition
-   * @throws {SyncManagerError} if transition is invalid
-   */
-  transitionTo(newState: SyncManagerStateType, via: string): void;
 
   /**
    * Add a progress listener for sync operations
@@ -378,6 +344,12 @@ export interface SyncManager {
    * @param listener The listener function to remove
    */
   removeProgressListener(listener: SyncProgressListener): void;
+
+  /**
+   * Dispose of the sync manager
+   * Stops all watchers and clears target references
+   */
+  dispose(): Promise<void>;
 }
 
 export class SyncManagerError extends Error {

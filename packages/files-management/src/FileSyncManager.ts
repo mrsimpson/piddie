@@ -12,7 +12,8 @@ import type {
   SyncManagerStateType,
   SyncProgressEvent,
   SyncProgressListener,
-  IgnoreService
+  IgnoreService,
+  ResolutionType
 } from "@piddie/shared-types";
 import { VALID_SYNC_MANAGER_TRANSITIONS } from "@piddie/shared-types";
 import { WATCHER_PRIORITIES } from "@piddie/shared-types";
@@ -96,14 +97,6 @@ export class FileSyncManager implements SyncManager {
     // Synchronous validations first
     if (options.role !== "primary" && options.role !== "secondary") {
       throw new SyncManagerError("Invalid target role", "TARGET_NOT_FOUND");
-    }
-
-    // Verify target is initialized
-    if (target.getState().status === "error") {
-      throw new SyncManagerError(
-        `Target ${target.id} is not initialized`,
-        "SOURCE_NOT_AVAILABLE"
-      );
     }
 
     // Check for duplicate target ID
@@ -690,7 +683,40 @@ export class FileSyncManager implements SyncManager {
     return this.pendingSync;
   }
 
-  private updatePendingSyncs(state: SyncOperationState): void {
+  async recoverTarget(
+    targetId: string,
+    resolutionType: ResolutionType
+  ): Promise<void> {
+    const target = this.secondaryTargets.get(targetId);
+    if (!target) {
+      throw new SyncManagerError(
+        `Target ${targetId} not found`,
+        "TARGET_NOT_FOUND"
+      );
+    }
+
+    try {
+      // First recover the target
+      await target.recover(resolutionType);
+
+      // Check if all targets are now in a non-error state
+      const allTargetsHealthy = Array.from(
+        this.secondaryTargets.values()
+      ).every((t) => t.getState().status !== "error");
+
+      // If all targets are healthy, transition sync manager to idle
+      if (allTargetsHealthy) {
+        this.transitionTo("ready", "recovery");
+      }
+    } catch (error) {
+      throw new SyncManagerError(
+        `Failed to recover target ${targetId}: ${error instanceof Error ? error.message : "Unknown error"}`,
+        "SOURCE_NOT_AVAILABLE"
+      );
+    }
+  }
+
+  private async updatePendingSyncs(state: SyncOperationState): Promise<void> {
     const failedResults = state.results.filter((r) => !r.success);
     if (failedResults.length === 0) {
       // All succeeded, clear pending syncs
@@ -984,7 +1010,7 @@ export class FileSyncManager implements SyncManager {
     }
   }
 
-  protected async reinitializeTarget(targetId: string): Promise<void> {
+  async reinitializeTarget(targetId: string): Promise<void> {
     const target = this.secondaryTargets.get(targetId);
     if (!target) {
       throw new SyncManagerError("Target not found", "TARGET_NOT_FOUND");

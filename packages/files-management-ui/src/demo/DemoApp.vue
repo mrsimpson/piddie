@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from "vue";
+import { ref, onMounted, onBeforeUnmount, provide } from "vue";
 import type { SynchronizedFileSystem } from "../types/file-explorer";
 import type { SyncTarget } from "@piddie/shared-types";
 import { createSynchronizedFileSystem } from "../types/file-explorer";
@@ -68,15 +68,12 @@ async function initializeBrowserSystem() {
 
     // Create and initialize browser sync target
     const browserTarget = new BrowserSyncTarget("browser");
-    await browserTarget.initialize(browserFs, 
-      true, 
-      {skipFileScan:false, 
-        resolutionFunctions: 
-        {
-          resolveFromPrimary: ()=> syncManager.fullSyncFromPrimaryToTarget(browserTarget)
-        }
+    await browserTarget.initialize(browserFs, true, {
+      skipFileScan: false,
+      resolutionFunctions: {
+        resolveFromPrimary: () => syncManager.fullSyncFromPrimaryToTarget(browserTarget)
       }
-    );
+    });
 
     // Create synchronized system
     const browserSystem = await createSynchronizedFileSystem({
@@ -115,14 +112,18 @@ async function addNativeSystem() {
 
     // Create and initialize native sync target
     const nativeTarget = new BrowserNativeSyncTarget("native");
-    await nativeTarget.initialize(nativeFs, false, 
-      {skipFileScan:false, 
-        resolutionFunctions: 
-        {
-          resolveFromPrimary: ()=> syncManager.fullSyncFromPrimaryToTarget(nativeTarget)
+
+    try {
+      await nativeTarget.initialize(nativeFs, false, {
+        skipFileScan: false,
+        resolutionFunctions: {
+          resolveFromPrimary: () => syncManager.fullSyncFromPrimaryToTarget(nativeTarget)
         }
-      }
-    );
+      });
+    } catch (initError) {
+      // Log the error but continue - we'll show the error state in the UI
+      console.warn("Native target initialization resulted in error state:", initError);
+    }
 
     // Create synchronized system
     const nativeSystem = await createSynchronizedFileSystem({
@@ -143,48 +144,43 @@ async function addNativeSystem() {
     if (systems.value.length >= 1) {
       try {
         await initializeSyncManager(systems.value[0].syncTarget, nativeTarget);
-
-        // Wait for initial sync to complete
-        const maxWaitTime = 30000; // 30 seconds
-        const startTime = Date.now();
-
-        while (Date.now() - startTime < maxWaitTime) {
-          const status = syncManager.getStatus();
-          if (status.phase === "idle") {
-            break;
-          }
-          await new Promise((resolve) => setTimeout(resolve, 100));
-        }
       } catch (syncError) {
-        handleUIError(syncError, "Failed to initialize sync", COMPONENT_ID);
-        return;
+        // Log the error but continue - the error state will be visible in the UI
+        console.warn("Sync manager initialization failed:", syncError);
       }
     }
 
-    // Only add the system to UI after sync is complete
+    // Add the system regardless of initialization state
     systems.value = [...systems.value, nativeSystem];
   } catch (err) {
-    handleUIError(err, "Failed to initialize native system", COMPONENT_ID);
+    handleUIError(err, "Failed to set up native system", COMPONENT_ID);
   }
 }
 
 async function addWebContainerSystem() {
   try {
-    // Create and initialize WebContainer filesystem
-    const webcontainerInstance = await WebContainer.boot();
-    const webcontainerFs = new WebContainerFileSystem(webcontainerInstance);
+    // Create and initialize WebContainer
+    const webcontainer = await WebContainer.boot();
+    await webcontainer.mount({});
+
+    // Create and initialize WebContainer file system
+    const webcontainerFs = new WebContainerFileSystem(webcontainer);
     await webcontainerFs.initialize();
 
     // Create and initialize WebContainer sync target
     const webcontainerTarget = new WebContainerSyncTarget("webcontainer");
-    await webcontainerTarget.initialize(webcontainerFs, false, 
-      {skipFileScan:false, 
-        resolutionFunctions: 
-        {
-          resolveFromPrimary: ()=> syncManager.fullSyncFromPrimaryToTarget(webcontainerTarget)
+
+    try {
+      await webcontainerTarget.initialize(webcontainerFs, false, {
+        skipFileScan: false,
+        resolutionFunctions: {
+          resolveFromPrimary: () => syncManager.fullSyncFromPrimaryToTarget(webcontainerTarget)
         }
-      }
-    );
+      });
+    } catch (initError) {
+      // Log the error but continue - we'll show the error state in the UI
+      console.warn("WebContainer target initialization resulted in error state:", initError);
+    }
 
     // Create synchronized system
     const webcontainerSystem = await createSynchronizedFileSystem({
@@ -201,19 +197,20 @@ async function addWebContainerSystem() {
       }
     });
 
-    // Initialize sync manager if not the first system
+    // Initialize sync manager first if not the first system
     if (systems.value.length >= 1) {
       try {
-        await initializeSyncManager(systems.value[0].syncTarget, webcontainerSystem.syncTarget);
+        await initializeSyncManager(systems.value[0].syncTarget, webcontainerTarget);
       } catch (syncError) {
-        handleUIError(syncError, "Failed to initialize sync", COMPONENT_ID);
+        // Log the error but continue - the error state will be visible in the UI
+        console.warn("Sync manager initialization failed:", syncError);
       }
     }
 
-    // Add WebContainer system to the list
+    // Add the system regardless of initialization state
     systems.value = [...systems.value, webcontainerSystem];
   } catch (err) {
-    handleUIError(err, "Failed to initialize WebContainer system", COMPONENT_ID);
+    handleUIError(err, "Failed to set up WebContainer system", COMPONENT_ID);
   }
 }
 
@@ -229,12 +226,12 @@ async function initializeSyncManager(primaryTarget: SyncTarget, secondaryTarget:
       await syncManager.registerTarget(primaryTarget, { role: "primary" });
 
       // Monitor sync status
-    const monitorInterval = setInterval(monitorSync, 1000);
+      const monitorInterval = setInterval(monitorSync, 1000);
 
       // Clean up on component unmount
-    onBeforeUnmount(() => {
-      clearInterval(monitorInterval);
-    });
+      onBeforeUnmount(() => {
+        clearInterval(monitorInterval);
+      });
 
       console.log("Sync manager initialized with primary target");
     }
@@ -246,6 +243,9 @@ async function initializeSyncManager(primaryTarget: SyncTarget, secondaryTarget:
     handleUIError(err, "Failed to initialize sync manager", COMPONENT_ID);
   }
 }
+
+// Provide sync manager to child components
+provide("syncManager", syncManager);
 
 // Initialize browser system on mount
 onMounted(initializeBrowserSystem);

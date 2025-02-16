@@ -2,7 +2,8 @@ import { watch } from "fs/promises";
 import type {
   FileSystem,
   FileChangeInfo,
-  SyncTargetType
+  SyncTargetType,
+  ResolutionFunctions
 } from "@piddie/shared-types";
 import { NodeFileSystem } from "./NodeFileSystem";
 import { SyncOperationError } from "@piddie/shared-types";
@@ -32,7 +33,11 @@ export class NodeSyncTarget extends BaseSyncTarget {
 
   override async initialize(
     fileSystem: FileSystem,
-    isPrimary: boolean
+    isPrimary: boolean,
+    options?: {
+      skipFileScan?: boolean;
+      resolutionFunctions?: ResolutionFunctions;
+    }
   ): Promise<void> {
     if (!(fileSystem instanceof NodeFileSystem)) {
       throw new SyncOperationError(
@@ -42,6 +47,7 @@ export class NodeSyncTarget extends BaseSyncTarget {
     }
     this.fileSystem = fileSystem;
     this.isPrimaryTarget = isPrimary;
+    this.resolutionFunctions = options?.resolutionFunctions;
     await this.fileSystem.initialize();
     this.transitionTo("idle", "initialize");
   }

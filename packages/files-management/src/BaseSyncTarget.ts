@@ -11,7 +11,8 @@ import type {
   WatcherOptions,
   SyncTargetType,
   IgnoreService,
-  ResolutionFunctions
+  ResolutionFunctions,
+  ResolutionType
 } from "@piddie/shared-types";
 import { SyncOperationError } from "@piddie/shared-types";
 import { VALID_TARGET_STATE_TRANSITIONS } from "@piddie/shared-types";
@@ -39,6 +40,7 @@ export abstract class BaseSyncTarget implements SyncTarget {
   protected pendingChanges: FileChangeInfo[] = [];
   protected watcherRegistry = new WatcherRegistry();
   protected ignoreService: IgnoreService | undefined = undefined;
+  protected resolutionFunctions?: ResolutionFunctions | undefined;
 
   constructor(targetId: string) {
     this.id = targetId;
@@ -362,6 +364,47 @@ export abstract class BaseSyncTarget implements SyncTarget {
     }
   }
 
+  async recover(resolutionType?: ResolutionType): Promise<void> {
+    this.transitionTo("idle", "recovery"); //optimistically trnasition to allow changes again
+
+    try {
+      // If a resolution type is specified and we have resolution functions, apply them
+      if (resolutionType && this.resolutionFunctions) {
+        if (
+          resolutionType === "fromPrimary" &&
+          this.resolutionFunctions.resolveFromPrimary
+        ) {
+          await this.resolutionFunctions.resolveFromPrimary();
+        } else if (
+          resolutionType === "fromSecondary" &&
+          this.resolutionFunctions.resolveFromSecondary
+        ) {
+          await this.resolutionFunctions.resolveFromSecondary();
+        }
+      }
+
+      // Reset error state
+      this.error = null;
+      this.currentState = "idle";
+
+      // Unlock the filesystem if it was locked
+      if (this.fileSystem) {
+        await this.fileSystem.forceUnlock;
+      }
+    } catch (error) {
+      //we were too optimistic -> re-transition to error state
+      this.transitionTo("error", "error", "recovery");
+      this.error =
+        error instanceof Error
+          ? error.message
+          : "Unknown error during recovery";
+      throw new SyncOperationError(
+        `Recovery failed: ${this.error}`,
+        "INITIALIZATION_FAILED"
+      );
+    }
+  }
+
   // Public Interface Methods
   abstract initialize(
     fileSystem: FileSystem,
@@ -373,6 +416,10 @@ export abstract class BaseSyncTarget implements SyncTarget {
   ): Promise<void>;
 
   async notifyIncomingChanges(paths: string[]): Promise<void> {
+    // Allow notification in error state if we have resolution functions
+    if (this.currentState === "error" && this.resolutionFunctions) {
+      return;
+    }
     await this.doCollect(paths);
   }
 
@@ -389,10 +436,6 @@ export abstract class BaseSyncTarget implements SyncTarget {
 
   async syncComplete(): Promise<boolean> {
     return this.doFinishSync();
-  }
-
-  async recover(): Promise<void> {
-    await this.doRecover();
   }
 
   async getMetadata(paths: string[]): Promise<FileMetadata[]> {
@@ -557,52 +600,44 @@ export abstract class BaseSyncTarget implements SyncTarget {
             currentFiles.set(path, {
               lastModified:
                 knownState?.lastModified ?? dirMetadata.lastModified,
-              hash: "" // Directories don't have a hash
+              hash: dirMetadata.hash
             });
           } catch (error) {
             console.warn(
-              `Failed to get metadata for directory ${path}:`,
+              `Could not get metadata for directory ${path}:`,
               error
             );
           }
         }
 
+        // Then scan contents
         const items = await this.fileSystem!.listDirectory(path);
-
         for (const item of items) {
-          const fullPath = item.path;
-
-          try {
-            const metadata = await this.fileSystem!.getMetadata(fullPath);
-            const knownState = this.lastKnownFiles.get(fullPath);
-
-            // we need to forward the lastModified only if the file actually has got a new contents.
-            // some filesystems (like S3) do not allow to update the lastModified timestamp, so we need to keep this a separate information
-            const lastModified =
-              knownState?.lastModified && knownState?.hash === metadata.hash
-                ? knownState.lastModified
-                : metadata.lastModified;
-            currentFiles.set(fullPath, {
-              lastModified,
-              hash: metadata.hash
-            });
-
-            if (item.type === "directory") {
-              await scanDirectory(fullPath);
+          if (item.type === "directory") {
+            await scanDirectory(item.path);
+          } else {
+            try {
+              const metadata = await this.fileSystem!.getMetadata(item.path);
+              const knownState = this.lastKnownFiles.get(item.path);
+              currentFiles.set(item.path, {
+                lastModified: knownState?.lastModified ?? metadata.lastModified,
+                hash: metadata.hash
+              });
+            } catch (error) {
+              console.warn(
+                `Could not get metadata for file ${item.path}:`,
+                error
+              );
             }
-          } catch (error) {
-            console.warn(`Failed to get metadata for ${fullPath}:`, error);
-            continue;
           }
         }
       } catch (error) {
-        throw new SyncOperationError(
-          `Failed to scan directory ${path}: ${error instanceof Error ? error.message : "Unknown error"}`,
-          "METADATA_RETRIEVAL_FAILED"
-        );
+        // If we can't list a directory, log warning but continue with other directories
+        console.warn(`Could not scan directory ${path}:`, error);
       }
     };
 
+    // Start scan from root
     await scanDirectory("/");
     return currentFiles;
   }

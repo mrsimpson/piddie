@@ -115,10 +115,16 @@ export type SyncTargetType =
   | "container-fs";
 
 /**
+ * Type of resolution to apply during recovery
+ */
+export type ResolutionType = "fromPrimary" | "fromSecondary";
+
+/**
  * Functions to resolve conflicts
  */
-export type ResolutionFunctions = {
+export interface ResolutionFunctions {
   resolveFromPrimary: () => Promise<void>;
+  resolveFromSecondary?: () => Promise<void>;
 }
 
 /**
@@ -140,7 +146,7 @@ export interface SyncTarget {
     isPrimary: boolean,
     options?: {
       skipFileScan?: boolean;
-      resolutionFunctions?: ResolutionFunctions
+      resolutionFunctions?: ResolutionFunctions;
     }
   ): Promise<void>;
 
@@ -216,8 +222,9 @@ export interface SyncTarget {
   /**
    * Recover from error state
    * This will attempt to unlock the underlying filesystem and transition back to idle state
+   * @param resolutionType Optional type of resolution to apply during recovery
    */
-  recover(): Promise<void>;
+  recover(resolutionType?: ResolutionType): Promise<void>;
 }
 
 export class SyncOperationError extends Error {
