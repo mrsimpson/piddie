@@ -239,6 +239,7 @@ export class SyncOperationError extends Error {
       | "CONTENT_RETRIEVAL_FAILED"
       | "APPLY_FAILED"
       | "WATCH_FAILED"
+      | "RECOVERY_FAILED"
   ) {
     super(message);
     this.name = "SyncOperationError";

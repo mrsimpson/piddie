@@ -1,7 +1,8 @@
 import type {
   FileSystem,
   FileChangeInfo,
-  ResolutionFunctions
+  ResolutionFunctions,
+  ResolutionType
 } from "@piddie/shared-types";
 import { SyncOperationError } from "@piddie/shared-types";
 import { BaseSyncTarget } from "./BaseSyncTarget";
@@ -257,6 +258,29 @@ export abstract class PollingSyncTarget extends BaseSyncTarget {
       // Notify watchers of the changes
       await this.notifyWatchers(bufferedChanges);
     }, 100); // 100ms debounce
+  }
+
+  override async recover(resolutionType?: ResolutionType): Promise<void> {
+    // First do the base recovery
+    await super.recover(resolutionType);
+
+    // Restart the watcher
+    this.shouldContinueWatching = false;
+    if (this.watchTimeout !== null) {
+      globalThis.clearTimeout(this.watchTimeout);
+      this.watchTimeout = null;
+    }
+
+    // Clear any pending changes
+    this.changeBuffer.clear();
+    if (this.changeTimeout !== null) {
+      globalThis.clearTimeout(this.changeTimeout);
+      this.changeTimeout = null;
+    }
+
+    // Reset watcher state and start fresh
+    this.isWatcherRunning = false;
+    await this.startWatching();
   }
 
   override async unwatch(): Promise<void> {

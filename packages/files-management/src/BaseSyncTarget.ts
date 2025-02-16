@@ -365,7 +365,7 @@ export abstract class BaseSyncTarget implements SyncTarget {
   }
 
   async recover(resolutionType?: ResolutionType): Promise<void> {
-    this.transitionTo("idle", "recovery"); //optimistically trnasition to allow changes again
+    this.transitionTo("idle", "recovery"); //optimistically transition to allow changes again
 
     try {
       // If a resolution type is specified and we have resolution functions, apply them
@@ -389,7 +389,9 @@ export abstract class BaseSyncTarget implements SyncTarget {
 
       // Unlock the filesystem if it was locked
       if (this.fileSystem) {
-        await this.fileSystem.forceUnlock;
+        await this.fileSystem.forceUnlock();
+        // Update lastKnownFiles to current state to prevent false "create" notifications
+        this.lastKnownFiles = await this.getCurrentFilesState();
       }
     } catch (error) {
       //we were too optimistic -> re-transition to error state

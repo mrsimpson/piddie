@@ -52,23 +52,22 @@ export function createMockStream(
 
 export function setupDefaultSpyBehavior(
   spies: {
-    initialize: MockInstance<() => Promise<void>>;
-    readFile: MockInstance<(path: string) => Promise<string>>;
-    writeFile: MockInstance<(path: string, content: string) => Promise<void>>;
-    deleteItem: MockInstance<(path: string) => Promise<void>>;
-    exists: MockInstance<(path: string) => Promise<boolean>>;
-    lock: MockInstance<
-      (
-        timeout: number,
-        reason: string,
-        mode: LockMode,
-        owner: string
-      ) => Promise<void>
+    initialize: MockInstance<[], Promise<void>>;
+    readFile: MockInstance<[path: string], Promise<string>>;
+    writeFile: MockInstance<
+      [path: string, content: string, isSyncOperation: boolean],
+      Promise<void>
     >;
-    unlock: MockInstance<(path: string) => Promise<void>>;
-    forceUnlock: MockInstance<(path: string) => Promise<void>>;
-    listDirectory: MockInstance<(path: string) => Promise<FileSystemItem[]>>;
-    getMetadata: MockInstance<(path: string) => Promise<FileMetadata>>;
+    deleteItem: MockInstance<[path: string], Promise<void>>;
+    exists: MockInstance<[path: string], Promise<boolean>>;
+    lock: MockInstance<
+      [timeout: number, reason: string, mode: LockMode, owner: string],
+      Promise<void>
+    >;
+    unlock: MockInstance<[path: string], Promise<void>>;
+    forceUnlock: MockInstance<[path: string], Promise<void>>;
+    listDirectory: MockInstance<[path: string], Promise<FileSystemItem[]>>;
+    getMetadata: MockInstance<[path: string], Promise<FileMetadata>>;
   },
   context: MockFileSystemContext
 ) {
@@ -78,7 +77,19 @@ export function setupDefaultSpyBehavior(
   });
 
   spies.readFile.mockResolvedValue("test content");
-  spies.writeFile.mockResolvedValue(undefined);
+  spies.writeFile.mockImplementation(
+    async (path: string, content: string, isSyncOperation: boolean = false) => {
+      const metadata =
+        context.mockMetadata.get(path) || createMockMetadata(path, content);
+      const fileHandle = createMockFileHandle(
+        path,
+        content,
+        metadata.lastModified
+      );
+      context.mockFiles.set(path, fileHandle);
+      context.mockMetadata.set(path, metadata);
+    }
+  );
   spies.deleteItem.mockResolvedValue(undefined);
   spies.exists.mockImplementation(async (path: string) => {
     if (path === context.rootDir || path === "/") return true;
