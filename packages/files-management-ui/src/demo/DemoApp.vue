@@ -220,8 +220,8 @@ async function initializeSyncManager(primaryTarget: SyncTarget, secondaryTarget:
     // Check if any targets are registered to determine if sync manager is initialized
     const hasTargets = status.targets && status.targets.size > 0;
 
-    // Only initialize if no targets are registered yet
     if (!hasTargets) {
+      // First time initialization
       await syncManager.initialize();
       await syncManager.registerTarget(primaryTarget, { role: "primary" });
 
@@ -236,9 +236,14 @@ async function initializeSyncManager(primaryTarget: SyncTarget, secondaryTarget:
       console.log("Sync manager initialized with primary target");
     }
 
-    // Register the secondary target
-    await syncManager.registerTarget(secondaryTarget, { role: "secondary" });
-    console.log("Secondary target registered successfully");
+    // Register the secondary target if it's not already registered
+    const existingTargets = syncManager.getSecondaryTargets();
+    if (!existingTargets.some((t) => t.id === secondaryTarget.id)) {
+      await syncManager.registerTarget(secondaryTarget, { role: "secondary" });
+      console.log("Secondary target registered successfully");
+    } else {
+      console.log(`Secondary target ${secondaryTarget.id} already registered`);
+    }
   } catch (err) {
     handleUIError(err, "Failed to initialize sync manager", COMPONENT_ID);
   }

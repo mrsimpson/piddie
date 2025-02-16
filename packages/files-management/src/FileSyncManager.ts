@@ -608,17 +608,25 @@ export class FileSyncManager implements SyncManager {
         }
       }
     } else {
-      // Register secondary target
+      // Add to secondary targets
       this.secondaryTargets.set(target.id, target);
       console.info(`[FileSyncManager] Added secondary target: ${target.id}`);
 
-      // Only sync if manager is initialized and primary exists
-      if (this.currentState !== "uninitialized" && this.primaryTarget) {
-        await this.fullSyncFromPrimaryToTarget(target);
-      }
-
       // Start watching secondary
       await this.startWatching(target);
+
+      // Only sync if manager is initialized and primary exists
+      if (this.currentState !== "uninitialized" && this.primaryTarget) {
+        try {
+          await this.fullSyncFromPrimaryToTarget(target);
+        } catch (error) {
+          console.warn(
+            `Initial sync failed for secondary target ${target.id}:`,
+            error
+          );
+          // Don't throw - the target's error state will be visible in the UI
+        }
+      }
     }
   }
 
