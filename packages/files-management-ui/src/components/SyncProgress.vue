@@ -36,32 +36,25 @@ function getProgressPercentage(): number {
 
 // Progress listener
 function handleProgress(progress: SyncProgressEvent) {
-  if (progress.type === "syncing") {
-    currentProgress.value = progress;
+  currentProgress.value = progress;
+
+  // Hide progress for error and completion events
+  if (progress.type === "error" || progress.type === "completing") {
+    isVisible.value = false;
+    // For completion, clear the progress after a delay
+    if (progress.type === "completing") {
+      setTimeout(() => {
+        currentProgress.value = null;
+      }, 2000);
+    }
+    return;
   }
 
-  // Show progress for all events except completion
-  isVisible.value = progress.type !== "completing";
-
-  // Hide progress after completion
-  if (progress.type === "completing") {
-    setTimeout(() => {
-      isVisible.value = false;
-      currentProgress.value = null;
-    }, 2000);
-  }
+  // Show progress for all other events
+  isVisible.value = true;
 }
 
-// Setup and cleanup
-onMounted(() => {
-  props.syncManager.addProgressListener(handleProgress);
-});
-
-onBeforeUnmount(() => {
-  props.syncManager.removeProgressListener(handleProgress);
-});
-
-// Add this function in the script section after formatBytes:
+// Helper to get file name
 function getFileName(): string {
   if (!currentProgress.value) return "";
 
@@ -78,6 +71,15 @@ function getFileName(): string {
       return "";
   }
 }
+
+// Setup and cleanup
+onMounted(() => {
+  props.syncManager.addProgressListener(handleProgress);
+});
+
+onBeforeUnmount(() => {
+  props.syncManager.removeProgressListener(handleProgress);
+});
 </script>
 
 <template>

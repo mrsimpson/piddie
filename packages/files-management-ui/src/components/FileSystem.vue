@@ -9,8 +9,10 @@ import {
 import { WATCHER_PRIORITIES } from "@piddie/shared-types";
 import FileSystemExplorer from "./FileSystemExplorer.vue";
 import SyncTargetStatus from "./SyncTargetStatus.vue";
-import { ref, onMounted, onBeforeUnmount, computed } from "vue";
+import ErrorDisplay from "./ErrorDisplay.vue";
+import { ref, onMounted, onBeforeUnmount, computed, provide } from "vue";
 import { handleUIError } from "../utils/error-handling";
+import { useErrorStore } from "../stores/error-store";
 
 const COMPONENT_ID = "FileSystem";
 const props = defineProps<{
@@ -24,6 +26,8 @@ const uiSyncTarget = ref<
 const isInitializing = ref(true);
 const isScanning = ref(false);
 const isSyncing = ref(false);
+
+const errorStore = useErrorStore();
 
 // Computed loading text based on state
 const loadingText = computed(() => {
@@ -143,11 +147,20 @@ onMounted(async () => {
 
 onBeforeUnmount(async () => {
   await cleanupSyncTarget();
+  errorStore.clearErrors(props.system.id);
 });
 </script>
 
 <template>
   <div class="file-system">
+    <div class="file-system-header">
+      <div class="header-left">
+        <h2 class="system-title">{{ system.title }}</h2>
+        <SyncTargetStatus :target="system.syncTarget" />
+      </div>
+      <ErrorDisplay :target-id="system.id" />
+    </div>
+
     <div v-if="isInitializing || isScanning || isSyncing" class="loading-overlay">
       <sl-spinner></sl-spinner>
       <div class="loading-text">
@@ -161,7 +174,6 @@ onBeforeUnmount(async () => {
       :disabled="isInitializing || isScanning || isSyncing"
       @error="handleError"
     />
-    <SyncTargetStatus :target="system.syncTarget" />
   </div>
 </template>
 
@@ -172,6 +184,29 @@ onBeforeUnmount(async () => {
   border: 1px solid var(--sl-color-neutral-300);
   border-radius: var(--sl-border-radius-medium);
   padding: var(--sl-spacing-medium);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sl-spacing-medium);
+}
+
+.file-system-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: var(--sl-spacing-small);
+  border-bottom: 1px solid var(--sl-color-neutral-200);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--sl-spacing-medium);
+}
+
+.system-title {
+  margin: 0;
+  font-size: var(--sl-font-size-large);
+  color: var(--sl-color-neutral-900);
 }
 
 .loading-overlay {

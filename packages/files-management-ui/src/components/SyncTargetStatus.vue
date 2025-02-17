@@ -13,6 +13,7 @@ const props = defineProps<{
 const syncManager = inject<FileSyncManager>("syncManager");
 const state = ref(props.target.getState());
 const updateInterval = ref<number>();
+const lastErrorMessage = ref<string>(); // Track the last error message
 
 function getStatusIcon(status: string): string {
   switch (status) {
@@ -27,21 +28,17 @@ function getStatusIcon(status: string): string {
   }
 }
 
-async function handleResolveFromPrimary() {
-  if (!syncManager) {
-    handleUIError("No sync manager available", COMPONENT_ID);
-    return;
-  }
-
-  try {
-    await syncManager.recoverTarget(props.target.id, "fromPrimary");
-  } catch (err) {
-    handleUIError(err, "Failed to resolve from primary", COMPONENT_ID);
-  }
-}
-
 function updateState() {
-  state.value = props.target.getState();
+  const newState = props.target.getState();
+  // Add error to error store if status is error and it's a new error
+  if (newState.status === "error" && newState.error && newState.error !== lastErrorMessage.value) {
+    lastErrorMessage.value = newState.error;
+    handleUIError(newState.error, `Sync error in ${props.target.id}`, props.target.id);
+  } else if (newState.status !== "error") {
+    // Reset last error when status is no longer error
+    lastErrorMessage.value = undefined;
+  }
+  state.value = newState;
 }
 
 onMounted(() => {
@@ -60,16 +57,6 @@ onUnmounted(() => {
     <div class="status-indicator" :class="state.status">
       <sl-icon :name="getStatusIcon(state.status)" />
       {{ state.status }}
-    </div>
-
-    <sl-button v-if="state.status === 'error'" variant="warning" @click="handleResolveFromPrimary">
-      <!-- eslint-disable-next-line vue/no-deprecated-slot-attribute -->
-      <sl-icon slot="prefix" name="arrow-repeat"></sl-icon>
-      Full Sync from Primary
-    </sl-button>
-
-    <div v-if="state.error" class="error">
-      {{ state.error }}
     </div>
     <div v-if="state.pendingChanges > 0" class="pending">
       {{ state.pendingChanges }} changes pending
@@ -93,7 +80,7 @@ onUnmounted(() => {
   gap: var(--sl-spacing-x-small);
   font-size: var(--sl-font-size-small);
   color: var(--sl-color-neutral-700);
-  padding: var(--sl-spacing-x-small) var(--sl-spacing-small);
+  padding: var(--sl-spacing-x-small);
   border-radius: var(--sl-border-radius-small);
 }
 
@@ -106,11 +93,6 @@ onUnmounted(() => {
 .status-indicator.error {
   background: var(--sl-color-danger-100);
   color: var(--sl-color-danger-700);
-}
-
-.error {
-  color: var(--sl-color-danger-600);
-  font-size: var(--sl-font-size-small);
 }
 
 .pending {

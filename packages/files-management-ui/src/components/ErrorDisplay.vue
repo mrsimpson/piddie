@@ -1,11 +1,21 @@
 <script setup lang="ts">
 import { useErrorStore } from "../stores/error-store";
-import { computed } from "vue";
+import { computed, inject, defineProps } from "vue";
+import type { FileSyncManager } from "@piddie/files-management";
+import { handleUIError } from "../utils/error-handling";
+
+const COMPONENT_ID = "ErrorDisplay";
+const props = defineProps<{
+  targetId: string; // Add prop for target ID
+}>();
 
 const errorStore = useErrorStore();
+const syncManager = inject<FileSyncManager>("syncManager");
 
-const sortedErrors = computed(() => {
-  return [...errorStore.errors.value].sort((a, b) => b.timestamp - a.timestamp);
+const targetErrors = computed(() => {
+  return [...errorStore.errors.value]
+    .filter((error) => error.componentId === props.targetId)
+    .sort((a, b) => b.timestamp - a.timestamp);
 });
 
 function dismissError(id: string) {
@@ -15,20 +25,42 @@ function dismissError(id: string) {
 function formatTime(timestamp: number): string {
   return new Date(timestamp).toLocaleTimeString();
 }
+
+async function doRecover(targetId: string) {
+  if (!syncManager) {
+    handleUIError("No sync manager available", COMPONENT_ID);
+    return;
+  }
+
+  try {
+    await syncManager.recoverTarget(targetId, "fromPrimary");
+    // Remove the error after successful resolution
+    errorStore.errors.value = errorStore.errors.value.filter(
+      (error) => error.componentId !== targetId
+    );
+  } catch (err) {
+    handleUIError(err, "Failed to resolve from primary", COMPONENT_ID);
+  }
+}
 </script>
 
 <template>
-  <div class="error-display" v-if="sortedErrors.length">
-    <div v-for="error in sortedErrors" :key="error.id" class="error-item">
-      <div class="error-content">
+  <div class="error-display" v-if="targetErrors.length">
+    <div v-for="error in targetErrors" :key="error.id" class="error-item">
+      <sl-icon name="exclamation-triangle" class="info-icon"></sl-icon>
+      <div class="error-details" v-show="false">
         <div class="error-message">{{ error.message }}</div>
-        <div class="error-meta">
-          <span class="error-time">{{ formatTime(error.timestamp) }}</span>
-          <span v-if="error.componentId" class="error-component">{{ error.componentId }}</span>
+        <div class="error-actions">
+          <div class="error-meta">
+            <span class="error-time">{{ formatTime(error.timestamp) }}</span>
+          </div>
         </div>
       </div>
-      <sl-button size="small" variant="text" @click="dismissError(error.id)">
-        <sl-icon name="x"></sl-icon>
+    </div>
+    <div class="action-buttons">
+      <sl-button size="small" variant="primary" @click="doRecover(props.targetId)">
+        <sl-icon slot="prefix" name="arrow-repeat"></sl-icon>
+        Resolve
       </sl-button>
     </div>
   </div>
@@ -36,42 +68,56 @@ function formatTime(timestamp: number): string {
 
 <style scoped>
 .error-display {
-  position: fixed;
-  bottom: var(--sl-spacing-medium);
-  right: var(--sl-spacing-medium);
-  max-width: 400px;
-  z-index: 1000;
+  display: flex;
+  flex-direction: row;
+  gap: var(--sl-spacing-x-small);
 }
 
 .error-item {
+  position: relative;
   display: flex;
-  align-items: flex-start;
-  gap: var(--sl-spacing-x-small);
+  align-items: center;
+}
+
+.error-item:hover .error-details {
+  display: block !important;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: var(--sl-spacing-x-small);
   background: var(--sl-color-danger-50);
   border: 1px solid var(--sl-color-danger-200);
   border-radius: var(--sl-border-radius-medium);
   padding: var(--sl-spacing-small);
-  margin-top: var(--sl-spacing-x-small);
+  min-width: 300px;
+  z-index: 1000;
 }
 
-.error-content {
-  flex: 1;
+.info-icon {
+  color: var(--sl-color-danger-600);
+  font-size: var(--sl-font-size-medium);
+  cursor: help;
 }
 
 .error-message {
   color: var(--sl-color-danger-700);
   font-size: var(--sl-font-size-small);
+  margin-bottom: var(--sl-spacing-small);
+}
+
+.error-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .error-meta {
-  display: flex;
-  gap: var(--sl-spacing-small);
-  margin-top: var(--sl-spacing-x-small);
   font-size: var(--sl-font-size-x-small);
   color: var(--sl-color-danger-600);
 }
 
-.error-component {
-  font-family: var(--sl-font-mono);
+.action-buttons {
+  display: flex;
+  gap: var(--sl-spacing-x-small);
 }
 </style>
