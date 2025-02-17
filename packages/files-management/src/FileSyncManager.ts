@@ -510,8 +510,12 @@ export class FileSyncManager implements SyncManager {
           })
         );
 
+        // Order delete changes for hierarchical operations
+        const orderedDeleteChanges =
+          this.prepareChangesForHierarchy(deleteChanges);
+
         // Apply delete changes first
-        await this.applyChangesToTarget(target, primary, deleteChanges);
+        await this.applyChangesToTarget(target, primary, orderedDeleteChanges);
       }
 
       // Get metadata for all paths
