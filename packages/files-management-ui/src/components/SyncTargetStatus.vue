@@ -1,16 +1,12 @@
 <script setup lang="ts">
 import type { SyncTarget } from "@piddie/shared-types";
-import { ref, onMounted, onUnmounted, inject } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
 import { handleUIError } from "../utils/error-handling";
-import type { FileSyncManager } from "@piddie/files-management";
-
-const COMPONENT_ID = "SyncTargetStatus";
 
 const props = defineProps<{
   target: SyncTarget;
 }>();
 
-const syncManager = inject<FileSyncManager>("syncManager");
 const state = ref(props.target.getState());
 const updateInterval = ref<number>();
 const lastErrorMessage = ref<string>(); // Track the last error message

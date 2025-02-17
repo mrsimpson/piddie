@@ -18,10 +18,6 @@ const targetErrors = computed(() => {
     .sort((a, b) => b.timestamp - a.timestamp);
 });
 
-function dismissError(id: string) {
-  errorStore.removeError(id);
-}
-
 function formatTime(timestamp: number): string {
   return new Date(timestamp).toLocaleTimeString();
 }
@@ -59,6 +55,7 @@ async function doRecover(targetId: string) {
     </div>
     <div class="action-buttons">
       <sl-button size="small" variant="primary" @click="doRecover(props.targetId)">
+        <!-- eslint-disable-next-line vue/no-deprecated-slot-attribute -->
         <sl-icon slot="prefix" name="arrow-repeat"></sl-icon>
         Resolve
       </sl-button>

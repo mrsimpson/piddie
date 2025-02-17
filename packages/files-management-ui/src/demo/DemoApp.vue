@@ -15,7 +15,6 @@ import {
 import { WATCHER_PRIORITIES } from "@piddie/shared-types";
 import { WebContainer } from "@webcontainer/api";
 import FileExplorer from "../components/FileExplorer.vue";
-import ErrorDisplay from "../components/ErrorDisplay.vue";
 import { handleUIError } from "../utils/error-handling";
 import SyncProgress from "../components/SyncProgress.vue";
 import IgnorePatternsModal from "../components/IgnorePatternsModal.vue";
@@ -313,7 +312,6 @@ onMounted(initializeBrowserSystem);
       </FileExplorer>
     </main>
 
-    <ErrorDisplay />
     <SyncProgress :sync-manager="syncManager" />
     <IgnorePatternsModal
       :sync-manager="syncManager"

@@ -10,7 +10,7 @@ import { WATCHER_PRIORITIES } from "@piddie/shared-types";
 import FileSystemExplorer from "./FileSystemExplorer.vue";
 import SyncTargetStatus from "./SyncTargetStatus.vue";
 import ErrorDisplay from "./ErrorDisplay.vue";
-import { ref, onMounted, onBeforeUnmount, computed, provide } from "vue";
+import { ref, onMounted, onBeforeUnmount, computed } from "vue";
 import { handleUIError } from "../utils/error-handling";
 import { useErrorStore } from "../stores/error-store";
 

@@ -219,27 +219,39 @@ onUnmounted(async () => {
   <div class="file-system-explorer">
     <header class="panel-header">
       <div class="toolbar">
-        <sl-button size="small" @click="navigateUp">
-          <sl-icon name="arrow-up"></sl-icon>
-        </sl-button>
-        <sl-input size="small" :value="currentPath" readonly></sl-input>
-        <sl-button size="small" @click="showNewFileDialog = true">
-          <sl-icon name="file-earmark-plus"></sl-icon>
-          New File
-        </sl-button>
-        <sl-button size="small" @click="showNewFolderDialog = true">
-          <sl-icon name="folder-plus"></sl-icon>
-          New Folder
-        </sl-button>
-        <sl-button
-          size="small"
-          variant="danger"
-          :disabled="!selectedFile"
-          @click="showDeleteConfirmDialog = true"
-        >
-          <sl-icon name="trash"></sl-icon>
-          Delete
-        </sl-button>
+        <div class="path-navigation">
+          <sl-tooltip content="Go Up">
+            <sl-button size="small" @click="navigateUp">
+              <sl-icon name="arrow-up"></sl-icon>
+            </sl-button>
+          </sl-tooltip>
+          <sl-input size="small" :value="currentPath" readonly class="path-input"></sl-input>
+        </div>
+        <div class="action-buttons">
+          <sl-tooltip content="New File">
+            <sl-button size="small" @click="showNewFileDialog = true">
+              <sl-icon name="file-earmark-plus"></sl-icon>
+              <span class="button-label">New File</span>
+            </sl-button>
+          </sl-tooltip>
+          <sl-tooltip content="New Folder">
+            <sl-button size="small" @click="showNewFolderDialog = true">
+              <sl-icon name="folder-plus"></sl-icon>
+              <span class="button-label">New Folder</span>
+            </sl-button>
+          </sl-tooltip>
+          <sl-tooltip content="Delete">
+            <sl-button
+              size="small"
+              variant="danger"
+              :disabled="!selectedFile"
+              @click="showDeleteConfirmDialog = true"
+            >
+              <sl-icon name="trash"></sl-icon>
+              <span class="button-label">Delete</span>
+            </sl-button>
+          </sl-tooltip>
+        </div>
       </div>
     </header>
 
@@ -330,7 +342,7 @@ onUnmounted(async () => {
 .file-system-explorer {
   display: grid;
   grid-template-rows: auto 1fr;
-  grid-template-columns: 300px 1fr;
+  grid-template-columns: minmax(200px, 300px) 1fr;
   grid-template-areas:
     "header header"
     "list editor";
@@ -344,19 +356,55 @@ onUnmounted(async () => {
   border-bottom: 1px solid var(--sl-color-neutral-200);
 }
 
-.panel-header h2 {
-  margin: 0 0 var(--sl-spacing-x-small);
-  font-size: var(--sl-font-size-large);
+.toolbar {
+  display: flex;
+  flex-direction: row;
+  gap: var(--sl-spacing-x-small);
+  align-items: center;
+  flex-wrap: wrap;
 }
 
-.toolbar {
+.path-navigation {
   display: flex;
   gap: var(--sl-spacing-x-small);
   align-items: center;
+  flex-wrap: nowrap;
 }
 
-.toolbar sl-input {
+.path-input {
   flex: 1;
+  min-width: 150px;
+}
+
+.action-buttons {
+  display: flex;
+  gap: var(--sl-spacing-x-small);
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
+@media (max-width: 600px) {
+  .button-label {
+    display: none;
+  }
+
+  .toolbar {
+    gap: var(--sl-spacing-2x-small);
+  }
+
+  .file-system-explorer {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "header"
+      "list"
+      "editor";
+  }
+}
+
+@media (max-width: 400px) {
+  .action-buttons {
+    flex-wrap: wrap;
+  }
 }
 
 .file-list {
