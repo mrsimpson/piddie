@@ -12,8 +12,8 @@ on:
       - synchronize
 
 env:
-  NODE_VERSION: 18
-  PNPM_VERSION: 7
+  NODE_VERSION: 22
+  PNPM_VERSION: 9
 
 jobs:
   lint-and-format:
