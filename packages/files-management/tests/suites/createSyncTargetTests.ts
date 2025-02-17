@@ -793,6 +793,31 @@ export function createSyncTargetTests<T extends SyncTarget>(
         await target.recover();
         expect(target.getState().status).toBe("idle");
 
+        // First poll after recovery should detect existing file as new
+        spies.listDirectory.mockResolvedValueOnce([
+          {
+            path: metadata.path,
+            type: metadata.type,
+            size: metadata.size,
+            lastModified: metadata.lastModified
+          }
+        ]);
+
+        await vi.advanceTimersToNextTimerAsync();
+        await vi.advanceTimersToNextTimerAsync();
+
+        // Should detect existing file as "create" since we cleared lastKnownFiles
+        expect(callback).toHaveBeenCalledWith([
+          expect.objectContaining({
+            path: metadata.path,
+            type: "create",
+            metadata: metadata,
+            sourceTarget: target.id
+          })
+        ]);
+
+        callback.mockReset();
+
         // Setup a new file after recovery
         const { metadata: newFileMetadata } =
           await context.setupFileWithMetadata(
@@ -828,7 +853,7 @@ export function createSyncTargetTests<T extends SyncTarget>(
         await vi.advanceTimersToNextTimerAsync();
         await vi.advanceTimersToNextTimerAsync();
 
-        // Verify that the watcher detected only the new file (existing file should not be reported)
+        // Should only detect the new file
         expect(callback).toHaveBeenCalledWith([
           expect.objectContaining({
             path: newFileMetadata.path,
@@ -838,7 +863,7 @@ export function createSyncTargetTests<T extends SyncTarget>(
           })
         ]);
 
-        // Verify that polling continues
+        // Verify that polling continues by modifying existing file
         callback.mockReset();
 
         // Setup a modification to the existing file
@@ -876,7 +901,7 @@ export function createSyncTargetTests<T extends SyncTarget>(
         await vi.advanceTimersToNextTimerAsync();
         await vi.advanceTimersToNextTimerAsync();
 
-        // Verify that the watcher detected the modification
+        // Should detect the modification
         expect(callback).toHaveBeenCalledWith([
           expect.objectContaining({
             path: modifiedMetadata.path,

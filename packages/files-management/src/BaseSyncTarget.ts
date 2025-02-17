@@ -386,12 +386,11 @@ export abstract class BaseSyncTarget implements SyncTarget {
       // Reset error state
       this.error = null;
       this.currentState = "idle";
+      this.lastKnownFiles.clear(); // Clear the state to allow proper re-sync
 
       // Unlock the filesystem if it was locked
       if (this.fileSystem) {
         await this.fileSystem.forceUnlock();
-        // Update lastKnownFiles to current state to prevent false "create" notifications
-        this.lastKnownFiles = await this.getCurrentFilesState();
       }
     } catch (error) {
       //we were too optimistic -> re-transition to error state

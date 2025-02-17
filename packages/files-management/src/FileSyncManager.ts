@@ -350,9 +350,16 @@ export class FileSyncManager implements SyncManager {
       // Process changes sequentially to maintain hierarchy
       for await (const change of orderedChanges) {
         try {
-          // Skip ignored files
+          // Skip ignored files, but only if they are not deletes.
+          // Deletes might have been requested as part of a full sync and need to be applied
+          // regardless of the ignores as otherwise they migh prevent the deletion of a superior folder
+          // this is not a workaround, since anyway deleting files that should be ignored
+          // should do no harm.
           try {
-            if (this.ignoreService.isIgnored(change.path)) {
+            if (
+              change.type !== "delete" &&
+              this.ignoreService.isIgnored(change.path)
+            ) {
               console.debug(`Skipping ignored file: ${change.path}`);
               continue;
             }
@@ -474,19 +481,7 @@ export class FileSyncManager implements SyncManager {
       });
 
       // First, get all existing files in the target and delete them
-      const allExistingPaths = await this.getAllPaths(target);
-
-      // Filter out ignored paths from existing files
-      const existingFilesInTarget = allExistingPaths.filter((path) => {
-        try {
-          return !this.ignoreService.isIgnored(path);
-        } catch (error) {
-          // Log error but don't block operations if ignore check fails
-          console.error(`Error checking ignore pattern for ${path}:`, error);
-          return true; // Include file if ignore check fails
-        }
-      });
-
+      const existingFilesInTarget = await this.getAllPaths(target);
       // Notify target about incoming changes
       if (filesInPrimary.length === 0 && existingFilesInTarget.length === 0) {
         return; // nothing to do: Source and target are empty directories
