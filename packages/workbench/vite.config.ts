@@ -2,6 +2,9 @@ import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import VueDevTools from 'vite-plugin-vue-devtools'
+import { viteStaticCopy } from 'vite-plugin-static-copy'
+
+const iconsPath = 'node_modules/@shoelace-style/shoelace/dist/assets/icons'
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -13,13 +16,27 @@ export default defineConfig({
           isCustomElement: tag => tag.startsWith('sl-')
         }
       }
-    }), VueDevTools(),
+    }),
+    viteStaticCopy({
+      targets: [
+        {
+          src: iconsPath,
+          dest: 'assets',
+        },
+      ],
+    }),
+    VueDevTools(),
   ],
   resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
-      '@piddie': fileURLToPath(new URL('../', import.meta.url))
-    }
+    alias: [
+      {
+        find: '@', replacement: fileURLToPath(new URL('./src', import.meta.url))
+      },
+      {
+        find: /\/assets\/icons\/(.+)/,
+        replacement: `${iconsPath}/$1`,
+      }
+    ]
   },
   optimizeDeps: {
     exclude: ['@piddie/project-management', '@piddie/chat-context', '@piddie/files-management']
