@@ -3,53 +3,60 @@ import type { Project } from "../types/project";
 import EditableText from "./ui/EditableText.vue";
 import "@shoelace-style/shoelace/dist/components/card/card.js";
 import "@shoelace-style/shoelace/dist/components/relative-time/relative-time.js";
+import { useRoute } from "vue-router";
 
 const props = defineProps<{
   project: Project;
-  isActive: boolean;
 }>();
 
 const emit = defineEmits<{
-  select: [projectId: string];
   nameChange: [projectId: string, newName: string];
 }>();
 
-function handleNameChange(newName: string) {
-  emit('nameChange', props.project.id, newName);
-}
+const route = useRoute();
 
-function handleClick(event: MouseEvent) {
-  // Don't trigger project selection when clicking input or edit button
-  if (!(event.target as HTMLElement).closest('sl-input, sl-icon-button')) {
-    emit('select', props.project.id);
-  }
+function handleNameChange(newName: string) {
+  emit("nameChange", props.project.id, newName);
 }
 </script>
 
 <template>
-  <sl-card 
-    class="project-card" 
-    :class="{ active: isActive }"
-    @click="handleClick"
+  <router-link
+    :to="`/projects/${project.id}`"
+    class="project-link"
+    custom
+    v-slot="{ navigate }"
   >
-    <div class="project-content">
-      <EditableText
-        :value="project.name"
-        size="small"
-        @change="handleNameChange"
-      />
-      <div class="project-meta">
-        Last accessed <sl-relative-time :date="project.lastAccessed" />
+    <sl-card
+      class="project-card"
+      :class="{ active: route.params.id === project.id }"
+      @click="navigate"
+    >
+      <div class="project-content">
+        <EditableText
+          :value="project.name"
+          size="small"
+          @change="handleNameChange"
+        />
+        <div class="project-meta">
+          Last accessed <sl-relative-time :date="project.lastAccessed" />
+        </div>
       </div>
-    </div>
-  </sl-card>
+    </sl-card>
+  </router-link>
 </template>
 
 <style scoped>
+.project-link {
+  text-decoration: none;
+  color: inherit;
+}
+
 .project-card {
   cursor: pointer;
   --padding: 0.75rem;
   transition: background-color 0.2s ease;
+  width: 100%;
 }
 
 .project-card:hover {

@@ -6,7 +6,7 @@ import "@shoelace-style/shoelace/dist/components/icon/icon.js";
 
 const props = defineProps<{
   value: string;
-  size?: 'small' | 'medium' | 'large';
+  size?: "small" | "medium" | "large";
 }>();
 
 const emit = defineEmits<{
@@ -17,11 +17,14 @@ const isEditing = ref(false);
 const editedValue = ref(props.value);
 
 // Update editedValue when props.value changes
-watch(() => props.value, (newValue) => {
-  if (!isEditing.value) {
-    editedValue.value = newValue;
+watch(
+  () => props.value,
+  (newValue) => {
+    if (!isEditing.value) {
+      editedValue.value = newValue;
+    }
   }
-});
+);
 
 function startEditing() {
   isEditing.value = true;
@@ -31,15 +34,15 @@ function startEditing() {
 function saveEdit() {
   const newValue = editedValue.value.trim();
   if (newValue && newValue !== props.value) {
-    emit('change', newValue);
+    emit("change", newValue);
   }
   isEditing.value = false;
 }
 
 function handleKeyDown(event: KeyboardEvent) {
-  if (event.key === 'Enter') {
+  if (event.key === "Enter") {
     saveEdit();
-  } else if (event.key === 'Escape') {
+  } else if (event.key === "Escape") {
     isEditing.value = false;
     editedValue.value = props.value;
   }

@@ -1,10 +1,6 @@
 <script setup lang="ts">
 import { storeToRefs } from "pinia";
 import { useProjectStore } from "./stores/project";
-import ProjectsList from "./components/ProjectsList.vue";
-import ChatPanel from "./components/ChatPanel.vue";
-import FileExplorer from "./components/FileExplorer.vue";
-import CodeEditor from "./components/CodeEditor.vue";
 import ThemeToggle from "./components/ui/ThemeToggle.vue";
 
 const projectStore = useProjectStore();
@@ -16,27 +12,28 @@ const { isChatVisible } = storeToRefs(projectStore);
     <div class="theme-toggle">
       <ThemeToggle />
     </div>
-    <ProjectsList class="projects-list" />
-    <ChatPanel v-if="isChatVisible" class="chat-panel" />
-    <FileExplorer class="file-explorer" />
-    <CodeEditor class="code-editor" />
+    <router-view name="sidepanelLeft" />
+    <div class="main-content">
+      <router-view />
+    </div>
   </div>
 </template>
 
 <style scoped>
 .app-container {
-  display: grid;
-  grid-template-columns: 250px 300px 250px 1fr;
-  grid-template-areas: "projects chat files editor";
-  height: 100vh;
-  width: 100vw;
-  overflow: hidden;
   background: var(--sl-color-neutral-0);
   color: var(--sl-color-neutral-900);
+  min-height: 100vh;
+  padding-left: 250px; /* Space for expanded ProjectsList */
+  transition: padding-left 0.3s ease;
 }
 
 .app-container.chat-hidden {
   grid-template-columns: 250px 0 250px 1fr;
+}
+
+.app-container.chat-hidden.collapsed {
+  padding-left: 48px; /* Space for collapsed ProjectsList */
 }
 
 .theme-toggle {
@@ -46,22 +43,8 @@ const { isChatVisible } = storeToRefs(projectStore);
   z-index: 100;
 }
 
-.projects-list {
-  grid-area: projects;
-  border-right: 1px solid var(--sl-color-neutral-200);
-}
-
-.chat-panel {
-  grid-area: chat;
-  border-right: 1px solid var(--sl-color-neutral-200);
-}
-
-.file-explorer {
-  grid-area: files;
-  border-right: 1px solid var(--sl-color-neutral-200);
-}
-
-.code-editor {
-  grid-area: editor;
+.main-content {
+  height: 100vh;
+  overflow-y: auto;
 }
 </style>
