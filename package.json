@@ -30,7 +30,7 @@
     "build": "turbo run build",
     "build:clean": "turbo run clean:build",
     "dev": "turbo run dev",
-    "docs:dev": "vitepress dev docs",
+    "docs:dev": "vitepress dev docs --port 9000",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
     "lint-format": "turbo run --parallel lint format ",
