@@ -1,3 +1,3 @@
-import type { Project, ProjectManager } from '@piddie/project-management'
+import type { Project, ProjectManager } from "@piddie/project-management";
 
-export type { Project, ProjectManager }
+export type { Project, ProjectManager };

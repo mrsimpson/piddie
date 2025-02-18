@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import '@shoelace-style/shoelace/dist/components/tree/tree.js'
-import '@shoelace-style/shoelace/dist/components/tree-item/tree-item.js'
+import "@shoelace-style/shoelace/dist/components/tree/tree.js";
+import "@shoelace-style/shoelace/dist/components/tree-item/tree-item.js";
 </script>
 
 <template>

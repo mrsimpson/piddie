@@ -10,6 +10,9 @@
   ],
   "compilerOptions": {
     "incremental": true,
+    "types": [
+      "@shoelace-style/shoelace/dist/types/vue"
+    ],
     "paths": {
       "@/*": [
         "./src/*"

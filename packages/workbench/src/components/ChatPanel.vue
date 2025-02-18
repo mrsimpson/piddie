@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import '@shoelace-style/shoelace/dist/components/card/card.js'
+import "@shoelace-style/shoelace/dist/components/card/card.js";
 </script>
 
 <template>
