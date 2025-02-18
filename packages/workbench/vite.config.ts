@@ -6,8 +6,14 @@ import VueDevTools from 'vite-plugin-vue-devtools'
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
-    vue(),
-    VueDevTools(),
+    vue({
+      template: {
+        compilerOptions: {
+          // Tell Vue to ignore all components that start with 'sl-'
+          isCustomElement: tag => tag.startsWith('sl-')
+        }
+      }
+    }), VueDevTools(),
   ],
   resolve: {
     alias: {

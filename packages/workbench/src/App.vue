@@ -5,6 +5,7 @@ import ProjectsList from "./components/ProjectsList.vue";
 import ChatPanel from "./components/ChatPanel.vue";
 import FileExplorer from "./components/FileExplorer.vue";
 import CodeEditor from "./components/CodeEditor.vue";
+import ThemeToggle from "./components/ui/ThemeToggle.vue";
 
 const projectStore = useProjectStore();
 const { isChatVisible } = storeToRefs(projectStore);
@@ -12,6 +13,9 @@ const { isChatVisible } = storeToRefs(projectStore);
 
 <template>
   <div class="app-container" :class="{ 'chat-hidden': !isChatVisible }">
+    <div class="theme-toggle">
+      <ThemeToggle />
+    </div>
     <ProjectsList class="projects-list" />
     <ChatPanel v-if="isChatVisible" class="chat-panel" />
     <FileExplorer class="file-explorer" />
@@ -27,10 +31,19 @@ const { isChatVisible } = storeToRefs(projectStore);
   height: 100vh;
   width: 100vw;
   overflow: hidden;
+  background: var(--sl-color-neutral-0);
+  color: var(--sl-color-neutral-900);
 }
 
 .app-container.chat-hidden {
   grid-template-columns: 250px 0 250px 1fr;
+}
+
+.theme-toggle {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 100;
 }
 
 .projects-list {
