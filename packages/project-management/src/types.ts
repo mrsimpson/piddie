@@ -18,7 +18,7 @@ export interface Project {
   fileSystemRoot: string;
   
   /** Reference to the chat context for this project */
-  chatContextId: string;
+  chatId: string;
 }
 
 /**
