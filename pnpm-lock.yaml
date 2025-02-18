@@ -190,6 +190,9 @@ importers:
 
   packages/project-management:
     dependencies:
+      '@piddie/chat-context':
+        specifier: workspace:*
+        version: link:../chat-context
       '@piddie/files-management':
         specifier: workspace:*
         version: link:../files-management

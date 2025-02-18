@@ -1,20 +1,20 @@
-import Dexie from 'dexie'
-import type { Chat, Message, ChatManager } from './types'
-import { MessageStatus } from './types'
+import Dexie from "dexie";
+import type { Chat, Message, ChatManager } from "./types";
+import { MessageStatus } from "./types";
 
 /**
  * Database class for chat storage using Dexie
  */
 export class ChatDatabase extends Dexie {
-  chats!: Dexie.Table<Omit<Chat, 'messages'>, string>
-  messages!: Dexie.Table<Message, string>
+  chats!: Dexie.Table<Omit<Chat, "messages">, string>;
+  messages!: Dexie.Table<Message, string>;
 
   constructor() {
-    super('ChatDatabase')
+    super("ChatDatabase");
     this.version(1).stores({
-      chats: 'id, created, lastUpdated',
-      messages: 'id, chatId, parentId, created, [chatId+created]'
-    })
+      chats: "id, created, lastUpdated",
+      messages: "id, chatId, parentId, created, [chatId+created]"
+    });
   }
 }
 
@@ -25,29 +25,29 @@ export class DexieChatManager implements ChatManager {
   constructor(private db: ChatDatabase) {}
 
   async createChat(metadata?: Record<string, unknown>): Promise<Chat> {
-    const chat: Omit<Chat, 'messages'> = {
+    const chat: Omit<Chat, "messages"> = {
       id: `chat_${Date.now()}`,
       created: new Date(),
       lastUpdated: new Date(),
       metadata: metadata || undefined
-    }
+    };
 
-    await this.db.chats.add(chat)
+    await this.db.chats.add(chat);
     return {
       ...chat,
       messages: []
-    }
+    };
   }
 
   async addMessage(
     chatId: string,
     content: string,
-    role: Message['role'],
+    role: Message["role"],
     parentId?: string
   ): Promise<Message> {
-    const chat = await this.db.chats.get(chatId)
+    const chat = await this.db.chats.get(chatId);
     if (!chat) {
-      throw new Error('Chat not found')
+      throw new Error("Chat not found");
     }
 
     const message: Message = {
@@ -58,55 +58,55 @@ export class DexieChatManager implements ChatManager {
       status: MessageStatus.SENT,
       created: new Date(),
       parentId: parentId || undefined
-    }
+    };
 
-    await this.db.messages.add(message)
-    
+    await this.db.messages.add(message);
+
     // Update chat's lastUpdated
     await this.db.chats.update(chatId, {
       lastUpdated: new Date()
-    })
+    });
 
-    return message
+    return message;
   }
 
   async getChat(chatId: string): Promise<Chat> {
-    const chat = await this.db.chats.get(chatId)
+    const chat = await this.db.chats.get(chatId);
     if (!chat) {
-      throw new Error('Chat not found')
+      throw new Error("Chat not found");
     }
 
     const messages = await this.db.messages
-      .where('chatId')
+      .where("chatId")
       .equals(chatId)
-      .sortBy('created')
+      .sortBy("created");
 
     return {
       ...chat,
       messages
-    }
+    };
   }
 
   async listChats(limit?: number, offset = 0): Promise<Chat[]> {
     const chats = await this.db.chats
-      .orderBy('lastUpdated')
+      .orderBy("lastUpdated")
       .reverse()
       .offset(offset)
       .limit(limit || Infinity)
-      .toArray()
+      .toArray();
 
     // Get messages for each chat
     const chatsWithMessages = await Promise.all(
       chats.map(async (chat) => {
         const messages = await this.db.messages
-          .where('chatId')
+          .where("chatId")
           .equals(chat.id)
-          .sortBy('created')
-        return { ...chat, messages }
+          .sortBy("created");
+        return { ...chat, messages };
       })
-    )
+    );
 
-    return chatsWithMessages
+    return chatsWithMessages;
   }
 
   async updateMessageStatus(
@@ -114,26 +114,26 @@ export class DexieChatManager implements ChatManager {
     messageId: string,
     status: MessageStatus
   ): Promise<void> {
-    const message = await this.db.messages.get(messageId)
+    const message = await this.db.messages.get(messageId);
     if (!message || message.chatId !== chatId) {
-      throw new Error('Message not found')
+      throw new Error("Message not found");
     }
 
-    await this.db.messages.update(messageId, { status })
+    await this.db.messages.update(messageId, { status });
     await this.db.chats.update(chatId, {
       lastUpdated: new Date()
-    })
+    });
   }
 
   async deleteChat(chatId: string): Promise<void> {
-    const chat = await this.db.chats.get(chatId)
+    const chat = await this.db.chats.get(chatId);
     if (!chat) {
-      throw new Error('Chat not found')
+      throw new Error("Chat not found");
     }
 
     // Delete all messages first
-    await this.db.messages.where('chatId').equals(chatId).delete()
+    await this.db.messages.where("chatId").equals(chatId).delete();
     // Then delete the chat
-    await this.db.chats.delete(chatId)
+    await this.db.chats.delete(chatId);
   }
 }

@@ -1,2 +1,2 @@
-export type { Project, ProjectManager } from './types';
-export { DexieProjectManager, ProjectDatabase } from './project-manager';
+export type { Project, ProjectManager } from "./types";
+export { DexieProjectManager, ProjectDatabase } from "./project-manager";

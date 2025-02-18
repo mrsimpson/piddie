@@ -12,14 +12,18 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "clean:build": "rm -rf dist",
+    "clean:build": "rimraf ./dist",
     "dev": "tsc -p tsconfig.build.json --watch",
     "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
-    "test": "vitest",
+    "lint:fix": "pnpm lint --fix",
+    "format": "prettier --check .",
+    "format:fix": "prettier --write .",
+    "test": "vitest --run",
+    "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@piddie/chat-context": "workspace:*",
     "@piddie/files-management": "workspace:*",
     "dexie": "4.0.11"
   }

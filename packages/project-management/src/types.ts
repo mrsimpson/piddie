@@ -4,19 +4,19 @@
 export interface Project {
   /** Unique identifier for the project */
   id: string;
-  
+
   /** Human-readable name of the project */
   name: string;
-  
+
   /** When the project was created */
   created: Date;
-  
+
   /** When the project was last accessed */
   lastAccessed: Date;
-  
+
   /** Root directory for this project's files */
   fileSystemRoot: string;
-  
+
   /** Reference to the chat context for this project */
   chatId: string;
 }
@@ -31,26 +31,26 @@ export interface ProjectManager {
    * @returns The newly created project
    */
   createProject(name: string): Promise<Project>;
-  
+
   /**
    * Opens an existing project
    * @param id - The project ID
    * @returns The project if found
    */
   openProject(id: string): Promise<Project>;
-  
+
   /**
    * Lists all available projects
    * @returns Array of projects
    */
   listProjects(): Promise<Project[]>;
-  
+
   /**
    * Deletes a project
    * @param id - The project ID
    */
   deleteProject(id: string): Promise<void>;
-  
+
   /**
    * Gets metadata for a specific project
    * @param id - The project ID

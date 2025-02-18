@@ -1,12 +1,12 @@
-import type { ChatCompletionRole } from 'openai/resources/chat'
+import type { ChatCompletionRole } from "openai/resources/chat";
 
 /**
  * Represents the status of a message
  */
 export enum MessageStatus {
-  SENDING = 'sending',
-  SENT = 'sent',
-  ERROR = 'error'
+  SENDING = "sending",
+  SENT = "sent",
+  ERROR = "error"
 }
 
 /**
