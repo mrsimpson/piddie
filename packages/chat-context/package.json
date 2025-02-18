@@ -1,0 +1,26 @@
+{
+  "name": "chat-context",
+  "version": "0.0.0-development",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "clean:build": "rm -rf dist",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "dexie": "4.0.11",
+    "openai": "4.85.1"
+  }
+}
