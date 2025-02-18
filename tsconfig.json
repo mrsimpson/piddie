@@ -3,6 +3,8 @@
   "include": ["**/*", ".*.js"],
   "compilerOptions": {
     "types": ["vitest/globals"],
+    "outDir": "dist",
+    "rootDir": "src",
     "baseUrl": ".",
     "paths": {
       "@piddie/*": ["packages/*/dist"]

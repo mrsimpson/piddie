@@ -1,0 +1,32 @@
+{
+  "name": "@piddie/workbench",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 9999",
+    "build": "vue-tsc --build && vite build",
+    "preview": "vite preview",
+    "build-only": "vite build",
+    "type-check": "vue-tsc --build",
+    "lint": "eslint .",
+    "format": "prettier --write src/"
+  },
+  "dependencies": {
+    "@piddie/chat-context": "workspace:*",
+    "@piddie/files-management": "workspace:*",
+    "@piddie/project-management": "workspace:*",
+    "@shoelace-style/shoelace": "^2.19.1",
+    "pinia": "3.0.1",
+    "vue": "^3.5.13",
+    "vue-router": "^4.2.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^4.2.3",
+    "@vue/tsconfig": "^0.7.0",
+    "typescript": "~5.7.3",
+    "vite": "^6.0.11",
+    "vite-plugin-vue-devtools": "^7.7.0",
+    "vue-tsc": "^2.2.0"
+  }
+}

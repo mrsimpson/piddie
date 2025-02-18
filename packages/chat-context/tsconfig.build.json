@@ -1,4 +1,7 @@
 {
   "extends": "./tsconfig.json",
-  "exclude": ["tests", "**/*.test.ts", "**/*.spec.ts"]
+  "compilerOptions": {
+    "incremental": false,
+    "noEmit": false
+  }
 }
