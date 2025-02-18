@@ -25,7 +25,8 @@ const filteredProjects = computed(() => {
 });
 
 async function createNewProject() {
-  router.push("/projects/new");
+  const project = await projectStore.createProject("New Project");
+  router.push(`/projects/${project.id}`);
 }
 
 const handleProjectSelect = async (projectId: string) => {
