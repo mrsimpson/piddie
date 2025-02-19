@@ -223,9 +223,15 @@ importers:
       '@piddie/project-management':
         specifier: workspace:*
         version: link:../project-management
+      '@piddie/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
       '@shoelace-style/shoelace':
         specifier: ^2.19.1
         version: 2.19.1(@floating-ui/utils@0.2.9)(@types/react@19.0.8)
+      '@webcontainer/api':
+        specifier: 1.5.1-internal.6
+        version: 1.5.1-internal.6
       pinia:
         specifier: 3.0.1
         version: 3.0.1(typescript@5.7.3)(vue@3.5.13(typescript@5.7.3))

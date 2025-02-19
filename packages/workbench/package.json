@@ -16,7 +16,9 @@
     "@piddie/chat-context": "workspace:*",
     "@piddie/files-management": "workspace:*",
     "@piddie/project-management": "workspace:*",
+    "@piddie/shared-types": "workspace:*",
     "@shoelace-style/shoelace": "^2.19.1",
+    "@webcontainer/api": "1.5.1-internal.6",
     "pinia": "3.0.1",
     "vue": "^3.5.13",
     "vue-router": "^4.5.0"
