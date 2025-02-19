@@ -3,6 +3,7 @@ import type { Project } from "../types/project";
 import EditableText from "./ui/EditableText.vue";
 import "@shoelace-style/shoelace/dist/components/card/card.js";
 import "@shoelace-style/shoelace/dist/components/relative-time/relative-time.js";
+import "@shoelace-style/shoelace/dist/components/icon-button/icon-button.js";
 import { useRoute } from "vue-router";
 
 const props = defineProps<{
@@ -11,12 +12,17 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   nameChange: [projectId: string, newName: string];
+  delete: [projectId: string];
 }>();
 
 const route = useRoute();
 
 function handleNameChange(newName: string) {
   emit("nameChange", props.project.id, newName);
+}
+
+function handleDelete() {
+  emit("delete", props.project.id);
 }
 </script>
 
@@ -38,7 +44,11 @@ function handleNameChange(newName: string) {
           size="small"
           @change="handleNameChange"
         />
-
+        <sl-icon-button
+          name="trash"
+          label="Delete"
+          @click.stop="handleDelete"
+        />
       </div>
     </sl-card>
   </router-link>

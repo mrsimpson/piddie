@@ -36,6 +36,10 @@ const handleProjectRename = async (projectId: string, newName: string) => {
   await projectStore.renameProject(projectId, newName);
 };
 
+const handleProjectDelete = async (projectId: string) => {
+  await projectStore.deleteProject(projectId);
+};
+
 function toggleExpanded() {
   isExpanded.value = !isExpanded.value;
   document
@@ -70,6 +74,7 @@ onMounted(() => {
             :key="project.id"
             :project="project"
             @name-change="handleProjectRename"
+            @delete="handleProjectDelete"
           />
         </div>
       </div>

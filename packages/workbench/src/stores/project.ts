@@ -49,6 +49,17 @@ export const useProjectStore = defineStore("project", () => {
     }
   }
 
+  async function deleteProject(projectId: string) {
+    await projectManager.deleteProject(projectId);
+    await loadProjects();
+
+    // Clear current project if it's the one being deleted
+    if (currentProject.value?.id === projectId) {
+      currentProject.value = null;
+      isChatVisible.value = false;
+    }
+  }
+
   function toggleChat(visible?: boolean) {
     isChatVisible.value = visible ?? !isChatVisible.value;
   }
@@ -63,6 +74,7 @@ export const useProjectStore = defineStore("project", () => {
     setCurrentProject,
     renameProject,
     updateProject,
+    deleteProject,
     toggleChat
   };
 });
