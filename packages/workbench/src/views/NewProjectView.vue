@@ -24,7 +24,7 @@ const samplePrompts = [
     title: "Browser game",
     shortPrompt: "Build a browser-based jump'n run",
     fullPrompt:
-      "Help me a classical platform jump'n run game using Phaser 3 and TypeScript. It should have a simple level design, with collectibles and enemies. The game should be responsive and optimized for mobile."
+      "Help me build a classical platform jump'n run game using Phaser 3 and TypeScript. It should have a simple level design, with collectibles and enemies. The game should be responsive and optimized for mobile."
   },
   {
     title: "Weather Dashboard",

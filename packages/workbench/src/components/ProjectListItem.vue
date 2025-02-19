@@ -38,9 +38,7 @@ function handleNameChange(newName: string) {
           size="small"
           @change="handleNameChange"
         />
-        <div class="project-meta">
-          Last accessed <sl-relative-time :date="project.lastAccessed" />
-        </div>
+
       </div>
     </sl-card>
   </router-link>
@@ -57,6 +55,7 @@ function handleNameChange(newName: string) {
   --padding: 0.75rem;
   transition: background-color 0.2s ease;
   width: 100%;
+  padding: 4px;
 }
 
 .project-card:hover {

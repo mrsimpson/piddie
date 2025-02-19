@@ -30,7 +30,7 @@ export const useProjectStore = defineStore("project", () => {
   async function renameProject(projectId: string, newName: string) {
     const project = await projectManager.getProjectMetadata(projectId);
     project.name = newName;
-    await projectManager.db.projects.put(project);
+    await projectManager.putProject(project);
     await loadProjects();
 
     // Update current project if it's the one being renamed
@@ -40,7 +40,7 @@ export const useProjectStore = defineStore("project", () => {
   }
 
   async function updateProject(project: Project) {
-    await projectManager.updateProject(project);
+    await projectManager.putProject(project);
     await loadProjects();
 
     // Update current project if it's the one being updated
