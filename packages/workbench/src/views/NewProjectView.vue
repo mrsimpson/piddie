@@ -2,6 +2,7 @@
 import { ref } from "vue";
 import { useRouter } from "vue-router";
 import { useProjectStore } from "../stores/project";
+import { useChatStore } from "../stores/chat";
 import "@shoelace-style/shoelace/dist/components/textarea/textarea.js";
 import "@shoelace-style/shoelace/dist/components/button/button.js";
 import "@shoelace-style/shoelace/dist/components/card/card.js";
@@ -9,6 +10,7 @@ import "@shoelace-style/shoelace/dist/components/tooltip/tooltip.js";
 
 const router = useRouter();
 const projectStore = useProjectStore();
+const chatStore = useChatStore();
 const projectPrompt = ref("");
 
 const samplePrompts = [
@@ -34,8 +36,11 @@ const samplePrompts = [
 
 async function createProject() {
   if (!projectPrompt.value.trim()) return;
+  
   const project = await projectStore.createProject("New Project");
-  // TODO: Send initial prompt to chat
+  const chat = await chatStore.createChat({ projectId: project.id });
+  await chatStore.addMessage(chat.id, projectPrompt.value, "user");
+  
   router.push(`/projects/${project.id}`);
 }
 
