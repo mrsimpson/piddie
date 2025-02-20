@@ -1,10 +1,10 @@
 import { ref, computed } from "vue";
 import { defineStore } from "pinia";
 import type { Project } from "../types/project";
-import { DexieProjectManager } from "@piddie/project-management";
+import { createProjectManager } from "@piddie/project-management";
 
 export const useProjectStore = defineStore("project", () => {
-  const projectManager = new DexieProjectManager();
+  const projectManager = createProjectManager();
   const currentProject = ref<Project | null>(null);
   const projects = ref<Project[]>([]);
   const isChatVisible = ref(false);
@@ -30,7 +30,7 @@ export const useProjectStore = defineStore("project", () => {
   async function renameProject(projectId: string, newName: string) {
     const project = await projectManager.getProjectMetadata(projectId);
     project.name = newName;
-    await projectManager.putProject(project);
+    await projectManager.updateProject(project);
     await loadProjects();
 
     // Update current project if it's the one being renamed
@@ -40,7 +40,7 @@ export const useProjectStore = defineStore("project", () => {
   }
 
   async function updateProject(project: Project) {
-    await projectManager.putProject(project);
+    await projectManager.updateProject(project);
     await loadProjects();
 
     // Update current project if it's the one being updated

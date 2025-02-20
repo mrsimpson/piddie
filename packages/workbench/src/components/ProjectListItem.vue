@@ -11,18 +11,19 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  nameChange: [projectId: string, newName: string];
+  "name-change": [projectId: string, newName: string];
   delete: [projectId: string];
+  "confirm-delete": [projectId: string];
 }>();
 
 const route = useRoute();
 
 function handleNameChange(newName: string) {
-  emit("nameChange", props.project.id, newName);
+  emit("name-change", props.project.id, newName);
 }
 
 function handleDelete() {
-  emit("delete", props.project.id);
+  emit("confirm-delete", props.project.id);
 }
 </script>
 
@@ -39,16 +40,18 @@ function handleDelete() {
       @click="navigate"
     >
       <div class="project-content">
-        <EditableText
-          :value="project.name"
-          size="small"
-          @change="handleNameChange"
-        />
-        <sl-icon-button
-          name="trash"
-          label="Delete"
-          @click.stop="handleDelete"
-        />
+        <div class="project-header">
+          <EditableText
+            :value="project.name"
+            size="small"
+            @change="handleNameChange"
+          />
+          <sl-icon-button
+            name="trash"
+            label="Delete"
+            @click.stop="handleDelete"
+          />
+        </div>
       </div>
     </sl-card>
   </router-link>
@@ -81,6 +84,12 @@ function handleDelete() {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+}
+
+.project-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .project-meta {

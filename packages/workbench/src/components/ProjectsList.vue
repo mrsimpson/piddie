@@ -5,6 +5,7 @@ import { storeToRefs } from "pinia";
 import { useProjectStore } from "../stores/project";
 import type { Project } from "../types/project";
 import ProjectListItem from "./ProjectListItem.vue";
+import ConfirmationDialog from "./ConfirmationDialog.vue";
 import "@shoelace-style/shoelace/dist/components/button/button.js";
 import "@shoelace-style/shoelace/dist/components/input/input.js";
 import "@shoelace-style/shoelace/dist/components/icon/icon.js";
@@ -16,6 +17,7 @@ const searchQuery = ref("");
 const projectStore = useProjectStore();
 const { projects, currentProject } = storeToRefs(projectStore);
 const isExpanded = ref(true);
+const projectToDelete = ref<string | null>(null);
 
 const filteredProjects = computed(() => {
   const query = searchQuery.value.toLowerCase();
@@ -38,6 +40,24 @@ const handleProjectRename = async (projectId: string, newName: string) => {
 
 const handleProjectDelete = async (projectId: string) => {
   await projectStore.deleteProject(projectId);
+  if (route.params.id === projectId) {
+    router.push("/projects/new");
+  }
+};
+
+const handleConfirmDelete = (projectId: string) => {
+  projectToDelete.value = projectId;
+};
+
+const handleCancelDelete = () => {
+  projectToDelete.value = null;
+};
+
+const handleConfirmDeleteAction = async () => {
+  if (projectToDelete.value) {
+    await handleProjectDelete(projectToDelete.value);
+    projectToDelete.value = null;
+  }
 };
 
 function toggleExpanded() {
@@ -74,7 +94,7 @@ onMounted(() => {
             :key="project.id"
             :project="project"
             @name-change="handleProjectRename"
-            @delete="handleProjectDelete"
+            @confirm-delete="handleConfirmDelete"
           />
         </div>
       </div>
@@ -88,6 +108,13 @@ onMounted(() => {
         @click="toggleExpanded"
       />
     </div>
+
+    <ConfirmationDialog
+      v-if="projectToDelete"
+      message="Are you sure you want to delete this project? This action cannot be undone."
+      @confirm="handleConfirmDeleteAction"
+      @cancel="handleCancelDelete"
+    />
   </div>
 </template>
 

@@ -25,20 +25,22 @@ export default defineConfig({
         },
       ],
     }),
-    VueDevTools(),
+    VueDevTools()
   ],
   resolve: {
-    alias: [
-      {
-        find: '@', replacement: fileURLToPath(new URL('./src', import.meta.url))
-      },
-      {
-        find: /\/assets\/icons\/(.+)/,
-        replacement: `${iconsPath}/$1`,
-      }
-    ]
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+      '@piddie/project-management': fileURLToPath(new URL('../project-management/src/index.ts', import.meta.url)),
+      '@piddie/files-management': fileURLToPath(new URL('../files-management/src/index.ts', import.meta.url)),
+      '@piddie/shared-types': fileURLToPath(new URL('../shared-types/src/index.ts', import.meta.url))
+    }
   },
   optimizeDeps: {
-    exclude: ['@piddie/project-management', '@piddie/chat-context', '@piddie/files-management']
+    include: ['@piddie/project-management', '@piddie/files-management', '@piddie/shared-types']
+  },
+  build: {
+    commonjsOptions: {
+      include: [/node_modules/, /packages/]
+    }
   }
 })

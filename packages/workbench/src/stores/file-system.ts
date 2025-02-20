@@ -37,7 +37,7 @@ export const useFileSystemStore = defineStore("file-system", () => {
       }
 
       // Start sync
-      await syncManager.start();
+      await syncManager.initialize();
     } catch (err) {
       console.error("Failed to initialize sync manager:", err);
     }
@@ -80,7 +80,7 @@ export const useFileSystemStore = defineStore("file-system", () => {
 
       // Initialize web container
       webContainer.value = await WebContainer.boot();
-      const webContainerFs = new WebContainerFileSystem();
+      const webContainerFs = new WebContainerFileSystem(webContainer);
       await webContainerFs.initialize();
 
       // Create and initialize web container sync target

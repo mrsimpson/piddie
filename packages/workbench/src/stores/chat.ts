@@ -1,11 +1,10 @@
-import { defineStore } from "pinia";
 import { ref } from "vue";
+import { defineStore } from "pinia";
 import type { Chat, Message } from "@piddie/chat-context";
-import { ChatDatabase, DexieChatManager, MessageStatus } from "@piddie/chat-context";
+import { createChatManager, MessageStatus } from "@piddie/chat-context";
 
 export const useChatStore = defineStore("chat", () => {
-  const db = new ChatDatabase();
-  const chatManager = new DexieChatManager(db);
+  const chatManager = createChatManager();
   const currentChat = ref<Chat | null>(null);
   const messages = ref<Message[]>([]);
 

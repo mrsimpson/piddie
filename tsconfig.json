@@ -4,9 +4,6 @@
   "compilerOptions": {
     "types": ["vitest/globals"],
     "outDir": "dist",
-    "baseUrl": ".",
-    "paths": {
-      "@piddie/*": ["packages/*/dist"]
-    }
+    "baseUrl": "."
   }
 }

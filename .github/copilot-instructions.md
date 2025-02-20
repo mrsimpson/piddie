@@ -83,7 +83,7 @@ If you want to use additional libraries, frameworks, or tools, describe their un
 
 # Testing
 
-- Write automated tests for all public interfaces and modules.
+- Write automated tests for all public interfaces and modules, but only if explicitly requested.
 - For each module, write a bdd (behavior-driven development with "GIVEN, WHEN, THEN") test which will test the public interface of the module.
 - For all functions inside the modules, Use a test-driven development approach.
 - Write tests for all happy paths.

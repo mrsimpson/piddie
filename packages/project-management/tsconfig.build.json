@@ -1,7 +1,9 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "noEmit": false
+    "noEmit": false,
+    "module": "ESNext",
+    "moduleResolution": "Bundler"
   },
   "exclude": ["**/*.test.ts", "**/*.spec.ts", "**/__tests__/*"]
 }
