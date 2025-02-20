@@ -38,8 +38,12 @@ onMounted(() => {
 <template>
   <sl-dialog ref="dialogRef" label="Confirm Deletion">
     <p>{{ message }}</p>
-    <sl-button slot="footer" variant="primary" @click="handleConfirm">Yes</sl-button>
-    <sl-button slot="footer" variant="default" @click="handleCancel">No</sl-button>
+    <sl-button slot="footer" variant="primary" @click="handleConfirm"
+      >Yes</sl-button
+    >
+    <sl-button slot="footer" variant="default" @click="handleCancel"
+      >No</sl-button
+    >
   </sl-dialog>
 </template>
 

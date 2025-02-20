@@ -19,7 +19,10 @@ export const useFileSystemStore = defineStore("file-system", () => {
   const syncManager = new FileSyncManager();
   const systems = ref<SynchronizedFileSystem[]>([]);
 
-  async function initializeSyncManager(browserTarget: BrowserSyncTarget, webContainerTarget: WebContainerSyncTarget) {
+  async function initializeSyncManager(
+    browserTarget: BrowserSyncTarget,
+    webContainerTarget: WebContainerSyncTarget
+  ) {
     try {
       const status = syncManager.getStatus();
       const hasTargets = status.targets && status.targets.size > 0;
@@ -28,7 +31,9 @@ export const useFileSystemStore = defineStore("file-system", () => {
         return;
       }
 
-      await syncManager.registerTarget(webContainerTarget, { role: "secondary" });
+      await syncManager.registerTarget(webContainerTarget, {
+        role: "secondary"
+      });
 
       // Start sync
       await syncManager.initialize();
@@ -51,7 +56,8 @@ export const useFileSystemStore = defineStore("file-system", () => {
       await browserTarget.initialize(browserFs, true, {
         skipFileScan: false,
         resolutionFunctions: {
-          resolveFromPrimary: () => syncManager.fullSyncFromPrimaryToTarget(browserTarget)
+          resolveFromPrimary: () =>
+            syncManager.fullSyncFromPrimaryToTarget(browserTarget)
         }
       });
 
@@ -83,7 +89,8 @@ export const useFileSystemStore = defineStore("file-system", () => {
       await webContainerTarget.initialize(webContainerFs, false, {
         skipFileScan: false,
         resolutionFunctions: {
-          resolveFromPrimary: () => syncManager.fullSyncFromPrimaryToTarget(webContainerTarget)
+          resolveFromPrimary: () =>
+            syncManager.fullSyncFromPrimaryToTarget(webContainerTarget)
         }
       });
 

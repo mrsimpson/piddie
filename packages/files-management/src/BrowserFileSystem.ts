@@ -69,7 +69,7 @@ export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
   }) {
     // Initialize LightningFS
     const fs = new FS(options.name);
-    fs.init(options.name)
+    fs.init(options.name);
 
     // Create a wrapper that adds missing methods
     const fsWrapper: MinimalFsPromises = {

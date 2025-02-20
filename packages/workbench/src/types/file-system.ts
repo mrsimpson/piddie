@@ -1,4 +1,8 @@
-import type { FileSystem, SyncTarget, WatcherOptions } from "@piddie/shared-types";
+import type {
+  FileSystem,
+  SyncTarget,
+  WatcherOptions
+} from "@piddie/shared-types";
 
 /**
  * Represents a synchronized file system with its associated sync target

@@ -5,7 +5,5 @@
     "composite": true
   },
   "include": ["src/**/*"],
-  "references": [
-    { "path": "../shared-types" }
-  ]
+  "references": [{ "path": "../shared-types" }]
 }

@@ -13,7 +13,7 @@ const files = ref<FileSystemEntry[]>([]);
 
 async function loadFiles() {
   if (!syncManager || !fileSystemStore.systems.length) return;
-  
+
   const browserSystem = fileSystemStore.systems[0];
   if (!browserSystem) return;
 
@@ -22,7 +22,7 @@ async function loadFiles() {
 
 async function createFile(path: string) {
   if (!syncManager || !fileSystemStore.systems.length) return;
-  
+
   const browserSystem = fileSystemStore.systems[0];
   if (!browserSystem) return;
 
@@ -39,7 +39,7 @@ function getFileIcon(entry: FileSystemEntry) {
 
 async function toggleExpand(entry: FileSystemEntry) {
   if (entry.type !== "directory") return;
-  
+
   entry.expanded = !entry.expanded;
   if (entry.expanded && !entry.children?.length) {
     if (!syncManager || !fileSystemStore.systems.length) return;

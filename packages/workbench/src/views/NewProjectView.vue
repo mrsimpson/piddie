@@ -36,11 +36,11 @@ const samplePrompts = [
 
 async function createProject() {
   if (!projectPrompt.value.trim()) return;
-  
+
   const project = await projectStore.createProject("New Project");
   const chat = await chatStore.createChat({ projectId: project.id });
   await chatStore.addMessage(chat.id, projectPrompt.value, "user");
-  
+
   router.push(`/projects/${project.id}`);
 }
 

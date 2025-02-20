@@ -65,8 +65,8 @@ export class DexieChatManager implements ChatManager {
   }
 
   async addMessage(
-    chatId: string, 
-    content: string, 
+    chatId: string,
+    content: string,
     role: ChatCompletionRole,
     parentId?: string
   ): Promise<Message> {
@@ -91,7 +91,10 @@ export class DexieChatManager implements ChatManager {
     return message;
   }
 
-  async updateMessageStatus(messageId: string, status: MessageStatus): Promise<void> {
+  async updateMessageStatus(
+    messageId: string,
+    status: MessageStatus
+  ): Promise<void> {
     const message = await this.db.messages.get(messageId);
     if (!message) {
       throw new Error(`Message not found: ${messageId}`);

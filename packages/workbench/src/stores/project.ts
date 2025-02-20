@@ -54,12 +54,14 @@ export const useProjectStore = defineStore("project", () => {
   async function deleteProject(projectId: string) {
     // Find and delete associated chat first
     const chats = await chatStore.listChats();
-    const projectChat = chats.find(chat => 
-      chat.metadata && typeof chat.metadata === 'object' && 
-      'projectId' in chat.metadata && 
-      chat.metadata.projectId === projectId
+    const projectChat = chats.find(
+      (chat) =>
+        chat.metadata &&
+        typeof chat.metadata === "object" &&
+        "projectId" in chat.metadata &&
+        chat.metadata.projectId === projectId
     );
-    
+
     if (projectChat) {
       await chatStore.deleteChat(projectChat.id);
     }

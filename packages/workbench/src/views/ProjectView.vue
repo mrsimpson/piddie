@@ -17,15 +17,17 @@ const { currentProject } = storeToRefs(projectStore);
 
 async function loadProjectChat() {
   if (!currentProject.value) return;
-  
+
   // Try to find a chat for this project
   const chats = await chatStore.listChats();
-  const projectChat = chats.find(chat => 
-    chat.metadata && typeof chat.metadata === 'object' && 
-    'projectId' in chat.metadata && 
-    chat.metadata.projectId === currentProject.value?.id
+  const projectChat = chats.find(
+    (chat) =>
+      chat.metadata &&
+      typeof chat.metadata === "object" &&
+      "projectId" in chat.metadata &&
+      chat.metadata.projectId === currentProject.value?.id
   );
-  
+
   if (projectChat) {
     await chatStore.loadChat(projectChat.id);
   } else {
@@ -39,7 +41,7 @@ async function initializeProject() {
   if (projectId) {
     await projectStore.setCurrentProject(projectId);
     await loadProjectChat();
-    
+
     if (currentProject.value) {
       await fileSystemStore.initializeForProject(currentProject.value);
       // Provide sync manager to child components
@@ -57,12 +59,15 @@ onBeforeUnmount(async () => {
 });
 
 // Reload project when route changes
-watch(() => route.params.id, async (newId) => {
-  if (newId) {
-    await fileSystemStore.cleanup();
-    await initializeProject();
+watch(
+  () => route.params.id,
+  async (newId) => {
+    if (newId) {
+      await fileSystemStore.cleanup();
+      await initializeProject();
+    }
   }
-});
+);
 </script>
 
 <template>

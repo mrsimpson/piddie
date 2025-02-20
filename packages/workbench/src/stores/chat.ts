@@ -15,10 +15,20 @@ export const useChatStore = defineStore("chat", () => {
     return chat;
   }
 
-  async function addMessage(chatId: string, content: string, role: "user" | "assistant", parentId?: string) {
+  async function addMessage(
+    chatId: string,
+    content: string,
+    role: "user" | "assistant",
+    parentId?: string
+  ) {
     if (!chatId) throw new Error("No chat ID provided");
-    
-    const message = await chatManager.addMessage(chatId, content, role, parentId);
+
+    const message = await chatManager.addMessage(
+      chatId,
+      content,
+      role,
+      parentId
+    );
     if (chatId === currentChat.value?.id) {
       messages.value = [...messages.value, message];
     }
@@ -51,6 +61,6 @@ export const useChatStore = defineStore("chat", () => {
     addMessage,
     loadChat,
     listChats,
-    deleteChat,
+    deleteChat
   };
 });

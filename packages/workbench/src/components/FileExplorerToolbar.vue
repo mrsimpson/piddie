@@ -40,7 +40,9 @@ function handleCreateFile() {
       />
       <div slot="footer">
         <sl-button @click="showNewFileDialog = false">Cancel</sl-button>
-        <sl-button variant="primary" @click="handleCreateFile">Create</sl-button>
+        <sl-button variant="primary" @click="handleCreateFile"
+          >Create</sl-button
+        >
       </div>
     </sl-dialog>
   </div>

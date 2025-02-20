@@ -13,7 +13,7 @@ const newMessage = ref("");
 
 async function sendMessage() {
   if (!currentChat.value || !newMessage.value.trim()) return;
-  
+
   await chatStore.addMessage(currentChat.value.id, newMessage.value, "user");
   newMessage.value = "";
 }

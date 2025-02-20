@@ -23,7 +23,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed } from "vue";
 import "@shoelace-style/shoelace/dist/components/icon-button/icon-button.js";
 import type SlIconButton from "@shoelace-style/shoelace/dist/components/icon-button/icon-button.js";
 
@@ -41,8 +41,8 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   initialCollapsed: false,
   displayToggle: true,
-  expandIcon: 'chevron-right',
-  collapseIcon: 'chevron-left'
+  expandIcon: "chevron-right",
+  collapseIcon: "chevron-left"
 });
 
 const emit = defineEmits<{
@@ -54,7 +54,7 @@ const isCollapsed = ref(props.initialCollapsed);
 
 function toggleCollapse() {
   isCollapsed.value = !isCollapsed.value;
-  emit('collapse', isCollapsed.value);
+  emit("collapse", isCollapsed.value);
 }
 </script>
 
