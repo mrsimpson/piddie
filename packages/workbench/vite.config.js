@@ -38,5 +38,11 @@ export default defineConfig({
     },
     optimizeDeps: {
         exclude: ['@piddie/project-management', '@piddie/chat-context', '@piddie/files-management']
+    },
+    server: {
+        headers: {
+            'Cross-Origin-Embedder-Policy': 'require-corp',
+            'Cross-Origin-Opener-Policy': 'same-origin'
+        }
     }
 });

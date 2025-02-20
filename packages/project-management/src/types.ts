@@ -14,9 +14,6 @@ export interface Project {
   /** When the project was last accessed */
   lastAccessed: Date;
 
-  /** Root directory for this project's files */
-  fileSystemRoot: string;
-
   /** Reference to the chat context for this project */
   chatId: string;
 }

@@ -11,7 +11,7 @@ const routes: RouteRecordRaw[] = [
     path: "/projects",
     components: {
       sidepanelLeft: ProjectsList,
-      default: () => import("./views/ProjectsView.vue")
+      default: () => import("./views/ProjectsListView.vue")
     }
   },
   {
@@ -25,7 +25,7 @@ const routes: RouteRecordRaw[] = [
     path: "/projects/:id",
     components: {
       sidepanelLeft: ProjectsList,
-      default: () => import("./views/ProjectDetailsView.vue")
+      default: () => import("./views/ProjectView.vue")
     },
     props: {
       default: true

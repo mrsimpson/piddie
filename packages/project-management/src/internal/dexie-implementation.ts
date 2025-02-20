@@ -84,7 +84,6 @@ export class DexieProjectManager implements ProjectManager {
       name,
       created: new Date(),
       lastAccessed: new Date(),
-      fileSystemRoot: `/projects/${name}`,
       chatId: projectId // Use same ID for chat
     };
 

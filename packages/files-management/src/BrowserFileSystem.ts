@@ -69,6 +69,7 @@ export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
   }) {
     // Initialize LightningFS
     const fs = new FS(options.name);
+    fs.init(options.name)
 
     // Create a wrapper that adds missing methods
     const fsWrapper: MinimalFsPromises = {
@@ -253,7 +254,8 @@ export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
       // First try to access the root directory
       try {
         await this.options.fs.access!(this.options.rootDir);
-      } catch {
+      } catch (e) {
+        console.error(e);
         // If access fails, try to create the directory
         try {
           await this.options.fs.mkdir(this.options.rootDir, {

@@ -1,29 +1,37 @@
 <script setup lang="ts">
+import { ref } from "vue";
+import { useRoute } from "vue-router";
+import { useProjectStore } from "../stores/project";
 import type { Project } from "../types/project";
 import EditableText from "./ui/EditableText.vue";
+import ConfirmationDialog from "./ConfirmationDialog.vue";
 import "@shoelace-style/shoelace/dist/components/card/card.js";
 import "@shoelace-style/shoelace/dist/components/relative-time/relative-time.js";
 import "@shoelace-style/shoelace/dist/components/icon-button/icon-button.js";
-import { useRoute } from "vue-router";
 
 const props = defineProps<{
   project: Project;
 }>();
 
-const emit = defineEmits<{
-  "name-change": [projectId: string, newName: string];
-  delete: [projectId: string];
-  "confirm-delete": [projectId: string];
-}>();
-
 const route = useRoute();
+const projectStore = useProjectStore();
+const showDeleteConfirmation = ref(false);
 
-function handleNameChange(newName: string) {
-  emit("name-change", props.project.id, newName);
+async function handleNameChange(newName: string) {
+  await projectStore.renameProject(props.project.id, newName);
 }
 
 function handleDelete() {
-  emit("confirm-delete", props.project.id);
+  showDeleteConfirmation.value = true;
+}
+
+async function handleConfirmDelete() {
+  await projectStore.deleteProject(props.project.id);
+  showDeleteConfirmation.value = false;
+}
+
+function handleCancelDelete() {
+  showDeleteConfirmation.value = false;
 }
 </script>
 
@@ -55,6 +63,13 @@ function handleDelete() {
       </div>
     </sl-card>
   </router-link>
+
+  <ConfirmationDialog
+    v-if="showDeleteConfirmation"
+    message="Are you sure you want to delete this project? This action cannot be undone."
+    @confirm="handleConfirmDelete"
+    @cancel="handleCancelDelete"
+  />
 </template>
 
 <style scoped>

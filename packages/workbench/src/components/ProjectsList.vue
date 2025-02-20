@@ -1,63 +1,17 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
-import { useRouter, useRoute } from "vue-router";
+import { onMounted } from "vue";
 import { storeToRefs } from "pinia";
 import { useProjectStore } from "../stores/project";
-import type { Project } from "../types/project";
 import ProjectListItem from "./ProjectListItem.vue";
-import ConfirmationDialog from "./ConfirmationDialog.vue";
 import CollapsiblePanel from "./ui/CollapsiblePanel.vue";
 import "@shoelace-style/shoelace/dist/components/button/button.js";
-import "@shoelace-style/shoelace/dist/components/input/input.js";
 import "@shoelace-style/shoelace/dist/components/icon/icon.js";
-import "@shoelace-style/shoelace/dist/components/icon-button/icon-button.js";
 
-const router = useRouter();
-const route = useRoute();
-const searchQuery = ref("");
 const projectStore = useProjectStore();
-const { projects, currentProject } = storeToRefs(projectStore);
-const projectToDelete = ref<string | null>(null);
+const { projects } = storeToRefs(projectStore);
 
-const filteredProjects = computed(() => {
-  const query = searchQuery.value.toLowerCase();
-  return projects.value.filter((project: Project) =>
-    project.name.toLowerCase().includes(query)
-  ).sort((a, b) => b.lastAccessed.getTime() - a.lastAccessed.getTime());
-});
-
-async function createNewProject() {
-  router.push(`/projects/new`);
-}
-
-const handleProjectSelect = async (projectId: string) => {
-  await projectStore.setCurrentProject(projectId);
-};
-
-const handleProjectRename = async (projectId: string, newName: string) => {
-  await projectStore.renameProject(projectId, newName);
-};
-
-const handleProjectDelete = async (projectId: string) => {
-  await projectStore.deleteProject(projectId);
-  if (route.params.id === projectId) {
-    router.push("/projects/new");
-  }
-};
-
-const handleConfirmDelete = (projectId: string) => {
-  projectToDelete.value = projectId;
-};
-
-const handleCancelDelete = () => {
-  projectToDelete.value = null;
-};
-
-const handleConfirmDeleteAction = async () => {
-  if (projectToDelete.value) {
-    await handleProjectDelete(projectToDelete.value);
-    projectToDelete.value = null;
-  }
+const createNewProject = async () => {
+  await projectStore.createProject("untitled");
 };
 
 onMounted(() => {
@@ -80,23 +34,13 @@ onMounted(() => {
       <template #content>
         <div class="list">
           <ProjectListItem
-            v-for="project in filteredProjects"
+            v-for="project in projects"
             :key="project.id"
             :project="project"
-            @name-change="handleProjectRename"
-            @confirm-delete="handleConfirmDelete"
-            @select="handleProjectSelect"
           />
         </div>
       </template>
     </CollapsiblePanel>
-
-    <ConfirmationDialog
-      v-if="projectToDelete"
-      message="Are you sure you want to delete this project? This action cannot be undone."
-      @confirm="handleConfirmDeleteAction"
-      @cancel="handleCancelDelete"
-    />
   </div>
 </template>
 
@@ -115,9 +59,5 @@ onMounted(() => {
 
 .list {
   padding: 0.5rem;
-}
-
-.toggle-button {
-  font-size: 1.2rem;
 }
 </style>

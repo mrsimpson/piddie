@@ -11,11 +11,13 @@ import type { SynchronizedFileSystem } from "../types/file-system";
 import { createSynchronizedFileSystem } from "../types/file-system";
 import { WATCHER_PRIORITIES } from "@piddie/shared-types";
 import { WebContainer } from "@webcontainer/api";
+import type { Project } from "@piddie/project-management";
+
+let webContainer: WebContainer | null = null;
 
 export const useFileSystemStore = defineStore("file-system", () => {
   const syncManager = new FileSyncManager();
   const systems = ref<SynchronizedFileSystem[]>([]);
-  const webContainer = ref<WebContainer | null>(null);
 
   async function initializeSyncManager(browserTarget: BrowserSyncTarget, webContainerTarget: WebContainerSyncTarget) {
     try {
@@ -23,18 +25,10 @@ export const useFileSystemStore = defineStore("file-system", () => {
       const hasTargets = status.targets && status.targets.size > 0;
 
       if (!hasTargets) {
-        // First time initialization
-        await syncManager.initialize();
-        await syncManager.registerTarget(browserTarget, { role: "primary" });
-        console.log("Sync manager initialized with primary target");
+        return;
       }
 
-      // Register the secondary target if it's not already registered
-      const existingTargets = syncManager.getSecondaryTargets();
-      if (!existingTargets.some((t) => t.id === webContainerTarget.id)) {
-        await syncManager.registerTarget(webContainerTarget, { role: "secondary" });
-        console.log("Secondary target registered successfully");
-      }
+      await syncManager.registerTarget(webContainerTarget, { role: "secondary" });
 
       // Start sync
       await syncManager.initialize();
@@ -43,12 +37,12 @@ export const useFileSystemStore = defineStore("file-system", () => {
     }
   }
 
-  async function initializeForProject(projectPath: string) {
+  async function initializeForProject(project: Project) {
     try {
       // Initialize browser file system
       const browserFs = new BrowserFileSystem({
-        name: projectPath,
-        rootDir: projectPath.split("/").join("-")
+        name: project.id,
+        rootDir: "/"
       });
       await browserFs.initialize();
 
@@ -79,7 +73,8 @@ export const useFileSystemStore = defineStore("file-system", () => {
       systems.value = [browserSystem];
 
       // Initialize web container
-      webContainer.value = await WebContainer.boot();
+      webContainer = await WebContainer.boot();
+      await webContainer.mount({});
       const webContainerFs = new WebContainerFileSystem(webContainer);
       await webContainerFs.initialize();
 
@@ -117,10 +112,10 @@ export const useFileSystemStore = defineStore("file-system", () => {
   }
 
   async function cleanup() {
-    await syncManager.stop();
-    if (webContainer.value) {
-      await webContainer.value.teardown();
-      webContainer.value = null;
+    await syncManager.dispose();
+    if (webContainer) {
+      await webContainer.teardown();
+      webContainer = null;
     }
     systems.value = [];
   }

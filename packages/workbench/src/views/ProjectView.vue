@@ -37,8 +37,8 @@ async function initializeProject() {
     await projectStore.setCurrentProject(projectId);
     await loadProjectChat();
     
-    if (currentProject.value?.fileSystemRoot) {
-      await fileSystemStore.initializeForProject(currentProject.value.fileSystemRoot);
+    if (currentProject.value) {
+      await fileSystemStore.initializeForProject(currentProject.value);
       // Provide sync manager to child components
       provide("syncManager", fileSystemStore.syncManager);
     }
