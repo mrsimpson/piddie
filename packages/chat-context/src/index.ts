@@ -1,2 +1,5 @@
+// Export types and interfaces
 export * from "./types";
-export * from "./chat-manager";
+
+// Export factory function
+export { createChatManager } from "./factory";

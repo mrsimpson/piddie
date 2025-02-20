@@ -46,6 +46,12 @@ export interface ProjectManager {
   listProjects(): Promise<Project[]>;
 
   /**
+   * Updates an existing project
+   * @param project - The project to update
+   */
+  updateProject(project: Project): Promise<void>;
+
+  /**
    * Deletes a project
    * @param id - The project ID
    */

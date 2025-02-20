@@ -1,15 +1,11 @@
 import Dexie, { Table } from "dexie";
-import type { Project, ProjectManager } from "./types";
+import type { Project, ProjectManager } from "../types";
 import type { ChatManager } from "@piddie/chat-context";
-import { generateProjectId } from "./utils/generate-project-id";
-
-/**
- * Maximum attempts to generate a unique project ID
- */
-const MAX_ID_GENERATION_ATTEMPTS = 10;
+import { generateProjectId } from "../utils/generate-project-id";
 
 /**
  * Error thrown when unable to generate a unique project ID
+ * @internal
  */
 class ProjectIdGenerationError extends Error {
   constructor() {
@@ -19,9 +15,16 @@ class ProjectIdGenerationError extends Error {
 }
 
 /**
- * Database schema for project management
+ * Maximum attempts to generate a unique project ID
+ * @internal
  */
-export class ProjectDatabase extends Dexie {
+const MAX_ID_GENERATION_ATTEMPTS = 10;
+
+/**
+ * Database schema for project management
+ * @internal
+ */
+class ProjectDatabase extends Dexie {
   projects!: Table<Project, string>;
 
   constructor() {
@@ -35,6 +38,7 @@ export class ProjectDatabase extends Dexie {
 
 /**
  * Implements project management using Dexie as the storage layer
+ * @internal
  */
 export class DexieProjectManager implements ProjectManager {
   private db: ProjectDatabase;
@@ -49,6 +53,7 @@ export class DexieProjectManager implements ProjectManager {
   /**
    * Generates a unique project ID by checking against existing IDs in the database
    * @throws {ProjectIdGenerationError} if unable to generate a unique ID after multiple attempts
+   * @internal
    */
   private async generateUniqueProjectId(): Promise<string> {
     for (let attempt = 0; attempt < MAX_ID_GENERATION_ATTEMPTS; attempt++) {
@@ -122,5 +127,13 @@ export class DexieProjectManager implements ProjectManager {
       throw new Error(`Project not found: ${id}`);
     }
     return project;
+  }
+
+  async updateProject(project: Project): Promise<void> {
+    const exists = await this.db.projects.get(project.id);
+    if (!exists) {
+      throw new Error(`Project not found: ${project.id}`);
+    }
+    await this.db.projects.put(project);
   }
 }

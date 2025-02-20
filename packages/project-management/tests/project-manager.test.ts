@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, vi, Mocked } from "vitest";
 import type { Project } from "../src/types";
-import { DexieProjectManager, ProjectDatabase } from "../src/project-manager";
+import { DexieProjectManager } from "../src/internal/dexie-implementation";
 import type { Table } from "dexie";
 import type { Chat, ChatManager } from "@piddie/chat-context";
 import { generateProjectId } from "../src/utils/generate-project-id";
+import { ProjectDatabase } from "../src/internal/database";
 
 // Create mock functions
 const projectMocks = {
