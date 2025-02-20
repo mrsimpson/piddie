@@ -2,6 +2,7 @@
 import { ref, onMounted } from "vue";
 import "@shoelace-style/shoelace/dist/components/dialog/dialog.js";
 import "@shoelace-style/shoelace/dist/components/button/button.js";
+import type SlDialog from "@shoelace-style/shoelace/dist/components/dialog/dialog.js";
 
 const props = defineProps<{
   message: string;
@@ -9,7 +10,7 @@ const props = defineProps<{
   onCancel: () => void;
 }>();
 
-const dialogRef = ref<HTMLSlDialogElement | null>(null);
+const dialogRef = ref<SlDialog | null>(null);
 
 function showDialog() {
   dialogRef.value?.show();

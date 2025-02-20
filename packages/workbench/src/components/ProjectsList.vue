@@ -6,7 +6,7 @@ import { useProjectStore } from "../stores/project";
 import type { Project } from "../types/project";
 import ProjectListItem from "./ProjectListItem.vue";
 import ConfirmationDialog from "./ConfirmationDialog.vue";
-import ScrollablePanel from "./ScrollablePanel.vue";
+import CollapsiblePanel from "./ui/CollapsiblePanel.vue";
 import "@shoelace-style/shoelace/dist/components/button/button.js";
 import "@shoelace-style/shoelace/dist/components/input/input.js";
 import "@shoelace-style/shoelace/dist/components/icon/icon.js";
@@ -17,7 +17,6 @@ const route = useRoute();
 const searchQuery = ref("");
 const projectStore = useProjectStore();
 const { projects, currentProject } = storeToRefs(projectStore);
-const isExpanded = ref(true);
 const projectToDelete = ref<string | null>(null);
 
 const filteredProjects = computed(() => {
@@ -61,71 +60,36 @@ const handleConfirmDeleteAction = async () => {
   }
 };
 
-function toggleExpanded() {
-  isExpanded.value = !isExpanded.value;
-  document
-    .querySelector(".app-container")
-    ?.classList.toggle("collapsed", !isExpanded.value);
-}
-
 onMounted(() => {
   projectStore.loadProjects();
-  // Start collapsed if we're on the new project page
-  isExpanded.value = route.path !== "/projects/new";
-  document
-    .querySelector(".app-container")
-    ?.classList.toggle("collapsed", !isExpanded.value);
 });
 </script>
 
 <template>
-  <div class="projects-list" :class="{ expanded: isExpanded }">
-    <template v-if="isExpanded">
-      <ScrollablePanel>
-        <template #header>
-          <div class="header">
-            <sl-button variant="primary" size="small" @click="createNewProject">
-              <sl-icon slot="prefix" name="plus-circle"></sl-icon>
-              Start New Chat
-            </sl-button>
-          </div>
-        </template>
+  <div class="projects-list">
+    <CollapsiblePanel>
+      <template #header>
+        <div class="header">
+          <sl-button variant="primary" size="small" @click="createNewProject">
+            <sl-icon slot="prefix" name="plus-circle"></sl-icon>
+            Start New Chat
+          </sl-button>
+        </div>
+      </template>
 
-        <template #content>
-          <div class="list">
-            <ProjectListItem
-              v-for="project in filteredProjects"
-              :key="project.id"
-              :project="project"
-              @name-change="handleProjectRename"
-              @confirm-delete="handleConfirmDelete"
-            />
-          </div>
-        </template>
-
-        <template #footer>
-          <div class="footer">
-            <sl-icon-button
-              class="toggle-button"
-              :name="isExpanded ? 'chevron-left' : 'chevron-right'"
-              :label="isExpanded ? 'Collapse' : 'Expand'"
-              @click="toggleExpanded"
-            />
-          </div>
-        </template>
-      </ScrollablePanel>
-    </template>
-
-    <template v-else>
-      <div class="footer">
-        <sl-icon-button
-          class="toggle-button"
-          :name="isExpanded ? 'chevron-left' : 'chevron-right'"
-          :label="isExpanded ? 'Collapse' : 'Expand'"
-          @click="toggleExpanded"
-        />
-      </div>
-    </template>
+      <template #content>
+        <div class="list">
+          <ProjectListItem
+            v-for="project in filteredProjects"
+            :key="project.id"
+            :project="project"
+            @name-change="handleProjectRename"
+            @confirm-delete="handleConfirmDelete"
+            @select="handleProjectSelect"
+          />
+        </div>
+      </template>
+    </CollapsiblePanel>
 
     <ConfirmationDialog
       v-if="projectToDelete"
@@ -138,22 +102,10 @@ onMounted(() => {
 
 <style scoped>
 .projects-list {
-  position: fixed;
-  top: 0;
-  left: 0;
   height: 100vh;
   background: var(--sl-color-neutral-0);
   border-right: 1px solid var(--sl-color-neutral-200);
   transition: width 0.3s ease;
-  z-index: 100;
-}
-
-.projects-list.expanded {
-  width: 250px;
-}
-
-.projects-list:not(.expanded) {
-  width: 48px;
 }
 
 .header {
@@ -163,15 +115,6 @@ onMounted(() => {
 
 .list {
   padding: 0.5rem;
-}
-
-.footer {
-  padding: 0.5rem;
-  border-top: 1px solid var(--sl-color-neutral-200);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  background: var(--sl-color-neutral-0);
 }
 
 .toggle-button {

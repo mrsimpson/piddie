@@ -2,7 +2,7 @@
 import { storeToRefs } from "pinia";
 import { ref } from "vue";
 import { useChatStore } from "../stores/chat";
-import ScrollablePanel from "./ScrollablePanel.vue";
+import CollapsiblePanel from "./ui/CollapsiblePanel.vue";
 import "@shoelace-style/shoelace/dist/components/card/card.js";
 import "@shoelace-style/shoelace/dist/components/input/input.js";
 import "@shoelace-style/shoelace/dist/components/button/button.js";
@@ -21,7 +21,7 @@ async function sendMessage() {
 
 <template>
   <div class="chat-panel">
-    <ScrollablePanel>
+    <CollapsiblePanel :display-toggle="false">
       <template #content>
         <div class="messages">
           <template v-for="message in messages" :key="message.id">
@@ -44,14 +44,14 @@ async function sendMessage() {
           </sl-button>
         </div>
       </template>
-    </ScrollablePanel>
+    </CollapsiblePanel>
   </div>
 </template>
 
 <style scoped>
 .chat-panel {
   height: 100%;
-  width: 300px;
+  flex: 1;
   border-right: 1px solid var(--sl-color-neutral-200);
 }
 

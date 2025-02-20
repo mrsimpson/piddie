@@ -5,7 +5,6 @@ import { storeToRefs } from "pinia";
 import { useProjectStore } from "../stores/project";
 import { useChatStore } from "../stores/chat";
 import { useFileSystemStore } from "../stores/file-system";
-import ProjectsList from "../components/ProjectsList.vue";
 import ChatPanel from "../components/ChatPanel.vue";
 import FileExplorer from "../components/FileExplorer.vue";
 import CodeEditor from "../components/CodeEditor.vue";
