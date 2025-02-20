@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, onMounted } from "vue";
 import "@shoelace-style/shoelace/dist/components/dialog/dialog.js";
 import "@shoelace-style/shoelace/dist/components/button/button.js";
 
@@ -29,6 +29,9 @@ function handleCancel() {
   hideDialog();
 }
 
+onMounted(() => {
+  showDialog();
+});
 </script>
 
 <template>
