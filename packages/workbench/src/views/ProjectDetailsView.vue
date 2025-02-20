@@ -76,6 +76,5 @@ watch(() => route.params.id, async (newId) => {
   display: flex;
   height: 100%;
   gap: 1rem;
-  padding: 1rem;
 }
 </style>

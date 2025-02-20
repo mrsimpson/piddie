@@ -6,6 +6,7 @@ import { useProjectStore } from "../stores/project";
 import type { Project } from "../types/project";
 import ProjectListItem from "./ProjectListItem.vue";
 import ConfirmationDialog from "./ConfirmationDialog.vue";
+import ScrollablePanel from "./ScrollablePanel.vue";
 import "@shoelace-style/shoelace/dist/components/button/button.js";
 import "@shoelace-style/shoelace/dist/components/input/input.js";
 import "@shoelace-style/shoelace/dist/components/icon/icon.js";
@@ -80,34 +81,51 @@ onMounted(() => {
 <template>
   <div class="projects-list" :class="{ expanded: isExpanded }">
     <template v-if="isExpanded">
-      <div class="header">
-        <sl-button variant="primary" size="small" @click="createNewProject">
-          <sl-icon slot="prefix" name="plus-circle"></sl-icon>
-          Start New Chat
-        </sl-button>
-      </div>
+      <ScrollablePanel>
+        <template #header>
+          <div class="header">
+            <sl-button variant="primary" size="small" @click="createNewProject">
+              <sl-icon slot="prefix" name="plus-circle"></sl-icon>
+              Start New Chat
+            </sl-button>
+          </div>
+        </template>
 
-      <div class="scrollable-container">
-        <div class="list">
-          <ProjectListItem
-            v-for="project in filteredProjects"
-            :key="project.id"
-            :project="project"
-            @name-change="handleProjectRename"
-            @confirm-delete="handleConfirmDelete"
-          />
-        </div>
-      </div>
+        <template #content>
+          <div class="list">
+            <ProjectListItem
+              v-for="project in filteredProjects"
+              :key="project.id"
+              :project="project"
+              @name-change="handleProjectRename"
+              @confirm-delete="handleConfirmDelete"
+            />
+          </div>
+        </template>
+
+        <template #footer>
+          <div class="footer">
+            <sl-icon-button
+              class="toggle-button"
+              :name="isExpanded ? 'chevron-left' : 'chevron-right'"
+              :label="isExpanded ? 'Collapse' : 'Expand'"
+              @click="toggleExpanded"
+            />
+          </div>
+        </template>
+      </ScrollablePanel>
     </template>
 
-    <div class="footer">
-      <sl-icon-button
-        class="toggle-button"
-        :name="isExpanded ? 'chevron-left' : 'chevron-right'"
-        :label="isExpanded ? 'Collapse' : 'Expand'"
-        @click="toggleExpanded"
-      />
-    </div>
+    <template v-else>
+      <div class="footer">
+        <sl-icon-button
+          class="toggle-button"
+          :name="isExpanded ? 'chevron-left' : 'chevron-right'"
+          :label="isExpanded ? 'Collapse' : 'Expand'"
+          @click="toggleExpanded"
+        />
+      </div>
+    </template>
 
     <ConfirmationDialog
       v-if="projectToDelete"
@@ -127,8 +145,6 @@ onMounted(() => {
   background: var(--sl-color-neutral-0);
   border-right: 1px solid var(--sl-color-neutral-200);
   transition: width 0.3s ease;
-  display: flex;
-  flex-direction: column;
   z-index: 100;
 }
 
@@ -143,31 +159,13 @@ onMounted(() => {
 .header {
   padding: 1rem;
   border-bottom: 1px solid var(--sl-color-neutral-200);
-  flex-shrink: 0;
-}
-
-.scrollable-container {
-  flex: 1;
-  overflow: hidden;
-  position: relative;
-  min-height: 0;
 }
 
 .list {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  overflow-y: auto;
   padding: 0.5rem;
 }
 
 .footer {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
   padding: 0.5rem;
   border-top: 1px solid var(--sl-color-neutral-200);
   display: flex;
