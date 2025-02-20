@@ -28,6 +28,9 @@ async function loadProjectChat() {
   
   if (projectChat) {
     await chatStore.loadChat(projectChat.id);
+  } else {
+    // Create a new chat for this project if none exists
+    await chatStore.createChat({ projectId: currentProject.value.id });
   }
 }
 

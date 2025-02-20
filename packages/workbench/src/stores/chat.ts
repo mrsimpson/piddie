@@ -36,6 +36,14 @@ export const useChatStore = defineStore("chat", () => {
     return chatManager.listChats(limit, offset);
   }
 
+  async function deleteChat(chatId: string) {
+    await chatManager.deleteChat(chatId);
+    if (currentChat.value?.id === chatId) {
+      currentChat.value = null;
+      messages.value = [];
+    }
+  }
+
   return {
     currentChat,
     messages,
@@ -43,5 +51,6 @@ export const useChatStore = defineStore("chat", () => {
     addMessage,
     loadChat,
     listChats,
+    deleteChat,
   };
 });

@@ -2,9 +2,11 @@ import { ref, computed } from "vue";
 import { defineStore } from "pinia";
 import type { Project } from "../types/project";
 import { createProjectManager } from "@piddie/project-management";
+import { useChatStore } from "./chat"; // Assuming chatStore is defined in a separate file
 
 export const useProjectStore = defineStore("project", () => {
   const projectManager = createProjectManager();
+  const chatStore = useChatStore(); // Initialize chatStore
   const currentProject = ref<Project | null>(null);
   const projects = ref<Project[]>([]);
   const isChatVisible = ref(false);
@@ -50,6 +52,19 @@ export const useProjectStore = defineStore("project", () => {
   }
 
   async function deleteProject(projectId: string) {
+    // Find and delete associated chat first
+    const chats = await chatStore.listChats();
+    const projectChat = chats.find(chat => 
+      chat.metadata && typeof chat.metadata === 'object' && 
+      'projectId' in chat.metadata && 
+      chat.metadata.projectId === projectId
+    );
+    
+    if (projectChat) {
+      await chatStore.deleteChat(projectChat.id);
+    }
+
+    // Delete the project
     await projectManager.deleteProject(projectId);
     await loadProjects();
 
