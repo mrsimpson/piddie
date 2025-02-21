@@ -64,6 +64,7 @@ export default withMermaid(
     // Add this to handle the root path
     rewrites: {
       "README.md": "index.md",
+      "apps/:app/README.md": ":app/index.md",
       "packages/:pkg/README.md": ":pkg/index.md"
     },
 
@@ -87,6 +88,10 @@ export default withMermaid(
           items: getSidebarItems(path.resolve(__dirname, "../../packages"))
         },
         {
+          text: "Frontends",
+          items: getSidebarItems(path.resolve(__dirname, "../../apps"))
+        },
+        {
           text: "Documentation",
           items: getSidebarItems(path.resolve(__dirname, "../../docs")).filter(
             (item) => !item.text.match(/.*arc42.*/)
@@ -97,6 +102,7 @@ export default withMermaid(
       nav: [
         { text: "Home", link: "/" },
         { text: "Architecture", link: "/docs/arc42-architecture" },
+        { text: "Frontends", link: "/apps/" },
         { text: "Components", link: "/packages/" }
       ]
     }

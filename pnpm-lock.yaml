@@ -87,48 +87,14 @@ importers:
         specifier: ^3.0.3
         version: 3.0.3(@types/node@22.10.7)(jiti@2.4.2)(yaml@2.6.1)
 
-  packages/chat-management:
-    dependencies:
-      dexie:
-        specifier: 4.0.11
-        version: 4.0.11
-      openai:
-        specifier: 4.85.1
-        version: 4.85.1
-
-  packages/files-management:
-    dependencies:
-      '@isomorphic-git/lightning-fs':
-        specifier: 4.6.0
-        version: 4.6.0
-      '@piddie/shared-types':
-        specifier: workspace:*
-        version: link:../shared-types
-      '@webcontainer/api':
-        specifier: 1.5.1-internal.6
-        version: 1.5.1-internal.6
-      ignore:
-        specifier: ^7.0.3
-        version: 7.0.3
-      native-file-system-adapter:
-        specifier: 3.0.1
-        version: 3.0.1
-    devDependencies:
-      typescript:
-        specifier: ^5.0.0
-        version: 5.7.3
-      vitest:
-        specifier: ^1.0.0
-        version: 1.6.1(@types/node@22.10.7)
-
-  packages/files-management-ui:
+  apps/files-management-ui:
     dependencies:
       '@piddie/files-management':
         specifier: workspace:*
-        version: link:../files-management
+        version: link:../../packages/files-management
       '@piddie/shared-types':
         specifier: workspace:*
-        version: link:../shared-types
+        version: link:../../packages/shared-types
       '@shoelace-style/shoelace':
         specifier: ^2.19.1
         version: 2.19.1(@floating-ui/utils@0.2.9)(@types/react@19.0.8)
@@ -188,44 +154,20 @@ importers:
         specifier: ^2.2.0
         version: 2.2.0(typescript@5.7.3)
 
-  packages/project-management:
+  apps/workbench:
     dependencies:
       '@piddie/chat-management':
         specifier: workspace:*
-        version: link:../chat-management
+        version: link:../../packages/chat-management
       '@piddie/files-management':
         specifier: workspace:*
-        version: link:../files-management
-      dexie:
-        specifier: 4.0.11
-        version: 4.0.11
-
-  packages/runtime-environment:
-    dependencies:
-      '@piddie/shared-types':
-        specifier: workspace:*
-        version: link:../shared-types
-
-  packages/shared-types:
-    dependencies:
-      '@webcontainer/api':
-        specifier: 1.5.1-internal.6
-        version: 1.5.1-internal.6
-
-  packages/workbench:
-    dependencies:
-      '@piddie/chat-management':
-        specifier: workspace:*
-        version: link:../chat-management
-      '@piddie/files-management':
-        specifier: workspace:*
-        version: link:../files-management
+        version: link:../../packages/files-management
       '@piddie/project-management':
         specifier: workspace:*
-        version: link:../project-management
+        version: link:../../packages/project-management
       '@piddie/shared-types':
         specifier: workspace:*
-        version: link:../shared-types
+        version: link:../../packages/shared-types
       '@shoelace-style/shoelace':
         specifier: ^2.19.1
         version: 2.19.1(@floating-ui/utils@0.2.9)(@types/react@19.0.8)
@@ -263,6 +205,64 @@ importers:
       vue-tsc:
         specifier: ^2.2.0
         version: 2.2.0(typescript@5.7.3)
+
+  packages/chat-management:
+    dependencies:
+      dexie:
+        specifier: 4.0.11
+        version: 4.0.11
+      openai:
+        specifier: 4.85.1
+        version: 4.85.1
+
+  packages/files-management:
+    dependencies:
+      '@isomorphic-git/lightning-fs':
+        specifier: 4.6.0
+        version: 4.6.0
+      '@piddie/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
+      '@webcontainer/api':
+        specifier: 1.5.1-internal.6
+        version: 1.5.1-internal.6
+      ignore:
+        specifier: ^7.0.3
+        version: 7.0.3
+      native-file-system-adapter:
+        specifier: 3.0.1
+        version: 3.0.1
+    devDependencies:
+      typescript:
+        specifier: ^5.0.0
+        version: 5.7.3
+      vitest:
+        specifier: ^1.0.0
+        version: 1.6.1(@types/node@22.10.7)
+
+  packages/project-management:
+    dependencies:
+      '@piddie/chat-management':
+        specifier: workspace:*
+        version: link:../chat-management
+      '@piddie/files-management':
+        specifier: workspace:*
+        version: link:../files-management
+      dexie:
+        specifier: 4.0.11
+        version: 4.0.11
+
+  packages/runtime-environment:
+    dependencies:
+      '@piddie/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
+
+  packages/shared-types:
+    dependencies:
+      '@webcontainer/api':
+        specifier: 1.5.1-internal.6
+        version: 1.5.1-internal.6
 
 packages:
 
@@ -1526,17 +1526,8 @@ packages:
     peerDependencies:
       vue: ^3.0.0
 
-  '@vue/devtools-kit@7.7.0':
-    resolution: {integrity: sha512-5cvZ+6SA88zKC8XiuxUfqpdTwVjJbvYnQZY5NReh7qlSGPvVDjjzyEtW+gdzLXNSd8tStgOjAdMCpvDQamUXtA==}
-
-  '@vue/devtools-kit@7.7.1':
-    resolution: {integrity: sha512-yhZ4NPnK/tmxGtLNQxmll90jIIXdb2jAhPF76anvn5M/UkZCiLJy28bYgPIACKZ7FCosyKoaope89/RsFJll1w==}
-
   '@vue/devtools-kit@7.7.2':
     resolution: {integrity: sha512-CY0I1JH3Z8PECbn6k3TqM1Bk9ASWxeMtTCvZr7vb+CHi+X/QwQm5F1/fPagraamKMAHVfuuCbdcnNg1A4CYVWQ==}
-
-  '@vue/devtools-shared@7.7.1':
-    resolution: {integrity: sha512-BtgF7kHq4BHG23Lezc/3W2UhK2ga7a8ohAIAGJMBr4BkxUFzhqntQtCiuL1ijo2ztWnmusymkirgqUrXoQKumA==}
 
   '@vue/devtools-shared@7.7.2':
     resolution: {integrity: sha512-uBFxnp8gwW2vD6FrJB8JZLUzVb6PNRG0B0jBnHsOH8uKyva2qINY8PTF5Te4QlTbMDqU5K6qtJDr6cNsKWhbOA==}
@@ -5032,7 +5023,7 @@ snapshots:
 
   '@vue/devtools-api@7.7.0':
     dependencies:
-      '@vue/devtools-kit': 7.7.0
+      '@vue/devtools-kit': 7.7.2
 
   '@vue/devtools-api@7.7.2':
     dependencies:
@@ -5040,8 +5031,8 @@ snapshots:
 
   '@vue/devtools-core@7.7.1(vite@6.0.11(@types/node@22.10.7)(jiti@2.4.2)(yaml@2.6.1))(vue@3.5.13(typescript@5.7.3))':
     dependencies:
-      '@vue/devtools-kit': 7.7.1
-      '@vue/devtools-shared': 7.7.1
+      '@vue/devtools-kit': 7.7.2
+      '@vue/devtools-shared': 7.7.2
       mitt: 3.0.1
       nanoid: 5.0.9
       pathe: 2.0.2
@@ -5049,26 +5040,6 @@ snapshots:
       vue: 3.5.13(typescript@5.7.3)
     transitivePeerDependencies:
       - vite
-
-  '@vue/devtools-kit@7.7.0':
-    dependencies:
-      '@vue/devtools-shared': 7.7.1
-      birpc: 0.2.19
-      hookable: 5.5.3
-      mitt: 3.0.1
-      perfect-debounce: 1.0.0
-      speakingurl: 14.0.1
-      superjson: 2.2.2
-
-  '@vue/devtools-kit@7.7.1':
-    dependencies:
-      '@vue/devtools-shared': 7.7.1
-      birpc: 0.2.19
-      hookable: 5.5.3
-      mitt: 3.0.1
-      perfect-debounce: 1.0.0
-      speakingurl: 14.0.1
-      superjson: 2.2.2
 
   '@vue/devtools-kit@7.7.2':
     dependencies:
@@ -5079,10 +5050,6 @@ snapshots:
       perfect-debounce: 1.0.0
       speakingurl: 14.0.1
       superjson: 2.2.2
-
-  '@vue/devtools-shared@7.7.1':
-    dependencies:
-      rfdc: 1.4.1
 
   '@vue/devtools-shared@7.7.2':
     dependencies:
@@ -7089,8 +7056,8 @@ snapshots:
   vite-plugin-vue-devtools@7.7.1(rollup@4.31.0)(vite@6.0.11(@types/node@22.10.7)(jiti@2.4.2)(yaml@2.6.1))(vue@3.5.13(typescript@5.7.3)):
     dependencies:
       '@vue/devtools-core': 7.7.1(vite@6.0.11(@types/node@22.10.7)(jiti@2.4.2)(yaml@2.6.1))(vue@3.5.13(typescript@5.7.3))
-      '@vue/devtools-kit': 7.7.1
-      '@vue/devtools-shared': 7.7.1
+      '@vue/devtools-kit': 7.7.2
+      '@vue/devtools-shared': 7.7.2
       execa: 9.5.2
       sirv: 3.0.0
       vite: 6.0.11(@types/node@22.10.7)(jiti@2.4.2)(yaml@2.6.1)
