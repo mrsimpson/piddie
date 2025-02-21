@@ -105,7 +105,7 @@ export class DexieChatManager implements ChatManager {
   }
 
   async listChats(): Promise<Chat[]> {
-    const chats = await this.db.chats.toArray() || [];
+    const chats = (await this.db.chats.toArray()) || [];
     const result: Chat[] = [];
 
     for (const chat of chats) {
@@ -120,8 +120,9 @@ export class DexieChatManager implements ChatManager {
       });
     }
 
-    return result.sort((a, b) => 
-      (b.lastUpdated?.getTime() || 0) - (a.lastUpdated?.getTime() || 0)
+    return result.sort(
+      (a, b) =>
+        (b.lastUpdated?.getTime() || 0) - (a.lastUpdated?.getTime() || 0)
     );
   }
 

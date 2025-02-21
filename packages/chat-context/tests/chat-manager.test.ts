@@ -248,10 +248,7 @@ describe("ChatManager", () => {
         messageMocks.update.mockResolvedValueOnce(1);
         chatMocks.update.mockResolvedValueOnce(1);
 
-        await chatManager.updateMessageStatus(
-          message.id,
-          MessageStatus.SENT
-        );
+        await chatManager.updateMessageStatus(message.id, MessageStatus.SENT);
 
         expect(messageMocks.update).toHaveBeenCalledWith(message.id, {
           status: MessageStatus.SENT
@@ -265,10 +262,7 @@ describe("ChatManager", () => {
         messageMocks.get.mockResolvedValueOnce(undefined);
 
         await expect(
-          chatManager.updateMessageStatus(
-            "non-existent",
-            MessageStatus.SENT
-          )
+          chatManager.updateMessageStatus("non-existent", MessageStatus.SENT)
         ).rejects.toThrow("Message not found");
       });
     });
@@ -282,16 +276,6 @@ describe("ChatManager", () => {
         created: new Date(lastUpdated.getTime() - 1000), // 1 second before lastUpdated
         lastUpdated,
         metadata: undefined
-      });
-
-      const createMockMessage = (chatId: string, content: string): Message => ({
-        id: `msg_${Date.now()}`,
-        chatId,
-        content,
-        role: "user",
-        status: MessageStatus.SENT,
-        created: new Date(),
-        parentId: undefined
       });
 
       it("THEN should return chats sorted by lastUpdated", async () => {

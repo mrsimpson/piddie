@@ -33,7 +33,7 @@ watch(
       await props.system.syncTarget.unwatch();
       watcher = null;
     }
-    
+
     // Set up new watcher
     watcher = async () => loadDirectory(currentPath.value);
     await newSystem.syncTarget.watch(watcher, {
@@ -42,7 +42,7 @@ watch(
         registeredBy: "FileSystem.vue"
       }
     });
-    
+
     // Load initial directory
     await loadDirectory("/");
   },

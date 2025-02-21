@@ -155,7 +155,10 @@ export abstract class PollingSyncTarget extends BaseSyncTarget {
     // Start the watching cycle with setInterval
     this.watchInterval = globalThis.setInterval(async () => {
       // Only perform check if not scanning and should continue watching
-      if (this.getCurrentState() !== "scanning" && this.shouldContinueWatching) {
+      if (
+        this.getCurrentState() !== "scanning" &&
+        this.shouldContinueWatching
+      ) {
         await this.performCheck();
       }
     }, this.WATCH_INTERVAL);

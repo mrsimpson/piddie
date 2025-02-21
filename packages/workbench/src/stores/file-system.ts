@@ -42,7 +42,7 @@ export const useFileSystemStore = defineStore("file-system", () => {
       monitorInterval = undefined;
     }
   }
-  
+
   function monitorSync() {
     if (!syncManager) return;
 
@@ -87,7 +87,7 @@ export const useFileSystemStore = defineStore("file-system", () => {
 
       // Start monitoring sync status
       monitorInterval = window.setInterval(monitorSync, 1000);
-      
+
       // Clean up on store disposal
       onUnmounted(() => {
         stopMonitoring();
@@ -144,7 +144,8 @@ export const useFileSystemStore = defineStore("file-system", () => {
       await syncTarget.initialize(fileSystem, isPrimary, {
         skipFileScan: false,
         resolutionFunctions: {
-          resolveFromPrimary: () => syncManager.fullSyncFromPrimaryToTarget(syncTarget),
+          resolveFromPrimary: () =>
+            syncManager.fullSyncFromPrimaryToTarget(syncTarget)
           // resolveFromSecondary: () => syncManager.fullSyncFromTargetToPrimary(syncTarget)
         }
       });
@@ -193,7 +194,7 @@ export const useFileSystemStore = defineStore("file-system", () => {
       if (initialized.value) {
         await cleanup();
         // Additional wait to ensure WebContainer and all timers are fully cleaned up
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       }
 
       // Reset systems array before initialization
@@ -234,7 +235,10 @@ export const useFileSystemStore = defineStore("file-system", () => {
       try {
         await cleanup();
       } catch (cleanupErr) {
-        console.error("Failed to cleanup after initialization error:", cleanupErr);
+        console.error(
+          "Failed to cleanup after initialization error:",
+          cleanupErr
+        );
       }
       console.error("Failed to initialize file systems:", err);
       throw err;
@@ -247,13 +251,15 @@ export const useFileSystemStore = defineStore("file-system", () => {
       stopMonitoring();
 
       // Ensure all sync targets are unwatched first
-      await Promise.all(systems.value.map(async system => {
-        try {
-          await system.syncTarget.unwatch();
-        } catch (err) {
-          console.warn('Error unwatching sync target:', err);
-        }
-      }));
+      await Promise.all(
+        systems.value.map(async (system) => {
+          try {
+            await system.syncTarget.unwatch();
+          } catch (err) {
+            console.warn("Error unwatching sync target:", err);
+          }
+        })
+      );
 
       // Dispose sync manager and wait for completion
       if (syncManager) {
@@ -272,7 +278,7 @@ export const useFileSystemStore = defineStore("file-system", () => {
       initialized.value = false;
 
       // Wait a bit to ensure all cleanup is complete
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
     } catch (err) {
       console.error("Failed to clean up file systems:", err);
       throw err;
