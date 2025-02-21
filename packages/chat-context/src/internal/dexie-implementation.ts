@@ -97,7 +97,7 @@ export class DexieChatManager implements ChatManager {
   ): Promise<void> {
     const message = await this.db.messages.get(messageId);
     if (!message) {
-      throw new Error(`Message not found: ${messageId}`);
+      throw new Error("Message not found");
     }
 
     await this.db.messages.update(messageId, { status });
@@ -105,7 +105,7 @@ export class DexieChatManager implements ChatManager {
   }
 
   async listChats(): Promise<Chat[]> {
-    const chats = await this.db.chats.toArray();
+    const chats = await this.db.chats.toArray() || [];
     const result: Chat[] = [];
 
     for (const chat of chats) {
@@ -120,7 +120,9 @@ export class DexieChatManager implements ChatManager {
       });
     }
 
-    return result;
+    return result.sort((a, b) => 
+      (b.lastUpdated?.getTime() || 0) - (a.lastUpdated?.getTime() || 0)
+    );
   }
 
   async deleteChat(id: string): Promise<void> {
