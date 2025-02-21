@@ -2,12 +2,12 @@
 import { onMounted, onBeforeUnmount, watch, provide } from "vue";
 import { useRoute } from "vue-router";
 import { storeToRefs } from "pinia";
-import { useProjectStore } from "../stores/project";
-import { useChatStore } from "../stores/chat";
-import { useFileSystemStore } from "../stores/file-system";
-import ChatPanel from "../components/ChatPanel.vue";
-import FileExplorer from "../components/FileExplorer.vue";
-import CodeEditor from "../components/CodeEditor.vue";
+import { useProjectStore } from "@/stores/project";
+import { useChatStore } from "@/stores/chat";
+import { useFileSystemStore } from "@/stores/file-system";
+import ChatPanel from "@/components/ChatPanel.vue";
+import FileExplorerPanel from "@/components/FileExplorerPanel.vue";
+import CodeEditor from "@/components/CodeEditor.vue";
 
 const route = useRoute();
 const projectStore = useProjectStore();
@@ -71,10 +71,12 @@ watch(
 </script>
 
 <template>
-  <div class="project-details">
-    <ChatPanel v-if="currentProject" />
-    <FileExplorer />
-    <CodeEditor />
+  <div class="project-details" v-if="currentProject">
+    <ChatPanel :style="{ minWidth: '300px', maxWidth: '400px' }" />
+    <FileExplorerPanel :style="{ minWidth: '300px', maxWidth: '400px' }"
+      :systems="fileSystemStore.systems"
+    />
+    <CodeEditor :style="{ minWidth: '40%' }" />
   </div>
 </template>
 
