@@ -15,9 +15,14 @@ import type { Project } from "@piddie/project-management";
 
 let webContainer: WebContainer | null = null;
 
+/**
+ * This store serves as API to the files-management package.
+ * I bundles the necessities of the project driven workbench and orchestrates the storages
+ */
 export const useFileSystemStore = defineStore("file-system", () => {
   const syncManager = new FileSyncManager();
   const systems = ref<SynchronizedFileSystem[]>([]);
+  const initialized = ref(false);
 
   async function initializeSyncManager(
     browserTarget: BrowserSyncTarget,
@@ -44,6 +49,14 @@ export const useFileSystemStore = defineStore("file-system", () => {
 
   async function initializeForProject(project: Project) {
     try {
+      // If already initialized, clean up first
+      if (initialized.value) {
+        await cleanup();
+      }
+
+      // Reset systems array before initialization
+      systems.value = [];
+
       // Initialize browser file system
       const browserFs = new BrowserFileSystem({
         name: project.id,
@@ -113,24 +126,36 @@ export const useFileSystemStore = defineStore("file-system", () => {
 
       // Initialize sync manager with both targets
       await initializeSyncManager(browserTarget, webContainerTarget);
+      initialized.value = true;
     } catch (err) {
       console.error("Failed to initialize file systems:", err);
+      throw err; // Re-throw to allow error handling by caller
     }
   }
 
   async function cleanup() {
-    await syncManager.dispose();
-    if (webContainer) {
-      await webContainer.teardown();
-      webContainer = null;
+    try {
+      await syncManager.dispose();
+
+      if (webContainer) {
+        await webContainer.teardown();
+        webContainer = null;
+      }
+
+      // Reset systems before setting initialized to false
+      systems.value = [];
+      initialized.value = false;
+    } catch (err) {
+      console.error("Failed to clean up file systems:", err);
+      throw err;
     }
-    systems.value = [];
   }
 
   return {
     syncManager,
     systems,
     initializeForProject,
-    cleanup
+    cleanup,
+    initialized
   };
 });

@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, watch, provide } from "vue";
+import { onMounted, onBeforeUnmount, watch, provide, ref } from "vue";
 import { useRoute } from "vue-router";
 import { storeToRefs } from "pinia";
 import { useProjectStore } from "@/stores/project";
-import { useChatStore } from "@/stores/chat";
 import { useFileSystemStore } from "@/stores/file-system";
 import ChatPanel from "@/components/ChatPanel.vue";
 import FileExplorerPanel from "@/components/FileExplorerPanel.vue";
@@ -11,47 +10,28 @@ import CodeEditor from "@/components/CodeEditor.vue";
 
 const route = useRoute();
 const projectStore = useProjectStore();
-const chatStore = useChatStore();
 const fileSystemStore = useFileSystemStore();
 const { currentProject } = storeToRefs(projectStore);
+const error = ref<Error | null>(null);
 
-async function loadProjectChat() {
-  if (!currentProject.value) return;
-
-  // Try to find a chat for this project
-  const chats = await chatStore.listChats();
-  const projectChat = chats.find(
-    (chat) =>
-      chat.metadata &&
-      typeof chat.metadata === "object" &&
-      "projectId" in chat.metadata &&
-      chat.metadata.projectId === currentProject.value?.id
-  );
-
-  if (projectChat) {
-    await chatStore.loadChat(projectChat.id);
-  } else {
-    // Create a new chat for this project if none exists
-    await chatStore.createChat({ projectId: currentProject.value.id });
-  }
-}
-
-async function initializeProject() {
+async function initializeFromRoute() {
   const projectId = route.params.id as string;
   if (projectId) {
-    await projectStore.setCurrentProject(projectId);
-    await loadProjectChat();
+    try {
+      error.value = null;
+      await projectStore.setCurrentProject(projectId);
 
-    if (currentProject.value) {
-      await fileSystemStore.initializeForProject(currentProject.value);
       // Provide sync manager to child components
       provide("syncManager", fileSystemStore.syncManager);
+    } catch (err) {
+      console.error("Failed to initialize project:", err);
+      error.value = err as Error;
     }
   }
 }
 
 onMounted(async () => {
-  await initializeProject();
+  await initializeFromRoute();
 });
 
 onBeforeUnmount(async () => {
@@ -61,10 +41,9 @@ onBeforeUnmount(async () => {
 // Reload project when route changes
 watch(
   () => route.params.id,
-  async (newId) => {
-    if (newId) {
-      await fileSystemStore.cleanup();
-      await initializeProject();
+  async (newId, oldId) => {
+    if (newId && newId !== oldId) {
+      await initializeFromRoute();
     }
   }
 );
@@ -73,8 +52,10 @@ watch(
 <template>
   <div class="project-details" v-if="currentProject">
     <ChatPanel :style="{ minWidth: '300px', maxWidth: '400px' }" />
-    <FileExplorerPanel :style="{ minWidth: '300px', maxWidth: '400px' }"
+    <FileExplorerPanel
+      :style="{ minWidth: '300px', maxWidth: '400px' }"
       :systems="fileSystemStore.systems"
+      :error="error"
     />
     <CodeEditor :style="{ minWidth: '40%' }" />
   </div>

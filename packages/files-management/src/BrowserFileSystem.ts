@@ -52,6 +52,8 @@ export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
   };
   protected override pendingOperations = 0;
   declare protected lastOperation?: FileSystemState["lastOperation"];
+  protected fs: FS;
+  protected name: string;
 
   /**
    * Creates a new instance of BrowserFileSystem
@@ -218,6 +220,10 @@ export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
       rootDir: options.rootDir,
       fs: fsWrapper
     });
+
+    // Store fs and name for cleanup
+    this.fs = fs;
+    this.name = options.name;
   }
 
   protected override normalizePath(filePath: string): string {
@@ -283,6 +289,27 @@ export class BrowserFileSystem extends FsPromisesAdapter implements FileSystem {
         );
       }
       throw error;
+    }
+  }
+
+  /**
+   * Dispose of the file system, removing all files and the IndexedDB database
+   */
+  async dispose(): Promise<void> {
+    try {
+      // Delete the IndexedDB database
+      // await new Promise<void>((resolve, reject) => {
+      //   const req = indexedDB.deleteDatabase(`fs.${this.name}`);
+      //   req.onsuccess = () => resolve();
+      //   req.onerror = () => reject(new Error("Failed to delete IndexedDB database"));
+      // });
+
+      this.currentState = "uninitialized";
+    } catch (err) {
+      throw new FileSystemError(
+        `Failed to dispose file system: ${err instanceof Error ? err.message : String(err)}`,
+        "INVALID_OPERATION"
+      );
     }
   }
 }

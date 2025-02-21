@@ -54,6 +54,10 @@ export const useChatStore = defineStore("chat", () => {
     }
   }
 
+  async function cleanup() {
+    currentChat.value = null;
+  }
+
   return {
     currentChat,
     messages,
@@ -61,6 +65,7 @@ export const useChatStore = defineStore("chat", () => {
     addMessage,
     loadChat,
     listChats,
-    deleteChat
+    deleteChat,
+    cleanup
   };
 });

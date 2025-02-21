@@ -90,9 +90,8 @@ function handleCancelDelete() {
   background-color: var(--sl-color-neutral-50);
 }
 
-.project-card.active {
-  background-color: var(--sl-color-primary-50);
-  border-color: var(--sl-color-primary-200);
+.project-card.active::part(base) {
+  background-color: var(--sl-color-primary-200);
 }
 
 .project-content {
