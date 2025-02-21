@@ -24,7 +24,7 @@ const MAX_ID_GENERATION_ATTEMPTS = 10;
  * Database schema for project management
  * @internal
  */
-class ProjectDatabase extends Dexie {
+export class ProjectDatabase extends Dexie {
   projects!: Table<Project, string>;
 
   constructor() {

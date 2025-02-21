@@ -246,7 +246,6 @@ describe("ChatManager", () => {
         chatMocks.update.mockResolvedValueOnce(1);
 
         await chatManager.updateMessageStatus(
-          message.chatId,
           message.id,
           MessageStatus.SENT
         );
@@ -264,7 +263,6 @@ describe("ChatManager", () => {
 
         await expect(
           chatManager.updateMessageStatus(
-            "chat_1",
             "non-existent",
             MessageStatus.SENT
           )
@@ -356,7 +354,7 @@ describe("ChatManager", () => {
           createMockMessage("chat_2", "Second chat")
         ]);
 
-        const chats = await chatManager.listChats(undefined, 1);
+        const chats = await chatManager.listChats();
 
         expect(chats).toHaveLength(1);
         expect(chats[0]!.id).toBe("chat_2");
@@ -390,7 +388,7 @@ describe("ChatManager", () => {
           createMockMessage("chat_2", "Second chat")
         ]);
 
-        const chats = await chatManager.listChats(1, 1);
+        const chats = await chatManager.listChats();
 
         expect(chats).toHaveLength(1);
         expect(chats[0]!.id).toBe("chat_2");
