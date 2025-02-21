@@ -6,12 +6,14 @@ import ProjectListItem from "./ProjectListItem.vue";
 import CollapsiblePanel from "./ui/CollapsiblePanel.vue";
 import "@shoelace-style/shoelace/dist/components/button/button.js";
 import "@shoelace-style/shoelace/dist/components/icon/icon.js";
+import { useRouter } from "vue-router";
 
 const projectStore = useProjectStore();
 const { projects } = storeToRefs(projectStore);
+const router = useRouter();
 
 const createNewProject = async () => {
-  await projectStore.createProject("untitled");
+  await router.push("/projects/new");
 };
 
 onMounted(() => {
