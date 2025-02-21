@@ -192,8 +192,8 @@ export const useFileSystemStore = defineStore("file-system", () => {
       // If already initialized, clean up first and wait for cleanup
       if (initialized.value) {
         await cleanup();
-        // Additional wait to ensure WebContainer is fully cleaned up
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // Additional wait to ensure WebContainer and all timers are fully cleaned up
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
 
       // Reset systems array before initialization
@@ -230,6 +230,12 @@ export const useFileSystemStore = defineStore("file-system", () => {
 
       initialized.value = true;
     } catch (err) {
+      // On error, ensure we clean up any partial initialization
+      try {
+        await cleanup();
+      } catch (cleanupErr) {
+        console.error("Failed to cleanup after initialization error:", cleanupErr);
+      }
       console.error("Failed to initialize file systems:", err);
       throw err;
     }
@@ -240,9 +246,20 @@ export const useFileSystemStore = defineStore("file-system", () => {
       // Stop monitoring
       stopMonitoring();
 
-      // Dispose sync manager
-      await syncManager.dispose();
-      syncManager = new FileSyncManager(); // Create fresh instance
+      // Ensure all sync targets are unwatched first
+      await Promise.all(systems.value.map(async system => {
+        try {
+          await system.syncTarget.unwatch();
+        } catch (err) {
+          console.warn('Error unwatching sync target:', err);
+        }
+      }));
+
+      // Dispose sync manager and wait for completion
+      if (syncManager) {
+        await syncManager.dispose();
+        syncManager = new FileSyncManager(); // Create fresh instance
+      }
 
       // Ensure webcontainer is fully torn down before nulling
       if (webContainer) {

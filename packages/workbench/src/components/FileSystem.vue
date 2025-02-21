@@ -122,7 +122,7 @@ onMounted(async () => {
 onUnmounted(async () => {
   // Clean up watcher
   if (watcher) {
-    await props.system.syncTarget.unwatch(watcher);
+    await props.system.syncTarget.unwatch();
     watcher = null;
   }
 });

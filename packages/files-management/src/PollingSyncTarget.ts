@@ -9,7 +9,9 @@ import { BaseSyncTarget } from "./BaseSyncTarget";
 
 declare const globalThis: {
   setTimeout(callback: () => void, ms: number): ReturnType<typeof setTimeout>;
+  setInterval(callback: () => void, ms: number): ReturnType<typeof setInterval>;
   clearTimeout(id: ReturnType<typeof setTimeout>): void;
+  clearInterval(id: ReturnType<typeof setInterval>): void;
 };
 
 /**
@@ -18,7 +20,7 @@ declare const globalThis: {
 export abstract class PollingSyncTarget extends BaseSyncTarget {
   private changeBuffer = new Map<string, FileChangeInfo>();
   private changeTimeout: ReturnType<typeof setTimeout> | null = null;
-  private watchTimeout: ReturnType<typeof setTimeout> | null = null;
+  private watchInterval: ReturnType<typeof setInterval> | null = null;
   private isWatcherRunning = false;
   private shouldContinueWatching = false;
   private readonly WATCH_INTERVAL = 1000; // Fixed 1 second interval
@@ -150,20 +152,13 @@ export abstract class PollingSyncTarget extends BaseSyncTarget {
     // Reset watch state
     this.shouldContinueWatching = true;
 
-    const scheduleNextCheck = () => {
-      if (this.shouldContinueWatching) {
-        this.watchTimeout = globalThis.setTimeout(async () => {
-          // Only perform check if not scanning
-          if (this.getCurrentState() !== "scanning") {
-            await this.performCheck();
-          }
-          scheduleNextCheck();
-        }, this.WATCH_INTERVAL);
+    // Start the watching cycle with setInterval
+    this.watchInterval = globalThis.setInterval(async () => {
+      // Only perform check if not scanning and should continue watching
+      if (this.getCurrentState() !== "scanning" && this.shouldContinueWatching) {
+        await this.performCheck();
       }
-    };
-
-    // Start the watching cycle
-    scheduleNextCheck();
+    }, this.WATCH_INTERVAL);
   }
 
   private async performCheck(): Promise<void> {
@@ -266,9 +261,9 @@ export abstract class PollingSyncTarget extends BaseSyncTarget {
 
     // Restart the watcher
     this.shouldContinueWatching = false;
-    if (this.watchTimeout !== null) {
-      globalThis.clearTimeout(this.watchTimeout);
-      this.watchTimeout = null;
+    if (this.watchInterval !== null) {
+      globalThis.clearInterval(this.watchInterval);
+      this.watchInterval = null;
     }
 
     // Clear any pending changes
@@ -285,9 +280,9 @@ export abstract class PollingSyncTarget extends BaseSyncTarget {
 
   override async unwatch(): Promise<void> {
     this.shouldContinueWatching = false;
-    if (this.watchTimeout !== null) {
-      globalThis.clearTimeout(this.watchTimeout);
-      this.watchTimeout = null;
+    if (this.watchInterval !== null) {
+      globalThis.clearInterval(this.watchInterval);
+      this.watchInterval = null;
     }
     await super.unwatch();
   }
