@@ -125,7 +125,6 @@ describe("ProjectManager", () => {
       name: "Existing Project",
       created: new Date(),
       lastAccessed: new Date(),
-      fileSystemRoot: "/projects/existing",
       chatId: "clever-fox-runs"
     };
 
