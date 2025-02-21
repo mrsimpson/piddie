@@ -17,7 +17,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@piddie/chat-context": "workspace:*",
+    "@piddie/chat-management": "workspace:*",
     "@piddie/files-management": "workspace:*",
     "dexie": "4.0.11"
   }

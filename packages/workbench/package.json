@@ -13,7 +13,7 @@
     "format": "prettier --write src/"
   },
   "dependencies": {
-    "@piddie/chat-context": "workspace:*",
+    "@piddie/chat-management": "workspace:*",
     "@piddie/files-management": "workspace:*",
     "@piddie/project-management": "workspace:*",
     "@piddie/shared-types": "workspace:*",

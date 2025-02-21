@@ -1,7 +1,7 @@
 import { ref } from "vue";
 import { defineStore } from "pinia";
-import type { Chat, Message } from "@piddie/chat-context";
-import { createChatManager } from "@piddie/chat-context";
+import type { Chat, Message } from "@piddie/chat-management";
+import { createChatManager } from "@piddie/chat-management";
 
 export const useChatStore = defineStore("chat", () => {
   const chatManager = createChatManager();

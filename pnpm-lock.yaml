@@ -87,7 +87,7 @@ importers:
         specifier: ^3.0.3
         version: 3.0.3(@types/node@22.10.7)(jiti@2.4.2)(yaml@2.6.1)
 
-  packages/chat-context:
+  packages/chat-management:
     dependencies:
       dexie:
         specifier: 4.0.11
@@ -190,9 +190,9 @@ importers:
 
   packages/project-management:
     dependencies:
-      '@piddie/chat-context':
+      '@piddie/chat-management':
         specifier: workspace:*
-        version: link:../chat-context
+        version: link:../chat-management
       '@piddie/files-management':
         specifier: workspace:*
         version: link:../files-management
@@ -214,9 +214,9 @@ importers:
 
   packages/workbench:
     dependencies:
-      '@piddie/chat-context':
+      '@piddie/chat-management':
         specifier: workspace:*
-        version: link:../chat-context
+        version: link:../chat-management
       '@piddie/files-management':
         specifier: workspace:*
         version: link:../files-management

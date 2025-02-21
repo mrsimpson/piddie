@@ -1,4 +1,4 @@
-import type { ChatManager } from "@piddie/chat-context";
+import type { ChatManager } from "@piddie/chat-management";
 import type { ProjectManager } from "./types";
 import { DexieProjectManager } from "./internal/dexie-implementation";
 

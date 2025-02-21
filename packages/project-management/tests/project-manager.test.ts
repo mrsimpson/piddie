@@ -5,7 +5,7 @@ import {
   ProjectDatabase
 } from "../src/internal/dexie-implementation";
 import type { Table } from "dexie";
-import type { Chat, ChatManager } from "@piddie/chat-context";
+import type { Chat, ChatManager } from "@piddie/chat-management";
 import { generateProjectId } from "../src/utils/generate-project-id";
 
 // Create mock functions

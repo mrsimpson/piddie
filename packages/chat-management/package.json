@@ -1,5 +1,5 @@
 {
-  "name": "@piddie/chat-context",
+  "name": "@piddie/chat-management",
   "description": "Chat- and context-management",
   "version": "0.0.0-development",
   "type": "module",

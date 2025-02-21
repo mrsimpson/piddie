@@ -37,7 +37,7 @@ export default defineConfig({
         ]
     },
     optimizeDeps: {
-        exclude: ['@piddie/project-management', '@piddie/chat-context', '@piddie/files-management']
+        exclude: ['@piddie/project-management', '@piddie/chat-management', '@piddie/files-management']
     },
     server: {
         headers: {
