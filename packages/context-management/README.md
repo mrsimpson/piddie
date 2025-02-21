@@ -2,7 +2,7 @@
 
 ## Overview
 
-Provides relevant context from files, workspace state, and other sources to enhance LLM interactions. This package focuses on gathering and optimizing contextual information.
+Provides relevant context from files, workspace state, and other sources. Acts as an MCP server providing contextual information for LLM interactions.
 
 ## System Diagram
 
@@ -15,22 +15,29 @@ graph TD
 
 ## Core Responsibilities
 
-### Context Management
+### MCP Server Implementation
 
-- **Context Collection**:
-  - Gather file contents
-  - Collect workspace state
-  - Assemble project information
+- Expose context gathering capabilities
+- Handle context requests
+- Provide context optimization interface
 
-- **Context Optimization**:
-  - Prioritize relevant context
-  - Manage token budget
-  - Remove redundant information
+### Context Collection
 
-- **Context Types**:
-  - File context (current and related files)
-  - Workspace context (IDE state)
-  - Project context (configuration, dependencies)
+- Gather file contents
+- Collect workspace state
+- Assemble project information
+
+### Context Optimization
+
+- Prioritize relevant context
+- Manage token budget
+- Remove redundant information
+
+### Context Types
+
+- File context (current and related files)
+- Workspace context (IDE state)
+- Project context (configuration, dependencies)
 
 ## Performance Considerations
 

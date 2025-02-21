@@ -18,29 +18,41 @@ For a detailed architectural overview, please refer to our [arc42 Architecture D
 
 ## Project Components
 
-### 1. [Chat Context Package](/packages/chat-context/README.md)
+### Core AI Components
 
-Manages conversational context and prompt generation, serving as the intelligent communication layer of the system.
+#### 1. [LLM Integration Package](/packages/llm-integration/README.md)
 
-### 2. [LLM Integration Package](/packages/llm-integration/README.md)
+Core orchestrator (MCP Host) that coordinates context, prompts, and tools to enhance LLM interactions. Provides unified interface for multiple LLM providers.
 
-Provides a unified, extensible interface for interacting with multiple Large Language Model providers.
+#### 2. [Chat Management Package](/packages/chat-management/README.md)
 
-### 3. [Files Management Package](/packages/files-management/README.md)
+Manages chat history and message flow, providing a clean interface for user-LLM communication.
 
-Implements a robust file management system with comprehensive synchronization capabilities across browser and local file systems.
+#### 3. [Prompt Management Package](/packages/prompt-management/README.md)
 
-### 4. [Actions Package](/packages/actions/README.md)
+MCP server that handles prompt enhancement and optimization to improve LLM interactions.
 
-Interprets and executes various types of actions derived from LLM responses, offering a flexible action management system.
+#### 4. [Context Management Package](/packages/context-management/README.md)
 
-### 5. [Error Resolution Package](/packages/error-resolution/README.md)
+MCP server that provides relevant context from files, workspace, and project state.
 
-Provides intelligent error handling and resolution through structured context and LLM-assisted debugging.
+#### 5. [Actions Package](/packages/actions/README.md)
 
-### 6. [Workbench Package](/packages/workbench/README.md)
+MCP server that implements tool interfaces that LLMs can use to interact with the system.
 
-Manages the overall IDE workspace state, persisting user preferences and session information.
+### Development Environment
+
+#### 6. [Files Management Package](/packages/files-management/README.md)
+
+Implements file system operations and synchronization between browser and local environments.
+
+#### 7. [Workbench Package](/packages/workbench/README.md)
+
+Manages the IDE interface and user workspace state.
+
+#### 8. [Project Management Package](/packages/project-management/README.md)
+
+Handles project configuration, dependencies, and resource management.
 
 ## Project Setup and Monorepo Design Decisions
 

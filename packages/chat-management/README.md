@@ -2,68 +2,44 @@
 
 ## Overview
 
-Manages the chat history and message flow between the user and LLM. This package is responsible for maintaining the conversation state and coordinating with other components to enhance LLM interactions.
+Manages chat history and message flow between users and LLMs. This package focuses on maintaining conversation state and providing a clean interface for message handling.
 
 ## System Diagram
 
 ```mermaid
 graph TD
-    CM[Chat Manager] --> LLM[LLM Integration]
-    CM --> PM[Prompt Manager]
-    CM --> CTX[Context Manager]
-    CM --> ACT[Actions Manager]
+    CM[Chat Manager] --> H[History Store]
+    CM --> S[State Manager]
+    CM --> M[Message Handler]
 ```
 
 ## Core Responsibilities
 
-### Chat Manager
+### Message Management
 
-- **Message Management**:
-  - Store and manage chat history
-  - Handle message threading and conversation flow
-  - Maintain conversation state and metadata
+- Store and manage chat history
+- Handle message threading and conversation flow
+- Maintain conversation state and metadata
+- Provide clean interfaces for message retrieval
 
-- **Coordination**:
-  - Request prompt enhancements from Prompt Manager
-  - Gather context from Context Manager
-  - Collect available tools from Actions Manager
-  - Send enhanced requests to LLM Integration
+### Message Types
 
-- **Response Handling**:
-  - Process LLM responses
-  - Update conversation state
-  - Handle error scenarios
+- User messages
+- LLM responses
+- System notifications
+- Error messages
 
-## External Dependencies
+## External Relationships
 
-- **Prompt Manager**: For prompt enhancement and optimization
-- **Context Manager**: For additional context from files and workspace
-- **Actions Manager**: For tool interfaces
-- **LLM Integration**: For LLM communication
-
-## Usage
-
-```typescript
-// Example usage
-const chatManager = new ChatManager({
-  promptManager,
-  contextManager,
-  actionsManager,
-  llmIntegration
-});
-
-// Send message
-await chatManager.sendMessage({
-  content: "Please help me with this code",
-  type: "user"
-});
-```
+- Provides chat history to LLM Integration
+- Receives processed responses from LLM Integration
+- Maintains conversation state
 
 ## Performance Considerations
 
 - Efficient chat history management
-- Optimized coordination with other components
-- Smart caching of frequently used data
+- Smart message caching
+- Optimized state updates
 
 ## Future Enhancements
 

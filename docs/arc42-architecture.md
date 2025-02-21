@@ -48,7 +48,7 @@
 
 ## 5. Building Block View
 
-### 5.1 Detailed Component Architecture
+### 5.1 Component Architecture
 
 ```mermaid
 graph TD
@@ -59,212 +59,150 @@ graph TD
         TR[Terminal]
     end
 
-    subgraph "Core Systems"
-        subgraph "Chat & Context System"
-            CHM[Chat Manager]
-            CM[Context Manager]
+    subgraph "Core AI System"
+        subgraph "LLM Integration Layer"
+            LLMI[LLM Integration]
+            PA[Provider Adapters]
         end
-        PM[Prompt Manager]
-        AM[Actions Manager]
-        WM[Workspace Manager]
-        PM[Project Manager]
+
+        subgraph "MCP Servers"
+            CHM[Chat Manager]
+            PM[Prompt Manager]
+            CM[Context Manager]
+            AM[Actions Manager]
+        end
     end
 
-    subgraph "File Management System"
+    subgraph "Development Environment"
         FM[Files Manager]
-        GIT[Git Management]
-        LS[Lightning FS]
-        SW[Sync Manager]
-    end
-
-    subgraph "Execution Environment"
-        WC[Container]
-        SH[Shell Handler]
+        WM[Workspace Manager]
+        PJM[Project Manager]
     end
 
     UI --> CHM
     UI --> WM
-    UI --> PM
-    ED --> FM
+    UI --> PJM
 
-    CHM --> CM
-    CM --> PM
-    CHM --> AM
-    AM --> FM
+    LLMI --> CHM
+    LLMI --> PM
+    LLMI --> CM
+    LLMI --> AM
+    LLMI --> PA
 
-    FM --> WC
-    FM --> GIT
-
-    WC --> SH
-    WC --> PV
-    WC --> TR
-
+    FM --> CM
+    WM --> CM
 ```
 
-### 5.2 Core Systems Detailed Responsibilities
+### 5.2 Component Responsibilities
 
-#### 5.2.1 Chat and Context System
+#### 5.2.1 Core AI System
 
-##### Chat Manager
+##### LLM Integration (MCP Host)
 
 - **Primary Responsibilities:**
-  - Coordinate conversation flow with LLM
-  - Process and validate LLM responses
-  - Manage interaction lifecycle
-  - Route responses to appropriate action handlers
+  - Orchestrate LLM interactions
+  - Coordinate between MCP servers
+  - Manage provider connections
+  - Handle request enhancement
 
-##### Context Manager
+##### Chat Manager (MCP Server)
 
-- **Context Assembly Strategy:**
-  - Comprehensive context collection from multiple sources
-  - Intelligent context prioritization
-  - Token budget management
-  - Context optimization for LLM interaction
+- **Core Functions:**
+  - Manage chat history
+  - Handle message flow
+  - Maintain conversation state
 
-**Context Sources Prioritization:**
+##### Prompt Manager (MCP Server)
 
-1. **Immediate File Context** (Highest Priority)
+- **Core Functions:**
+  - Enhance prompts
+  - Manage templates
+  - Handle customizations
 
-   - Currently open files
-   - Recently modified files
-   - Files in current project scope
+##### Context Manager (MCP Server)
 
-2. **Project-Level Context**
+- **Core Functions:**
+  - Provide file context
+  - Gather workspace state
+  - Assemble project information
 
-   - Project configuration
-   - Dependency information
-   - Project-specific settings
+##### Actions Manager (MCP Server)
 
-3. **Chat History Context**
+- **Core Functions:**
+  - Provide tool interfaces
+  - Handle action execution
+  - Manage permissions
 
-   - Recent conversation history
-   - Summarized previous interactions
-   - Context from previous messages
-
-4. **Workspace-Level Context**
-   - Global IDE settings
-   - User preferences
-   - Cross-project configurations
-
-##### Prompt Manager
-
-- **Core Responsibilities:**
-  - Manage prompt templates (global and project-specific)
-  - Construct compiled prompts
-  - Handle prompt customization
-  - Provide versioning for prompts
-  - Support dynamic prompt generation
-
-#### 5.2.2 File Management System
+#### 5.2.2 Development Environment
 
 ##### Files Manager
 
-- **Key Responsibilities:**
-  - Coordinate file operations across browser and local filesystem
-  - Manage file synchronization
-  - Handle file watching and change detection
-  - Provide atomic file operations
+- **Core Functions:**
+  - Handle file operations
+  - Manage synchronization
+  - Support version control
 
-##### Git Management
+##### Workspace Manager
 
-- **Version Control Integration:**
-  - Track file versions
-  - Manage commit history
-  - Handle branching and merging
-  - Provide change tracking
-
-##### Lightning FS
-
-- **Browser-Based File System:**
-  - POSIX-like file system in browser
-  - Persistent storage via IndexedDB
-  - Support for file metadata
-  - Concurrent file operation handling
-
-##### Sync Manager
-
-- **Synchronization Capabilities:**
-  - Coordinate sync between local and browser filesystems
-  - Manage sync conflicts
-  - Track file modification states
-  - Implement sync queuing
-
-#### 5.2.3 Project Management System
+- **Core Functions:**
+  - Manage IDE state
+  - Handle user preferences
+  - Coordinate views
 
 ##### Project Manager
 
-- **Project Lifecycle Management:**
-  - Handle multiple independent projects
-  - Manage project configurations
-  - Coordinate project resources
-  - Provide project isolation
+- **Core Functions:**
+  - Handle project setup
+  - Manage dependencies
+  - Configure resources
 
-##### Storage System
+### 5.3 Communication Flow
 
-- **Local Storage Architecture:**
-  - IndexedDB for project metadata
-  - Lightning FS for project files
-  - Support for future remote synchronization
+```mermaid
+sequenceDiagram
+    participant UI as User Interface
+    participant CHM as Chat Manager
+    participant LLMI as LLM Integration
+    participant PM as Prompt Manager
+    participant CM as Context Manager
+    participant AM as Actions Manager
 
-#### 5.2.4 Error Resolution System
+    UI->>CHM: Send Message
+    CHM->>LLMI: Provide Chat History
 
-##### Error Resolution Manager
+    LLMI->>PM: Request Enhanced Prompt
+    LLMI->>CM: Request Context
+    LLMI->>AM: Get Available Tools
 
-- **Primary Responsibilities:**
-  - Capture and normalize errors from various sources
-  - Create structured error context
-  - Coordinate with Actions Manager for resolution
-  - Track resolution attempts
-  - Maintain error history
-  - Provide error context to LLM interactions
-  - Handle rollbacks if resolution fails
+    LLMI->>LLM: Send Enhanced Request
+    LLM-->>LLMI: Response
+    LLMI-->>CHM: Processed Response
+    CHM-->>UI: Display Response
+```
 
-##### Error Collectors
+## 6. Runtime View
 
-1. **Container Collector**
+### 6.1 LLM Interaction Flow
 
-   - Runtime errors
-   - Build failures
-   - Package manager issues
-   - Process crashes
-   - Resource exhaustion
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant CM as Chat Manager
+    participant PM as Prompt Manager
+    participant CTX as Context Manager
+    participant ACT as Actions Manager
+    participant LLM as LLM Integration
 
-2. **Editor Collector**
+    U->>CM: Send Message
+    CM->>PM: Get Enhanced Prompt
+    CM->>CTX: Get Context
+    CM->>ACT: Get Available Tools
+    CM->>LLM: Send Enhanced Request
+    LLM-->>CM: Response
+    CM-->>U: Display Response
+```
 
-   - Syntax errors
-   - Type errors
-   - Linting issues
-   - Formatting problems
-
-3. **Action Collector**
-   - LLM action failures
-   - File operation errors
-   - Git operation issues
-   - Invalid state transitions
-
-##### Integration Strategy
-
-- **Context Manager Integration**
-
-  - Error context as first-class context type
-  - Priority handling in context assembly
-  - Error history tracking
-  - Resolution attempt history
-
-- **Actions Manager Integration**
-
-  - Error-specific action types
-  - Rollback coordination
-  - Resolution validation
-  - State recovery
-
-- **Chat Manager Integration**
-  - Error-focused prompts
-  - Resolution suggestions
-  - Progressive refinement
-  - Context continuity
-
-## 5.3 Storage Architecture
+## 7. Storage Architecture
 
 ```mermaid
 graph TD
@@ -296,117 +234,6 @@ graph TD
   - Optional cloud synchronization
   - Bidirectional change tracking
   - Conflict resolution mechanism
-
-## 6. Runtime View and MCP Integration
-
-### 6.1 Model Context Protocol (MCP) Integration
-
-#### Purpose of MCP Integration
-
-The Model Context Protocol (MCP) provides a standardized mechanism for:
-
-- Seamless integration between LLM applications and external data sources
-- Flexible context transmission
-- Secure and controlled access to project resources
-
-#### MCP Architecture Components
-
-##### 6.1.1 MCP Hosts
-
-- **Web IDE Interface**: Primary MCP host
-- **Capabilities**:
-  - Initiate connections to MCP servers
-  - Manage multiple server connections
-  - Handle context retrieval and transmission
-
-##### 6.1.2 MCP Servers
-
-1. **Context Server**
-
-   - Exposed by Context Manager
-   - Provides project-wide context resources
-   - Supports fine-grained context retrieval
-
-2. **File System Server**
-
-   - Exposed by Files Manager
-   - Enables secure file access and manipulation
-   - Implements access control and sanitization
-
-3. **Prompt Server**
-   - Managed by Prompt Manager
-   - Exposes prompt templates and generation capabilities
-   - Supports dynamic prompt customization
-
-#### MCP Communication Flow
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant MCPHost as MCP Host (Web IDE)
-    participant ContextServer as Context MCP Server
-    participant FileServer as File System MCP Server
-    participant LLMProvider as LLM Provider
-
-    User->>MCPHost: Initiate Interaction
-    MCPHost->>ContextServer: Request Project Context
-    ContextServer-->>MCPHost: Provide Contextualized Resources
-
-    MCPHost->>FileServer: Request File Access
-    FileServer-->>MCPHost: Provide Controlled File Access
-
-    MCPHost->>LLMProvider: Transmit Contextualized Request
-    LLMProvider-->>MCPHost: Generate Response
-```
-
-#### Key Integration Patterns
-
-##### 6.2.1 Resource Exposure
-
-- Standardized resource discovery
-- Metadata-rich context providers
-- Dynamic capability negotiation
-
-##### 6.2.2 Security Mechanisms
-
-- **Authentication**
-  - OAuth 2.0 support
-  - Fine-grained access controls
-- **Context Sanitization**
-  - Remove sensitive information
-  - Implement access restrictions
-
-##### 6.2.3 Transport Mechanisms
-
-- Support for multiple protocols
-  - Standard I/O
-  - HTTP with Server-Sent Events
-  - WebSocket
-
-#### Future Roadmap
-
-##### 6.4.1 Planned Enhancements
-
-- Remote MCP server support
-- Advanced service discovery
-- Machine learning-based context optimization
-- Enhanced multi-provider integration
-
-##### 6.4.2 Potential Innovations
-
-- Context source plugins
-- Dynamic provider selection
-- Advanced transmission metrics
-- Cross-session context preservation
-
-## 7. Deployment View
-
-### 7.1 MCP Deployment Considerations
-
-- Lightweight server implementations
-- Minimal resource consumption
-- Support for stateless and stateful environments
-- Secure, scalable architecture
 
 ## 8. Cross-Cutting Concepts
 

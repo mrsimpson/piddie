@@ -1,78 +1,65 @@
 # LLM Integration Package
 
 ## Overview
-Provides a unified, extensible interface for interacting with multiple Large Language Model providers.
+
+Core orchestrator for LLM interactions, coordinating between different components to enhance LLM requests and managing multiple LLM providers.
 
 ## System Diagram
 ```mermaid
 graph TD
-    LLMProxy[LLM Proxy] --> MCPTransmission[MCP Transmission Manager]
-    MCPTransmission --> ProviderAdapters[Provider Adapters]
-    ProviderAdapters --> LLMProviders[LLM Providers]
+    subgraph Orchestration Layer
+        O[Orchestrator] --> PM[Prompt Manager]
+        O --> CM[Context Manager]
+        O --> AM[Actions Manager]
+        O --> CH[Chat Manager]
+    end
+    
+    subgraph Provider Layer
+        O --> P1[Provider 1]
+        O --> P2[Provider 2]
+        O --> P3[Provider N]
+    end
 ```
 
-## Core Components
+## Core Responsibilities
 
-### 1. LLM Proxy
-- **Responsibilities**:
-  - Abstract different LLM providers
-  - Provide OpenAI-compatible interface
-  - Handle rate limiting and errors
-  - Manage API authentication
+### MCP Host Implementation
 
-### 2. MCP Transmission Manager
-- **Responsibilities**:
-  - Handle context transmission
-  - Transform context for different providers
-  - Manage protocol-level metadata
-  - Implement context sanitization
-  - Provide audit logging
+- Coordinate with MCP servers:
+  - Chat Manager for message history
+  - Prompt Manager for enhancement
+  - Context Manager for relevant context
+  - Actions Manager for available tools
 
-### 3. Provider Adapters
-- **Responsibilities**:
-  - Implement provider-specific request transformations
-  - Handle unique provider capabilities
-  - Normalize responses across providers
+### Request Enhancement
 
-## Key Design Decisions
-- Protocol-agnostic context transmission
-- Secure context handling
-- Comprehensive error management
-- Support for multiple LLM providers
+- Assemble enhanced requests using:
+  - Chat history
+  - Enhanced prompts
+  - Relevant context
+  - Available tools
+
+### Provider Management
+
+- Handle multiple LLM providers
+- Manage API connections
+- Handle rate limiting
+- Format provider-specific requests
 
 ## External Relationships
-- Receives context from Chat Context Package
-- Provides responses to Actions Manager
-- Interfaces with project-specific configuration
+
+- Acts as MCP Host for other components
+- Manages LLM provider connections
+- Coordinates request enhancement flow
 
 ## Performance Considerations
-- Transmission optimization
-- Provider selection strategies
-- Context compression techniques
 
-## Supported Providers
-- OpenAI
-- Anthropic
-- Google AI
-- Custom provider support
+- Efficient request assembly
+- Smart provider selection
+- Optimized context handling
 
 ## Future Enhancements
-- Advanced provider selection
-- Machine learning-based routing
-- Enhanced multi-provider support
 
-## Usage
-```typescript
-// Example of LLM interaction
-const response = await llmProxy.generateResponse({
-  provider: 'openai',
-  model: 'gpt-4',
-  context: assembledContext
-});
-```
-
-## Security Features
-- API key management
-- Request sanitization
-- Comprehensive logging
-- Rate limit handling 
+- Dynamic provider selection
+- Advanced request optimization
+- Cross-provider load balancing

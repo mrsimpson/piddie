@@ -2,7 +2,7 @@
 
 ## Overview
 
-Handles prompt engineering, optimization, and customization for LLM interactions. This package focuses on improving the quality and effectiveness of prompts sent to the LLM.
+Handles prompt engineering, optimization, and customization for LLM interactions. Acts as an MCP server providing prompt enhancement capabilities.
 
 ## System Diagram
 
@@ -15,38 +15,29 @@ graph TD
 
 ## Core Responsibilities
 
-### Prompt Enhancement
+### MCP Server Implementation
 
-- **Template Management**:
-  - Store and manage prompt templates
-  - Support project-specific templates
-  - Handle template versioning
+- Expose prompt enhancement capabilities
+- Handle prompt template requests
+- Provide customization interface
 
-- **Prompt Optimization**:
-  - Apply best practices
-  - Optimize token usage
-  - Enhance clarity and specificity
+### Template Management
 
-- **Customization**:
-  - Support user-defined prompts
-  - Handle project-specific customizations
-  - Manage prompt variants
+- Store and manage prompt templates
+- Support project-specific templates
+- Handle template versioning
 
-## Usage
+### Prompt Optimization
 
-```typescript
-// Example usage
-const promptManager = new PromptManager();
+- Apply best practices
+- Optimize token usage
+- Enhance clarity and specificity
 
-// Enhance a prompt
-const enhancedPrompt = await promptManager.enhance({
-  basePrompt: "Help with code",
-  context: {
-    projectType: "typescript",
-    task: "debugging"
-  }
-});
-```
+### Customization
+
+- Support user-defined prompts
+- Handle project-specific customizations
+- Manage prompt variants
 
 ## Performance Considerations
 
