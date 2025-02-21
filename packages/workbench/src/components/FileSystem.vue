@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from "vue";
+import { ref, onMounted, onUnmounted, watch } from "vue";
 import type { SynchronizedFileSystem } from "@/types/file-system";
 import {
   WATCHER_PRIORITIES,
@@ -22,6 +22,32 @@ const error = ref<Error | null>(null);
 const showNewFileDialog = ref(false);
 const newFileName = ref("");
 const newFileError = ref<string | null>(null);
+let watcher: (() => Promise<void>) | null = null;
+
+// Watch for system changes
+watch(
+  () => props.system,
+  async (newSystem) => {
+    // Remove old watcher if exists
+    if (watcher) {
+      await props.system.syncTarget.unwatch();
+      watcher = null;
+    }
+    
+    // Set up new watcher
+    watcher = async () => loadDirectory(currentPath.value);
+    await newSystem.syncTarget.watch(watcher, {
+      priority: WATCHER_PRIORITIES.UI_UPDATES,
+      metadata: {
+        registeredBy: "FileSystem.vue"
+      }
+    });
+    
+    // Load initial directory
+    await loadDirectory("/");
+  },
+  { immediate: true }
+);
 
 function isValidFileName(name: string): boolean {
   // Check for common invalid characters in filenames
@@ -91,21 +117,14 @@ function openNewFileDialog() {
 onMounted(async () => {
   // Initial load
   await loadDirectory("/");
-
-  // Set up watcher
-  await props.system.syncTarget.watch(
-    async () => loadDirectory(currentPath.value),
-    {
-      priority: WATCHER_PRIORITIES.UI_UPDATES,
-      metadata: {
-        registeredBy: "FileSystem.vue"
-      }
-    }
-  );
 });
 
 onUnmounted(async () => {
-  await props.system.syncTarget.unwatch();
+  // Clean up watcher
+  if (watcher) {
+    await props.system.syncTarget.unwatch(watcher);
+    watcher = null;
+  }
 });
 </script>
 
