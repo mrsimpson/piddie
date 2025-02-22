@@ -1,65 +1,106 @@
 # LLM Integration Package
 
-## Overview
+This package handles the integration with Large Language Models (LLMs) using the Model Context Protocol (MCP).
 
-Core orchestrator for LLM interactions, coordinating between different components to enhance LLM requests and managing multiple LLM providers.
+## Architecture
 
-## System Diagram
+### Components
+
+1. **LLMIntegrationHost**
+
+   - Manages MCP servers and their lifecycle
+   - Accepts injected transport layer
+   - Maintains server registry
+
+2. **MCP Servers**
+
+   - Chat Management: Handles conversation history
+   - Prompt Management: Manages prompt templates and enhancement
+   - Context Management: Provides file/workspace context
+   - Actions Management: Exposes available tools
+
+3. **Transport Layer**
+
+   - Handles communication between servers and clients
+   - Can be stdio, HTTP/SSE, or custom implementation
+   - Injected into host for flexibility
+
+4. **LLM Client**
+   - Connects to transport as MCP client
+   - Gathers context from various servers
+   - Makes actual LLM API calls
+
+### Flow
+
 ```mermaid
-graph TD
-    subgraph Orchestration Layer
-        O[Orchestrator] --> PM[Prompt Manager]
-        O --> CM[Context Manager]
-        O --> AM[Actions Manager]
-        O --> CH[Chat Manager]
+sequenceDiagram
+    participant UI
+    participant LLMClient
+    participant Transport
+    participant MCPServers
+    participant LLMProvider
+
+    UI->>LLMClient: Send message
+    LLMClient->>Transport: Connect
+
+    par Gather Context
+        LLMClient->>MCPServers: Get chat history
+        MCPServers-->>LLMClient: History
+        LLMClient->>MCPServers: Get file context
+        MCPServers-->>LLMClient: Context
+        LLMClient->>MCPServers: Get available tools
+        MCPServers-->>LLMClient: Tools
     end
-    
-    subgraph Provider Layer
-        O --> P1[Provider 1]
-        O --> P2[Provider 2]
-        O --> P3[Provider N]
-    end
+
+    LLMClient->>LLMProvider: Make API call
+    LLMProvider-->>LLMClient: Response
+    LLMClient->>UI: Display response
 ```
 
-## Core Responsibilities
+### Usage Example
 
-### MCP Host Implementation
+```typescript
+// Create transport
+const transport = new StdioServerTransport();
 
-- Coordinate with MCP servers:
-  - Chat Manager for message history
-  - Prompt Manager for enhancement
-  - Context Manager for relevant context
-  - Actions Manager for available tools
+// Create and initialize host
+const host = new LLMIntegrationHost(transport);
+await host.initialize([
+  { name: "chat", server: new ChatManagementServer() },
+  { name: "prompt", server: new PromptManagementServer() },
+  { name: "context", server: new ContextManagementServer() },
+  { name: "actions", server: new ActionsManagementServer() }
+]);
 
-### Request Enhancement
+// Create LLM client
+const llmClient = new McpClient(transport);
 
-- Assemble enhanced requests using:
-  - Chat history
-  - Enhanced prompts
-  - Relevant context
-  - Available tools
+// Make LLM call with context
+const response = await llmClient.chat({
+  message: "User message",
+  context: {
+    history: await llmClient.request("chat", "get-history"),
+    fileContext: await llmClient.request("context", "get-context"),
+    tools: await llmClient.request("actions", "get-tools")
+  }
+});
+```
 
-### Provider Management
+## Benefits
 
-- Handle multiple LLM providers
-- Manage API connections
-- Handle rate limiting
-- Format provider-specific requests
+1. **Decoupled Architecture**
 
-## External Relationships
+   - Each component is independent
+   - Easy to test and mock
+   - Flexible transport layer
 
-- Acts as MCP Host for other components
-- Manages LLM provider connections
-- Coordinates request enhancement flow
+2. **Standardized Protocol**
 
-## Performance Considerations
+   - Uses MCP for consistent communication
+   - Can integrate third-party MCP servers
+   - Well-defined interfaces
 
-- Efficient request assembly
-- Smart provider selection
-- Optimized context handling
-
-## Future Enhancements
-
-- Dynamic provider selection
-- Advanced request optimization
-- Cross-provider load balancing
+3. **Extensible**
+   - Easy to add new servers
+   - Support for multiple transport types
+   - Pluggable LLM providers

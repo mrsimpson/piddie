@@ -1,10 +1,10 @@
 {
-  "name": "@piddie/chat-management",
-  "description": "Chat- and context-management",
-  "version": "0.0.0-development",
+  "name": "@piddie/actions",
+  "description": "Tool calling using Model Context Protocol",
+  "version": "0.1.0",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "exports": {
     ".": {
       "import": "./dist/index.js",
@@ -12,20 +12,25 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc",
     "clean:build": "rimraf ./dist",
     "dev": "tsc -p tsconfig.build.json --watch",
     "lint": "eslint .",
     "lint:fix": "pnpm lint --fix",
     "format": "prettier --check .",
     "format:fix": "prettier --write .",
-    "test": "vitest --run",
+    "test": "vitest",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
     "dexie": "4.0.11",
     "openai": "4.85.1",
-    "zod": "3.24.2"
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0"
   }
 }
