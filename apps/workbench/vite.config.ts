@@ -30,27 +30,15 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
-      "@piddie/project-management": fileURLToPath(
-        new URL("../project-management/src/index.ts", import.meta.url)
+      "node:child_process": fileURLToPath(
+        new URL("./src/shims/child_process.ts", import.meta.url)
       ),
-      "@piddie/files-management": fileURLToPath(
-        new URL("../files-management/src/index.ts", import.meta.url)
-      ),
-      "@piddie/shared-types": fileURLToPath(
-        new URL("../shared-types/src/index.ts", import.meta.url)
+      "node:process": fileURLToPath(
+        new URL("./src/shims/process.ts", import.meta.url)
       )
     }
   },
-  optimizeDeps: {
-    include: [
-      "@piddie/project-management",
-      "@piddie/files-management",
-      "@piddie/shared-types"
-    ]
-  },
-  build: {
-    commonjsOptions: {
-      include: [/node_modules/, /packages/]
-    }
+  worker: {
+    format: "es"
   }
 });

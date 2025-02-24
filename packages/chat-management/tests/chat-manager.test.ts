@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import type { Chat, Message } from "../src/types";
-import { MessageStatus } from "../src/types";
+import {
+  MessageStatus,
+  type Chat,
+  type ChatMessage as Message
+} from "../src/types";
 import type { Table } from "dexie";
 import { DexieChatManager } from "../src/internal/dexie-implementation";
 import { ChatDatabase } from "../src/internal/dexie-implementation";
@@ -176,11 +179,11 @@ describe("ChatManager", () => {
           chatId: chat.id,
           content: "Hello, world!",
           role: "user",
-          status: MessageStatus.SENT,
+          status: MessageStatus.Processing,
           parentId: undefined
         });
         expect(message.id).toMatch(/^msg_\d+$/);
-        expect(message.created).toBeInstanceOf(Date);
+        expect(message.timestamp).toBeInstanceOf(Date);
 
         expect(messageMocks.add).toHaveBeenCalledWith(message);
         expect(chatMocks.update).toHaveBeenCalledWith(chat.id, {
@@ -200,8 +203,8 @@ describe("ChatManager", () => {
           chatId: chat.id,
           content: "Parent message",
           role: "user",
-          status: MessageStatus.SENT,
-          created: new Date(),
+          status: MessageStatus.Delivered,
+          timestamp: new Date(),
           parentId: undefined
         };
 
@@ -239,8 +242,8 @@ describe("ChatManager", () => {
           chatId: "chat_1",
           content: "Test message",
           role: "user",
-          status: MessageStatus.SENDING,
-          created: new Date(),
+          status: MessageStatus.Processing,
+          timestamp: new Date(),
           parentId: undefined
         };
 
@@ -248,13 +251,16 @@ describe("ChatManager", () => {
         messageMocks.update.mockResolvedValueOnce(1);
         chatMocks.update.mockResolvedValueOnce(1);
 
-        await chatManager.updateMessageStatus(message.id, MessageStatus.SENT);
+        await chatManager.updateMessageStatus(
+          message.id,
+          MessageStatus.Delivered
+        );
 
         expect(messageMocks.update).toHaveBeenCalledWith(message.id, {
-          status: MessageStatus.SENT
+          status: MessageStatus.Delivered
         });
         expect(chatMocks.update).toHaveBeenCalledWith(message.chatId, {
-          lastUpdated: expect.any(Date)
+          timestamp: expect.any(Date)
         });
       });
 
@@ -262,7 +268,10 @@ describe("ChatManager", () => {
         messageMocks.get.mockResolvedValueOnce(undefined);
 
         await expect(
-          chatManager.updateMessageStatus("non-existent", MessageStatus.SENT)
+          chatManager.updateMessageStatus(
+            "non-existent",
+            MessageStatus.Processing
+          )
         ).rejects.toThrow("Message not found");
       });
     });
@@ -289,7 +298,7 @@ describe("ChatManager", () => {
         chatMocks.toArray.mockResolvedValueOnce(mockChats);
         whereMocks.sortBy.mockResolvedValueOnce([]);
 
-        const chats = await chatManager.listChats();
+        const chats = await chatManager.listConversations();
 
         // Verify sorting
         expect(chats.map((c) => c.id)).toEqual(["chat_3", "chat_2", "chat_1"]);
@@ -305,7 +314,7 @@ describe("ChatManager", () => {
         chatMocks.toArray.mockResolvedValueOnce(mockChats);
         whereMocks.sortBy.mockResolvedValueOnce([]);
 
-        const chats = await chatManager.listChats();
+        const chats = await chatManager.listConversations();
 
         expect(chats).toHaveLength(2);
         expect(chats[0]!.id).toBe("chat_2");
@@ -321,7 +330,7 @@ describe("ChatManager", () => {
         chatMocks.toArray.mockResolvedValueOnce(mockChats);
         whereMocks.sortBy.mockResolvedValueOnce([]);
 
-        const chats = await chatManager.listChats();
+        const chats = await chatManager.listConversations();
 
         expect(chats).toHaveLength(2);
         expect(chats[1]!.id).toBe("chat_1");
@@ -330,7 +339,7 @@ describe("ChatManager", () => {
       it("THEN should handle empty result set", async () => {
         chatMocks.toArray.mockResolvedValueOnce([]);
 
-        const chats = await chatManager.listChats();
+        const chats = await chatManager.listConversations();
 
         expect(chats).toHaveLength(0);
       });
@@ -346,7 +355,7 @@ describe("ChatManager", () => {
         chatMocks.toArray.mockResolvedValueOnce(mockChats);
         whereMocks.sortBy.mockResolvedValueOnce([]);
 
-        const chats = await chatManager.listChats();
+        const chats = await chatManager.listConversations();
 
         expect(chats).toHaveLength(3);
         expect(chats[1]!.id).toBe("chat_2");
@@ -368,7 +377,7 @@ describe("ChatManager", () => {
             chatId: chat.id,
             content: "First message",
             role: "user",
-            status: MessageStatus.SENT,
+            status: MessageStatus.Processing,
             created: new Date(),
             parentId: undefined
           },
@@ -377,7 +386,7 @@ describe("ChatManager", () => {
             chatId: chat.id,
             content: "Second message",
             role: "user",
-            status: MessageStatus.SENT,
+            status: MessageStatus.Processing,
             created: new Date(),
             parentId: undefined
           },
@@ -386,7 +395,7 @@ describe("ChatManager", () => {
             chatId: chat.id,
             content: "Third message",
             role: "user",
-            status: MessageStatus.SENT,
+            status: MessageStatus.Processing,
             created: new Date(),
             parentId: undefined
           }

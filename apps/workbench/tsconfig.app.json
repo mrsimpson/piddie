@@ -4,8 +4,28 @@
   "exclude": ["src/**/__tests__/*"],
   "compilerOptions": {
     "incremental": true,
+    "composite": true,
+    "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@piddie/*": ["../../packages/*/src"]
     }
-  }
+  },
+  "references": [
+    {
+      "path": "../../packages/llm-integration"
+    },
+    {
+      "path": "../../packages/chat-management"
+    },
+    {
+      "path": "../../packages/project-management"
+    },
+    {
+      "path": "../../packages/files-management"
+    },
+    {
+      "path": "../../packages/shared-types"
+    }
+  ]
 }

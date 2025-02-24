@@ -1,35 +1,15 @@
+import type { ChatCompletionCreateParams } from "openai/resources/chat/completions";
+
 /**
- * Configuration for an LLM request
+ * Configuration for the LLM client
  */
-export interface LLMRequestConfig {
-  /** The message to send to the LLM */
-  message: string;
-  /** Optional model to use */
+export interface LLMClientConfig {
+  /** Base URL for LLM API */
+  baseUrl?: string;
+  /** API key for LLM API */
+  apiKey: string;
+  /** Model to use for chat completions */
   model?: string;
-}
-
-/**
- * Response from an LLM request
- */
-export interface LLMResponse {
-  /** The response content */
-  content: string;
-  /** Additional metadata about the response */
-  metadata?: Record<string, unknown>;
-}
-
-/**
- * MCP tool response content item
- */
-export interface McpToolResponseContent {
-  type: "text";
-  text: string;
-}
-
-/**
- * MCP tool response
- */
-export interface McpToolResponse {
-  content: McpToolResponseContent[];
-  metadata?: Record<string, unknown>;
+  /** Additional parameters for chat completions */
+  defaultParams?: Partial<ChatCompletionCreateParams>;
 }

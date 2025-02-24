@@ -6,29 +6,29 @@ This package handles the integration with Large Language Models (LLMs) using the
 
 ### Components
 
-1. **LLMIntegrationHost**
+1. **LLMClient**
+
+   - Makes LLM API calls with chat history
+   - Uses ChatManager for conversation history
+   - Formats messages in OpenAI format
+   - Handles LLM-specific configuration
+
+2. **LLMIntegrationHost**
 
    - Manages MCP servers and their lifecycle
    - Accepts injected transport layer
    - Maintains server registry
 
-2. **MCP Servers**
+3. **MCP Servers**
 
-   - Chat Management: Handles conversation history
    - Prompt Management: Manages prompt templates and enhancement
    - Context Management: Provides file/workspace context
    - Actions Management: Exposes available tools
 
-3. **Transport Layer**
-
+4. **Transport Layer**
    - Handles communication between servers and clients
    - Can be stdio, HTTP/SSE, or custom implementation
    - Injected into host for flexibility
-
-4. **LLM Client**
-   - Connects to transport as MCP client
-   - Gathers context from various servers
-   - Makes actual LLM API calls
 
 ### Flow
 
@@ -36,16 +36,19 @@ This package handles the integration with Large Language Models (LLMs) using the
 sequenceDiagram
     participant UI
     participant LLMClient
+    participant ChatManager
     participant Transport
     participant MCPServers
     participant LLMProvider
 
     UI->>LLMClient: Send message
+    LLMClient->>ChatManager: Get chat history
+    ChatManager-->>LLMClient: History
     LLMClient->>Transport: Connect
 
     par Gather Context
-        LLMClient->>MCPServers: Get chat history
-        MCPServers-->>LLMClient: History
+        LLMClient->>MCPServers: Get prompt templates
+        MCPServers-->>LLMClient: Templates
         LLMClient->>MCPServers: Get file context
         MCPServers-->>LLMClient: Context
         LLMClient->>MCPServers: Get available tools
@@ -54,10 +57,17 @@ sequenceDiagram
 
     LLMClient->>LLMProvider: Make API call
     LLMProvider-->>LLMClient: Response
+    LLMClient->>ChatManager: Save response to chat history
     LLMClient->>UI: Display response
 ```
 
-### Usage Example
+## Dependencies
+
+- **@piddie/chat-management**: Provides chat history management through ChatManager interface
+- **@modelcontextprotocol/sdk**: MCP client for tool/prompt management
+- **node-fetch**: For making HTTP requests to LLM API
+
+## Usage Example
 
 ```typescript
 // Create transport
@@ -66,24 +76,31 @@ const transport = new StdioServerTransport();
 // Create and initialize host
 const host = new LLMIntegrationHost(transport);
 await host.initialize([
-  { name: "chat", server: new ChatManagementServer() },
   { name: "prompt", server: new PromptManagementServer() },
   { name: "context", server: new ContextManagementServer() },
   { name: "actions", server: new ActionsManagementServer() }
 ]);
 
 // Create LLM client
-const llmClient = new McpClient(transport);
+const llmClient = new LLMClient(
+  chatManager, // From @piddie/chat-management
+  mcpServerPath, // Path to MCP server
+  baseUrl // Optional LLM API URL
+);
 
-// Make LLM call with context
-const response = await llmClient.chat({
-  message: "User message",
-  context: {
-    history: await llmClient.request("chat", "get-history"),
-    fileContext: await llmClient.request("context", "get-context"),
-    tools: await llmClient.request("actions", "get-tools")
-  }
-});
+// Connect to MCP server
+await llmClient.connect();
+
+// Send message with chat history
+const response = await llmClient.chat(
+  {
+    message: "Hello",
+    model: "gpt-4" // Optional
+  },
+  chatId
+);
+
+console.log(response.content);
 ```
 
 ## Benefits

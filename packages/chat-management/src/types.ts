@@ -1,36 +1,81 @@
-import type { ChatCompletionRole } from "openai/resources/chat";
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 
 /**
- * Represents the status of a message
+ * Status of a chat message
  */
 export enum MessageStatus {
-  SENDING = "sending",
-  SENT = "sent",
-  ERROR = "error"
+  /** Message is being processed */
+  Processing = "processing",
+  /** Message has been delivered */
+  Delivered = "delivered",
+  /** Message has been read */
+  Read = "read",
+  /** Message failed to deliver */
+  Failed = "failed"
 }
 
 /**
- * Represents a chat message, composing with OpenAI's message format
- */
-export interface Message {
-  id: string;
-  chatId: string;
-  content: string;
-  role: ChatCompletionRole;
-  status: MessageStatus;
-  created: Date;
-  parentId: string | undefined; // For threading/replies
-}
-
-/**
- * Represents a chat conversation
+ * A chat conversation
  */
 export interface Chat {
+  /** Unique ID of the chat */
   id: string;
-  messages: Message[];
+  /** When the chat was created */
   created: Date;
+  /** When the chat was last updated */
   lastUpdated: Date;
-  metadata: Record<string, unknown> | undefined; // For chat-specific data
+  /** Additional metadata for the chat */
+  metadata?: Record<string, unknown> | undefined;
+}
+
+/**
+ * A message in a chat conversation
+ */
+export interface ChatMessage
+  extends Omit<
+    ChatCompletionMessageParam,
+    "name" | "function_call" | "tool_calls" | "tool_call_id"
+  > {
+  /** Unique ID of the message */
+  id: string;
+  /** ID of the chat this message belongs to */
+  chatId: string;
+  /** ID of the parent message (for threaded conversations) */
+  parentId?: string | undefined;
+  /** When the message was created */
+  timestamp: Date;
+  /** Status of the message */
+  status: MessageStatus;
+}
+
+/**
+ * State of a chat conversation
+ */
+export interface ChatState {
+  /** Unique ID of the conversation */
+  id: string;
+  /** Title or name of the conversation */
+  title?: string;
+  /** Additional metadata for the conversation */
+  metadata?: Record<string, unknown> | undefined;
+  /** When the conversation was created */
+  createdAt: Date;
+  /** When the conversation was last updated */
+  updatedAt: Date;
+  /** Number of messages in the conversation */
+  messageCount: number;
+}
+
+/**
+ * Options for retrieving chat history
+ */
+export interface GetHistoryOptions {
+  /** Maximum number of messages to return */
+  limit?: number;
+  /** Return messages before this timestamp */
+  before?: Date;
+  /** Return messages after this timestamp */
+  after?: Date;
 }
 
 /**
@@ -44,47 +89,58 @@ export interface ChatManager {
   createChat(metadata?: Record<string, unknown>): Promise<Chat>;
 
   /**
+   * Retrieves the history of a chat conversation
+   * @param conversationId The ID of the conversation to retrieve history for
+   * @param options Optional options for filtering the history
+   */
+  getHistory(
+    conversationId: string,
+    options?: GetHistoryOptions
+  ): Promise<ChatMessage[]>;
+
+  /**
+   * Retrieves the state of a chat conversation
+   * @param conversationId The ID of the conversation to retrieve state for
+   */
+  getState(conversationId: string): Promise<ChatState>;
+
+  /**
+   * Lists all chat conversations
+   * @param limit Optional limit on the number of conversations to return
+   * @param offset Optional offset for pagination
+   */
+  listConversations(limit?: number, offset?: number): Promise<Chat[]>;
+
+  /**
+   * Gets a chat by ID with its messages
+   * @param chatId ID of chat to get
+   */
+  getChat(chatId: string): Promise<Chat & { messages: ChatMessage[] }>;
+
+  /**
    * Adds a message to a chat
-   * @param chatId The ID of the chat to add the message to
-   * @param content The message content
-   * @param role The role of the sender
-   * @param parentId Optional ID of the parent message (for replies)
+   * @param chatId ID of chat to add message to
+   * @param content Content of message
+   * @param role Role of message sender
+   * @param parentId Optional ID of parent message
    */
   addMessage(
     chatId: string,
     content: string,
-    role: ChatCompletionRole,
+    role: ChatCompletionMessageParam["role"],
     parentId?: string
-  ): Promise<Message>;
+  ): Promise<ChatMessage>;
 
   /**
-   * Retrieves a chat by its ID
-   * @param chatId The ID of the chat to retrieve
+   * Updates the status of a message
+   * @param messageId ID of message to update
+   * @param status New status
    */
-  getChat(chatId: string): Promise<Chat>;
-
-  /**
-   * Lists all chats
-   * @param limit Optional limit on the number of chats to return
-   * @param offset Optional offset for pagination
-   */
-  listChats(limit?: number, offset?: number): Promise<Chat[]>;
-
-  /**
-   * Updates a message's status
-   * @param chatId The ID of the chat containing the message
-   * @param messageId The ID of the message to update
-   * @param status The new status
-   */
-  updateMessageStatus(
-    chatId: string,
-    messageId: string,
-    status: MessageStatus
-  ): Promise<void>;
+  updateMessageStatus(messageId: string, status: MessageStatus): Promise<void>;
 
   /**
    * Deletes a chat and all its messages
-   * @param chatId The ID of the chat to delete
+   * @param id ID of chat to delete
    */
-  deleteChat(chatId: string): Promise<void>;
+  deleteChat(id: string): Promise<void>;
 }

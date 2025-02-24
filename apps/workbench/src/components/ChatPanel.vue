@@ -7,17 +7,22 @@ import "@shoelace-style/shoelace/dist/components/card/card.js";
 import "@shoelace-style/shoelace/dist/components/input/input.js";
 import "@shoelace-style/shoelace/dist/components/button/button.js";
 import "@shoelace-style/shoelace/dist/components/spinner/spinner.js";
+import "@shoelace-style/shoelace/dist/components/alert/alert.js";
 
 const chatStore = useChatStore();
-const { currentChat, messages } = storeToRefs(chatStore);
+const { currentChat, messages, isProcessing } = storeToRefs(chatStore);
 const newMessage = ref("");
 const isLoading = ref(true);
+const error = ref("");
+const streamingMessage = ref("");
 
 // Watch for chat changes to handle loading state
 watch(
   () => currentChat.value,
   (newChat) => {
     isLoading.value = true;
+    error.value = "";
+    streamingMessage.value = "";
 
     // Short delay to ensure smooth transition
     setTimeout(() => {
@@ -30,8 +35,21 @@ watch(
 async function sendMessage() {
   if (!currentChat.value || !newMessage.value.trim()) return;
 
-  await chatStore.addMessage(currentChat.value.id, newMessage.value, "user");
+  error.value = "";
+  streamingMessage.value = "";
+  const message = newMessage.value;
   newMessage.value = "";
+
+  try {
+    // Stream the response
+    for await (const chunk of chatStore.streamMessage(message)) {
+      streamingMessage.value += chunk;
+    }
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : "Failed to send message";
+    // Add message back to input if failed
+    newMessage.value = message;
+  }
 }
 </script>
 
@@ -40,40 +58,62 @@ async function sendMessage() {
     <CollapsiblePanel :display-toggle="false">
       <template #header>
         <div class="chat-header">
-          <span>Chat</span>
-        </div>
-      </template>
-      <template #content>
-        <div class="chat-content">
-          <div v-if="isLoading" class="loading-container">
-            <sl-spinner></sl-spinner>
-            <span>Loading chat...</span>
-          </div>
-          <div v-else-if="!currentChat" class="info-message">
-            No chat available
-          </div>
-          <div v-else class="messages">
-            <template v-for="message in messages" :key="message.id">
-              <sl-card class="message" :class="message.role">
-                <div class="message-content">{{ message.content }}</div>
-              </sl-card>
-            </template>
-          </div>
+          <h2>Chat</h2>
+          <sl-spinner v-if="isProcessing" />
         </div>
       </template>
 
-      <template #footer>
+      <div v-if="isLoading" class="loading-container">
+        <sl-spinner></sl-spinner>
+      </div>
+      <div v-else class="chat-container">
+        <div class="messages" ref="messagesContainer">
+          <sl-alert v-if="error" variant="danger" class="error-alert">
+            {{ error }}
+          </sl-alert>
+
+          <div v-for="message in messages" :key="message.id" class="message">
+            <sl-card>
+              <div class="message-header">
+                <strong>{{
+                  message.role === "user" ? "You" : "Assistant"
+                }}</strong>
+              </div>
+              <div class="message-content">
+                {{ message.content }}
+              </div>
+            </sl-card>
+          </div>
+
+          <!-- Streaming message -->
+          <div v-if="streamingMessage" class="message">
+            <sl-card>
+              <div class="message-header">
+                <strong>Assistant</strong>
+              </div>
+              <div class="message-content streaming">
+                {{ streamingMessage }}<span class="cursor"></span>
+              </div>
+            </sl-card>
+          </div>
+        </div>
+
         <div class="input-container">
           <sl-input
             v-model="newMessage"
-            placeholder="Type a message..."
+            placeholder="Type your message..."
+            :disabled="isProcessing"
             @keyup.enter="sendMessage"
-          />
-          <sl-button variant="primary" size="small" @click="sendMessage">
+          ></sl-input>
+          <sl-button
+            variant="primary"
+            :disabled="isProcessing || !newMessage.trim()"
+            @click="sendMessage"
+          >
             Send
           </sl-button>
         </div>
-      </template>
+      </div>
     </CollapsiblePanel>
   </div>
 </template>
@@ -81,69 +121,73 @@ async function sendMessage() {
 <style scoped>
 .chat-panel {
   height: 100%;
-  flex: 1;
-  border-right: 1px solid var(--sl-color-neutral-200);
+  display: flex;
+  flex-direction: column;
 }
 
 .chat-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: var(--sl-spacing-x-small);
+  gap: 1rem;
 }
 
-.chat-content {
+.chat-container {
   height: 100%;
   display: flex;
   flex-direction: column;
 }
 
 .loading-container {
+  height: 100%;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: var(--sl-spacing-medium);
-  padding: var(--sl-spacing-medium);
-  color: var(--sl-color-neutral-600);
-}
-
-.loading-container sl-spinner {
-  font-size: 2rem;
-}
-
-.info-message {
-  color: var(--sl-color-neutral-600);
-  padding: var(--sl-spacing-medium);
-  text-align: center;
 }
 
 .messages {
   flex: 1;
   overflow-y: auto;
-  padding: var(--sl-spacing-medium);
+  padding: 1rem;
   display: flex;
   flex-direction: column;
   gap: 1rem;
 }
 
-.message {
-  --padding: 0.5rem;
-  max-width: 80%;
+.message sl-card::part(base) {
+  background: var(--sl-color-neutral-50);
 }
 
-.message.user {
-  align-self: flex-end;
-  background: var(--sl-color-primary-100);
-}
-
-.message.assistant {
-  align-self: flex-start;
-  background: var(--sl-color-neutral-100);
+.message-header {
+  margin-bottom: 0.5rem;
+  color: var(--sl-color-neutral-600);
 }
 
 .message-content {
   white-space: pre-wrap;
+}
+
+.message-content.streaming {
+  position: relative;
+}
+
+.message-content.streaming .cursor {
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  background: var(--sl-color-primary-600);
+  animation: blink 1s infinite;
+  vertical-align: middle;
+  margin-left: 2px;
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 .input-container {
@@ -155,5 +199,9 @@ async function sendMessage() {
 
 .input-container sl-input {
   flex: 1;
+}
+
+.error-alert {
+  margin-bottom: 1rem;
 }
 </style>

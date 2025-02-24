@@ -22,7 +22,7 @@ const mockChatManager: Mocked<ChatManager> = {
   createChat: vi.fn<(metadata?: Record<string, unknown>) => Promise<Chat>>(),
   addMessage: vi.fn(),
   getChat: vi.fn(),
-  listChats: vi.fn(),
+  listConversations: vi.fn(),
   updateMessageStatus: vi.fn(),
   deleteChat: vi.fn()
 };
@@ -198,7 +198,6 @@ describe("ProjectManager", () => {
         const projectName = "Test Project";
         const mockChat: Chat = {
           id: "clever-fox-runs",
-          messages: [],
           created: new Date(),
           lastUpdated: new Date(),
           metadata: undefined
@@ -230,7 +229,6 @@ describe("ProjectManager", () => {
           name: "Existing Project",
           created: new Date(),
           lastAccessed: new Date(),
-          fileSystemRoot: "/projects/Existing Project",
           chatId: "clever-fox-runs"
         };
 
@@ -241,7 +239,6 @@ describe("ProjectManager", () => {
 
         const mockChat: Chat = {
           id: "clever-fox-runs",
-          messages: [],
           created: new Date(),
           lastUpdated: new Date(),
           metadata: undefined
@@ -263,7 +260,6 @@ describe("ProjectManager", () => {
           name: "Existing Project",
           created: new Date(),
           lastAccessed: new Date(),
-          fileSystemRoot: "/projects/Existing Project",
           chatId: "clever-fox-runs"
         };
 

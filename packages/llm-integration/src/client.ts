@@ -1,26 +1,40 @@
 import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import type { ChatManager } from "@piddie/chat-management";
+import OpenAI from "openai";
 import type {
-  LLMRequestConfig,
-  LLMResponse,
-  McpToolResponse
-} from "./types/client.js";
+  ChatCompletionChunk,
+  ChatCompletionMessageParam
+} from "openai/resources/chat/completions";
+import type { LLMClientConfig } from "./types/client.js";
+import { Stream } from "openai/streaming.mjs";
 
 /**
- * Client for making LLM requests with MCP context
+ * Client for making LLM requests with chat history
  */
 export class LLMClient {
   private mcpClient: McpClient;
   private transport: StdioClientTransport;
+  private openai: OpenAI;
 
   /**
    * Create a new LLM client
+   * @param chatManager - Manager for chat history
+   * @param config - Client configuration
    */
-  constructor() {
-    this.transport = new StdioClientTransport({
-      command: "node",
-      args: ["server.js"] // This needs to point to our MCP server script
+  constructor(
+    private chatManager: ChatManager,
+    private config: LLMClientConfig
+  ) {
+    this.openai = new OpenAI({
+      apiKey: config.apiKey,
+      baseURL: config.baseUrl
     });
+
+    // this.transport = new StdioClientTransport({
+    //   command: "node",
+    //   args: [config.mcpServerPath]
+    // });
 
     this.mcpClient = new McpClient(
       {
@@ -31,47 +45,77 @@ export class LLMClient {
         capabilities: {
           prompts: {},
           resources: {},
-          tools: {
-            chat: {
-              description: "Send a message to the LLM",
-              arguments: {
-                message: { type: "string" },
-                model: { type: "string", optional: true }
-              }
-            }
-          }
+          tools: {}
         }
       }
     );
   }
 
   /**
-   * Connect to the MCP server
+   * Connect to the MCP server for tools/prompts
    */
   async connect(): Promise<void> {
     await this.mcpClient.connect(this.transport);
   }
 
   /**
-   * Send a request to the LLM, context is handled by MCP servers
+   * Send a request to the LLM with chat history
+   * @param message - Message to send
+   * @param chatId - ID of chat to use history from
+   * @returns AsyncGenerator of response chunks
+   * @throws Error if chat not found or LLM request fails
    */
-  async chat(config: LLMRequestConfig): Promise<LLMResponse> {
-    const result = (await this.mcpClient.callTool({
-      name: "chat",
-      arguments: {
-        message: config.message,
-        ...(config.model ? { model: config.model } : {})
-      }
-    })) as McpToolResponse;
+  async *chat(
+    message: string,
+    chatId: string
+  ): AsyncGenerator<string, void, unknown> {
+    // Get chat history
+    const chat = await this.chatManager.getChat(chatId);
 
-    if (!result.content?.[0]?.text) {
-      throw new Error("Invalid response from LLM tool");
+    // Add user message to history
+    await this.chatManager.addMessage(chatId, message, "user");
+
+    // Create completion with streaming
+    const response = (await this.openai.chat.completions.create({
+      model: this.config.model ?? "gpt-4",
+      messages: [
+        ...chat.messages.map(
+          (msg) =>
+            ({
+              role: msg.role,
+              content: msg.content
+            }) as ChatCompletionMessageParam
+        ),
+        { role: "user", content: message }
+      ],
+      stream: true,
+      ...this.config.defaultParams
+    })) as unknown as Stream<ChatCompletionChunk>;
+
+    let accumulatedContent = "";
+
+    // Stream response chunks
+    try {
+      for await (const chunk of response) {
+        const content = chunk.choices[0]?.delta?.content || "";
+        if (content) {
+          accumulatedContent += content;
+          yield content;
+        }
+      }
+    } catch (error) {
+      console.error("Error streaming response:", error);
+      throw error;
     }
 
-    return {
-      content: result.content[0].text
-      // metadata: result.metadata
-    };
+    // Save complete response to chat history
+    if (accumulatedContent) {
+      await this.chatManager.addMessage(
+        chatId,
+        accumulatedContent,
+        "assistant"
+      );
+    }
   }
 
   /**

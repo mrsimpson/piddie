@@ -1,7 +1,8 @@
-// packages/llm-integration/src/mcp/host.ts
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import type { ChatManager } from "@piddie/chat-management";
 import { LLMClient } from "../client.js";
+import type { LLMClientConfig } from "../types/client.js";
 
 export interface ServerConfig {
   name: string;
@@ -17,15 +18,26 @@ export class LLMIntegrationHost {
   private servers: Map<string, McpServer> = new Map();
   private client: LLMClient;
 
-  constructor(transport: StdioServerTransport) {
+  /**
+   * Create a new LLM integration host
+   * @param transport - Transport layer for MCP communication
+   * @param chatManager - Manager for chat history
+   * @param llmConfig - Configuration for LLM client
+   */
+  constructor(
+    transport: StdioServerTransport,
+    chatManager: ChatManager,
+    llmConfig: LLMClientConfig
+  ) {
     this.transport = transport;
-    this.client = new LLMClient();
+    this.client = new LLMClient(chatManager, llmConfig);
   }
 
   /**
    * Initialize all MCP servers and connect client
+   * @param servers - List of MCP servers to initialize
    */
-  async initialize(servers: ServerConfig[]) {
+  async initialize(servers: ServerConfig[]): Promise<void> {
     // Connect each enabled server to the transport
     for (const { name, server, enabled = true } of servers) {
       if (enabled) {
@@ -34,12 +46,13 @@ export class LLMIntegrationHost {
       }
     }
 
-    // Connect the client
+    // Connect the client to access tools/prompts
     await this.client.connect();
   }
 
   /**
    * Get a registered server by name
+   * @param name - Name of the server to get
    */
   getServer(name: string): McpServer | undefined {
     return this.servers.get(name);
@@ -53,16 +66,15 @@ export class LLMIntegrationHost {
   }
 
   /**
-   * Stop all servers and cleanup
+   * Disconnect all servers and client
    */
-  async stop(): Promise<void> {
-    // Disconnect client
-    await this.client.disconnect();
-
+  async disconnect(): Promise<void> {
     // Disconnect all servers
     for (const server of this.servers.values()) {
       await server.close();
     }
-    this.servers.clear();
+
+    // Disconnect client
+    await this.client.disconnect();
   }
 }

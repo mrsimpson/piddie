@@ -1,6 +1,6 @@
 import {
-  McpServer,
-  ResourceTemplate
+  McpServer
+  // ResourceTemplate
 } from "@modelcontextprotocol/sdk/server/mcp.js";
 // import { z } from "zod";
 
@@ -68,24 +68,5 @@ export class ContextManagementServer extends McpServer {
     //     }]
     //   })
     // );
-  }
-
-  private async getFileContext(path: string) {
-    // Implementation will be added when context-management package is set up
-    return "";
-  }
-
-  private async getWorkspaceContext(workspaceId: string) {
-    // Implementation will be added when context-management package is set up
-    return "";
-  }
-
-  private async optimizeContext(
-    context: string,
-    maxTokens?: number,
-    relevancyQuery?: string
-  ) {
-    // Implementation will be added when context-management package is set up
-    return context;
   }
 }

@@ -17,6 +17,7 @@
     "@piddie/files-management": "workspace:*",
     "@piddie/project-management": "workspace:*",
     "@piddie/shared-types": "workspace:*",
+    "@piddie/llm-integration": "workspace:*",
     "@shoelace-style/shoelace": "^2.19.1",
     "@webcontainer/api": "1.5.1-internal.6",
     "pinia": "3.0.1",

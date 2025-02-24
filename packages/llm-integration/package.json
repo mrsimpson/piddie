@@ -1,6 +1,6 @@
 {
   "name": "@piddie/llm-integration",
-  "description": "LLM Integration package using Model Context Protocol",
+  "description": "LLM Integration package using OpenAI",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -19,12 +19,13 @@
     "lint:fix": "pnpm lint --fix",
     "format": "prettier --check .",
     "format:fix": "prettier --write .",
-    "test": "vitest",
+    "test": "vitest --run --passWithNoTests",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
+    "@piddie/chat-management": "workspace:*",
     "dexie": "4.0.11",
     "openai": "4.85.1",
     "zod": "^3.22.0"
