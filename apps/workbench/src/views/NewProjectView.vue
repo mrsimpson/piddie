@@ -3,6 +3,7 @@ import { ref } from "vue";
 import { useRouter } from "vue-router";
 import { useProjectStore } from "../stores/project";
 import { useChatStore } from "../stores/chat";
+import { useLlmStore } from "../stores/llm";
 import "@shoelace-style/shoelace/dist/components/textarea/textarea.js";
 import "@shoelace-style/shoelace/dist/components/button/button.js";
 import "@shoelace-style/shoelace/dist/components/card/card.js";
@@ -11,6 +12,7 @@ import "@shoelace-style/shoelace/dist/components/tooltip/tooltip.js";
 const router = useRouter();
 const projectStore = useProjectStore();
 const chatStore = useChatStore();
+const llmStore = useLlmStore();
 const projectPrompt = ref("");
 
 const samplePrompts = [
@@ -37,9 +39,22 @@ const samplePrompts = [
 async function createProject() {
   if (!projectPrompt.value.trim()) return;
 
-  const project = await projectStore.createProject("New Project");
+  // Generate a project name from the prompt
+  const promptLines = projectPrompt.value.trim().split("\n");
+  const firstLine = promptLines[0].trim();
+  // Use the first line (up to 30 chars) as the project name, or fallback to "New Project"
+  const projectName =
+    firstLine.length > 0
+      ? firstLine.length > 30
+        ? firstLine.substring(0, 30) + "..."
+        : firstLine
+      : "New Project";
+
+  const project = await projectStore.createProject(projectName);
   const chat = await chatStore.createChat({ projectId: project.id });
-  await chatStore.addMessage(chat.id, projectPrompt.value, "user");
+
+  // Use the LLM store to send the message, which will trigger the LLM interaction
+  await llmStore.sendMessage(projectPrompt.value, chat.id);
 
   router.push(`/projects/${project.id}`);
 }

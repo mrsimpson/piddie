@@ -11,6 +11,10 @@ const props = defineProps<{
   error?: Error | null;
 }>();
 
+const emit = defineEmits<{
+  collapse: [isCollapsed: boolean];
+}>();
+
 const selectedSystem = ref<SynchronizedFileSystem | null>(null);
 const isLoading = ref(true);
 
@@ -41,10 +45,14 @@ watch(
 function handleSystemSelect(system: SynchronizedFileSystem) {
   selectedSystem.value = system;
 }
+
+function handleCollapse(isCollapsed: boolean) {
+  emit("collapse", isCollapsed);
+}
 </script>
 
 <template>
-  <CollapsiblePanel>
+  <CollapsiblePanel @collapse="handleCollapse" expand-icon="folder">
     <template #header>
       <div class="file-explorer-header">
         <SyncTargetSelector

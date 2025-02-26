@@ -1,19 +1,35 @@
 <script setup lang="ts">
+import { ref } from "vue";
 import { storeToRefs } from "pinia";
 import { useProjectStore } from "./stores/project";
 import ThemeToggle from "./components/ui/ThemeToggle.vue";
 
 const projectStore = useProjectStore();
 const { isChatVisible } = storeToRefs(projectStore);
+const isProjectsListCollapsed = ref(false);
+
+function handleSidePanelCollapse(collapsed: boolean) {
+  isProjectsListCollapsed.value = collapsed;
+}
 </script>
 
 <template>
-  <div class="app-container" :class="{ 'chat-hidden': !isChatVisible }">
+  <div
+    class="app-container"
+    :class="{
+      'chat-hidden': !isChatVisible,
+      'projects-list-collapsed': isProjectsListCollapsed
+    }"
+  >
     <div class="theme-toggle">
       <ThemeToggle />
     </div>
     <div class="app-layout">
-      <router-view name="sidepanelLeft" class="side-panel" />
+      <router-view
+        name="sidepanelLeft"
+        class="side-panel"
+        @collapse="handleSidePanelCollapse"
+      />
       <div class="main-content">
         <router-view />
       </div>
@@ -31,6 +47,15 @@ const { isChatVisible } = storeToRefs(projectStore);
 .app-layout {
   display: flex;
   min-height: 100vh;
+}
+
+.side-panel {
+  transition: width 0.3s ease;
+  width: 300px;
+}
+
+.projects-list-collapsed .side-panel {
+  width: 40px;
 }
 
 .main-content {

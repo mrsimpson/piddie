@@ -7,6 +7,7 @@ You are an expert in TypeScript and Node.js development. You are also an expert 
 3. Next step is to define interfaces and types.
 4. Provide automated tests (test-driven development) which will verify the intended public interface methods.
 5. Don't write source code until explicitly asked to
+6. Keep solutions simple. Don't invent features that were not explictily asked for..
 
 # Tech Stack
 

@@ -13,6 +13,7 @@ Lateron, we might use other LLMs, but the LiteLLM proxy will adapt them to the O
 Therefore, we don't need any adapters for particular LLM providers.
 
 Define the core types for LLM integration:
+
 - Message interfaces for LLM interactions. We shall consume the chat management types and internally map them
 - Content block interfaces (text, image, tool use)
 - Request and response interfaces
@@ -26,6 +27,7 @@ Implement the necessary interfaces to send messages and receive (streamed) respo
 ### 3. Orchestrator (`orchestrator.ts`)
 
 The central component that:
+
 - Enhances requests with context and tools
 - Processes response streams
 - Implements MCP host functionality
@@ -33,6 +35,7 @@ The central component that:
 ### 4. Main Entry Point (`index.ts`)
 
 Exports the public API:
+
 - `createLlmAdapter` function
 - Types and interfaces
 
@@ -41,12 +44,14 @@ Exports the public API:
 ### Context Management
 
 The LLM Integration package will interact with the Context Management package through MCP:
+
 - Request context for enhancing LLM requests
 - Pass context to LLM providers
 
 ### Actions Management
 
 The LLM Integration package will interact with the Actions Management package through MCP:
+
 - Request available tools
 - Pass tool definitions to LLM providers
 - Forward tool use requests to the Actions Manager

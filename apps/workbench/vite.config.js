@@ -41,6 +41,7 @@ export default defineConfig({
     exclude: [
       "@piddie/project-management",
       "@piddie/chat-management",
+      "@piddie/llm-integration",
       "@piddie/files-management"
     ]
   },

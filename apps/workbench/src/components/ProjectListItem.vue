@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { useProjectStore } from "../stores/project";
 import type { Project } from "../types/project";
 import EditableText from "./ui/EditableText.vue";
@@ -8,6 +8,8 @@ import ConfirmationDialog from "./ConfirmationDialog.vue";
 import "@shoelace-style/shoelace/dist/components/card/card.js";
 import "@shoelace-style/shoelace/dist/components/relative-time/relative-time.js";
 import "@shoelace-style/shoelace/dist/components/icon-button/icon-button.js";
+
+const router = useRouter();
 
 const props = defineProps<{
   project: Project;
@@ -28,6 +30,7 @@ function handleDelete() {
 async function handleConfirmDelete() {
   await projectStore.deleteProject(props.project.id);
   showDeleteConfirmation.value = false;
+  router.push("/projects/new");
 }
 
 function handleCancelDelete() {
@@ -83,6 +86,8 @@ function handleCancelDelete() {
   --padding: 0.75rem;
   transition: background-color 0.2s ease;
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   padding: 4px;
 }
 

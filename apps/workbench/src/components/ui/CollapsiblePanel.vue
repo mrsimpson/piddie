@@ -65,15 +65,26 @@ function toggleCollapse() {
   height: 100%;
   transition: width 0.3s ease;
   width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .panel-container.collapsed {
   width: 40px;
+  border-right: 1px solid var(--sl-color-neutral-200);
 }
 
 .panel-content {
   flex: 1;
   overflow-y: auto;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+header,
+footer {
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .toggle-container {
@@ -81,6 +92,8 @@ function toggleCollapse() {
   display: flex;
   justify-content: center;
   padding: 0.5rem;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .toggle-button {
