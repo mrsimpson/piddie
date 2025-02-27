@@ -92,17 +92,17 @@ export const useLlmStore = defineStore("llm", () => {
   onMounted(async () => {
     try {
       isLoading.value = true;
-      const settings = await settingsManager.getSettings();
+      const loadedConfig = await settingsManager.getLlmConfig();
 
       // Update the reactive config object
-      Object.assign(config, settings.llmConfig);
+      Object.assign(config, loadedConfig);
 
       // Set available models if they exist
       if (
-        settings.llmConfig.availableModels &&
-        settings.llmConfig.availableModels.length > 0
+        loadedConfig.availableModels &&
+        loadedConfig.availableModels.length > 0
       ) {
-        availableModels.value = settings.llmConfig.availableModels;
+        availableModels.value = loadedConfig.availableModels;
       }
 
       // Recreate the adapter with the loaded configuration

@@ -6,12 +6,17 @@ import { useProjectStore } from "../stores/project";
 import { MessageStatus } from "@piddie/chat-management";
 import CollapsiblePanel from "./ui/CollapsiblePanel.vue";
 import LlmSettings from "./LlmSettings.vue";
+import MessagesList from "./MessagesList.vue";
 import "@shoelace-style/shoelace/dist/components/card/card.js";
 import "@shoelace-style/shoelace/dist/components/input/input.js";
 import "@shoelace-style/shoelace/dist/components/button/button.js";
 import "@shoelace-style/shoelace/dist/components/spinner/spinner.js";
 import "@shoelace-style/shoelace/dist/components/icon/icon.js";
 import "@shoelace-style/shoelace/dist/components/tooltip/tooltip.js";
+
+const props = defineProps<{
+  initialCollapsed?: boolean;
+}>();
 
 const emit = defineEmits<{
   collapse: [isCollapsed: boolean];
@@ -94,19 +99,6 @@ async function sendMessage() {
   await llmStore.sendMessage(message, currentChat.value.id);
 }
 
-// Get the CSS class for a message based on its role and status
-function getMessageClass(role: string, status: MessageStatus) {
-  const classes = ["message", `message-${role}`];
-
-  if (status === MessageStatus.SENDING) {
-    classes.push("message-sending");
-  } else if (status === MessageStatus.ERROR) {
-    classes.push("message-error");
-  }
-
-  return classes.join(" ");
-}
-
 // Cancel the current streaming response
 function cancelStreaming() {
   llmStore.cancelStreaming();
@@ -127,7 +119,7 @@ function handleCollapse(isCollapsed: boolean) {
   <CollapsiblePanel
     title="Chat"
     expand-icon="chat-left"
-    :expanded="true"
+    :initial-collapsed="props.initialCollapsed"
     @collapse="handleCollapse"
   >
     <template #content>
@@ -139,37 +131,7 @@ function handleCollapse(isCollapsed: boolean) {
           <p>No messages yet. Start a conversation!</p>
         </div>
 
-        <div class="messages">
-          <div
-            v-for="message in messages"
-            :key="message.id"
-            :class="getMessageClass(message.role, message.status)"
-          >
-            <div class="message-header">
-              <span class="message-role">{{
-                message.role === "user"
-                  ? "You"
-                  : message.username || "Assistant"
-              }}</span>
-              <span
-                v-if="message.status === MessageStatus.SENDING"
-                class="message-status"
-              >
-                Sending...
-              </span>
-              <span
-                v-if="message.status === MessageStatus.ERROR"
-                class="message-status error"
-              >
-                Error
-              </span>
-            </div>
-
-            <div class="message-content">
-              {{ message.content || "..." }}
-            </div>
-          </div>
-        </div>
+        <MessagesList v-else :messages="messages" />
       </div>
     </template>
 
@@ -252,69 +214,6 @@ function handleCollapse(isCollapsed: boolean) {
   justify-content: center;
   height: 100%;
   color: var(--sl-color-neutral-500);
-}
-
-.messages {
-  flex: 1;
-  overflow-y: auto;
-  padding: var(--sl-spacing-medium);
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  width: 100%;
-  box-sizing: border-box;
-}
-
-.message {
-  padding: 1rem;
-  border-radius: var(--sl-border-radius-medium);
-  max-width: 80%;
-  box-sizing: border-box;
-}
-
-.message-user {
-  align-self: flex-end;
-  background-color: var(--sl-color-primary-100);
-  color: var(--sl-color-neutral-900);
-}
-
-.message-assistant {
-  align-self: flex-start;
-  background-color: var(--sl-color-neutral-100);
-  color: var(--sl-color-neutral-900);
-}
-
-.message-sending {
-  opacity: 0.7;
-}
-
-.message-error {
-  border: 1px solid var(--sl-color-danger-500);
-}
-
-.message-header {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 0.5rem;
-  font-size: 0.875rem;
-}
-
-.message-role {
-  font-weight: bold;
-}
-
-.message-status {
-  font-style: italic;
-  color: var(--sl-color-neutral-500);
-}
-
-.message-status.error {
-  color: var(--sl-color-danger-500);
-}
-
-.message-content {
-  white-space: pre-wrap;
-  word-break: break-word;
 }
 
 .input-container {

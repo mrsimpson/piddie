@@ -8,7 +8,6 @@ import FileExplorerPanel from "@/components/FileExplorerPanel.vue";
 import ChatPanel from "@/components/ChatPanel.vue";
 import CodeEditor from "@/components/CodeEditor.vue";
 import settingsManager from "@/stores/settings-db";
-import type { PanelWidthSettings } from "@/stores/settings-db";
 
 const route = useRoute();
 const projectStore = useProjectStore();
@@ -45,30 +44,51 @@ const leftPanelWidth = computed(() => {
 // Load panel widths from settings
 async function loadPanelWidths() {
   try {
-    const settings = await settingsManager.getSettings();
-    if (settings.panelWidths) {
-      fileExplorerWidth.value = settings.panelWidths.fileExplorerWidth;
-      chatPanelWidth.value = settings.panelWidths.chatPanelWidth;
-      isFileExplorerCollapsed.value =
-        settings.panelWidths.isFileExplorerCollapsed;
-      isChatPanelCollapsed.value = settings.panelWidths.isChatPanelCollapsed;
-    }
+    console.group("ProjectView: Load Panel Widths");
+    const settings = await settingsManager.getLayoutSettings();
+    console.log("Loaded settings:", settings);
+
+    fileExplorerWidth.value = settings.fileExplorerWidth;
+    chatPanelWidth.value = settings.chatPanelWidth;
+    isFileExplorerCollapsed.value = settings.isFileExplorerCollapsed;
+    isChatPanelCollapsed.value = settings.isChatPanelCollapsed;
+
+    console.log("Applied panel widths:", {
+      fileExplorerWidth: fileExplorerWidth.value,
+      chatPanelWidth: chatPanelWidth.value,
+      isFileExplorerCollapsed: isFileExplorerCollapsed.value,
+      isChatPanelCollapsed: isChatPanelCollapsed.value
+    });
+    console.groupEnd();
   } catch (err) {
     console.error("Failed to load panel widths:", err);
+    console.groupEnd();
   }
 }
 
 // Save panel widths to settings
 async function savePanelWidths() {
   try {
-    await settingsManager.updatePanelWidths({
+    console.group("ProjectView: Save Panel Widths");
+    console.log("Saving panel widths:", {
       fileExplorerWidth: fileExplorerWidth.value,
       chatPanelWidth: chatPanelWidth.value,
       isFileExplorerCollapsed: isFileExplorerCollapsed.value,
       isChatPanelCollapsed: isChatPanelCollapsed.value
     });
+
+    await settingsManager.updateLayoutSettings({
+      fileExplorerWidth: fileExplorerWidth.value,
+      chatPanelWidth: chatPanelWidth.value,
+      isFileExplorerCollapsed: isFileExplorerCollapsed.value,
+      isChatPanelCollapsed: isChatPanelCollapsed.value
+    });
+
+    console.log("Panel widths saved successfully");
+    console.groupEnd();
   } catch (err) {
     console.error("Failed to save panel widths:", err);
+    console.groupEnd();
   }
 }
 
@@ -249,6 +269,7 @@ function handleMouseUp() {
         <FileExplorerPanel
           :systems="fileSystemStore.systems"
           :error="error"
+          :initial-collapsed="isFileExplorerCollapsed"
           @collapse="onFileExplorerCollapse"
         />
       </div>
@@ -267,7 +288,10 @@ function handleMouseUp() {
           width: isChatPanelCollapsed ? '40px' : `${chatPanelWidth}px`
         }"
       >
-        <ChatPanel @collapse="onChatPanelCollapse" />
+        <ChatPanel
+          :initial-collapsed="isChatPanelCollapsed"
+          @collapse="onChatPanelCollapse"
+        />
       </div>
 
       <!-- Resizer between left panel and main panel -->

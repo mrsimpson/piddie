@@ -49,7 +49,7 @@ const mockChatTable = {
   db: {} as any,
   name: "chats",
   schema: {},
-  hook: () => {},
+  hook: () => { },
   core: {} as any,
   get tableName() {
     return "chats";
@@ -61,7 +61,7 @@ const mockMessageTable = {
   db: {} as any,
   name: "messages",
   schema: {},
-  hook: () => {},
+  hook: () => { },
   core: {} as any,
   get tableName() {
     return "messages";

@@ -9,6 +9,7 @@ import "@shoelace-style/shoelace/dist/components/spinner/spinner.js";
 const props = defineProps<{
   systems: SynchronizedFileSystem[];
   error?: Error | null;
+  initialCollapsed?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -52,7 +53,11 @@ function handleCollapse(isCollapsed: boolean) {
 </script>
 
 <template>
-  <CollapsiblePanel @collapse="handleCollapse" expand-icon="folder">
+  <CollapsiblePanel
+    :initial-collapsed="props.initialCollapsed"
+    @collapse="handleCollapse"
+    expand-icon="folder"
+  >
     <template #header>
       <div class="file-explorer-header">
         <SyncTargetSelector

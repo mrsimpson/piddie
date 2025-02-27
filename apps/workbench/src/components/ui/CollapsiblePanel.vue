@@ -23,7 +23,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import "@shoelace-style/shoelace/dist/components/icon-button/icon-button.js";
 import type SlIconButton from "@shoelace-style/shoelace/dist/components/icon-button/icon-button.js";
 
@@ -51,6 +51,16 @@ const emit = defineEmits<{
 }>();
 
 const isCollapsed = ref(props.initialCollapsed);
+
+// Watch for changes to initialCollapsed prop
+watch(
+  () => props.initialCollapsed,
+  (newValue) => {
+    if (isCollapsed.value !== newValue) {
+      isCollapsed.value = newValue;
+    }
+  }
+);
 
 function toggleCollapse() {
   isCollapsed.value = !isCollapsed.value;

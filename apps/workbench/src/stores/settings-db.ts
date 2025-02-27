@@ -21,44 +21,40 @@ export interface ModelInfo {
 }
 
 /**
- * Interface for panel width settings
+ * Interface for individual layout setting
  */
-export interface PanelWidthSettings {
-  fileExplorerWidth: number;
-  chatPanelWidth: number;
-  isFileExplorerCollapsed: boolean;
-  isChatPanelCollapsed: boolean;
+export interface LayoutSetting {
+  key: LayoutSettingKey;
+  value: any;
+  lastUpdated: Date;
 }
 
 /**
- * Interface for application settings
+ * Enum for layout setting keys
  */
-export interface AppSettings {
-  id: string;
-  llmConfig: LlmProviderConfig;
-  panelWidths: PanelWidthSettings;
-  lastUpdated: Date;
+export enum LayoutSettingKey {
+  FILE_EXPLORER_WIDTH = "fileExplorerWidth",
+  CHAT_PANEL_WIDTH = "chatPanelWidth",
+  IS_FILE_EXPLORER_COLLAPSED = "isFileExplorerCollapsed",
+  IS_CHAT_PANEL_COLLAPSED = "isChatPanelCollapsed"
 }
 
 /**
  * Database schema for application settings
  */
 export class SettingsDatabase extends Dexie {
-  settings!: Dexie.Table<AppSettings, string>;
+  llmConfig!: Dexie.Table<LlmProviderConfig, string>;
+  layout!: Dexie.Table<LayoutSetting, LayoutSettingKey>;
 
   constructor() {
     super("piddie-settings");
 
-    this.version(1).stores({
-      settings: "id, lastUpdated"
+    this.version(6).stores({
+      llmConfig: "provider",
+      layout: "key, lastUpdated"
     });
   }
 }
-
-/**
- * Default settings ID
- */
-export const DEFAULT_SETTINGS_ID = "app-settings";
 
 /**
  * Default LLM configuration
@@ -72,13 +68,13 @@ export const DEFAULT_LLM_CONFIG: LlmProviderConfig = {
 };
 
 /**
- * Default panel width settings
+ * Default layout settings
  */
-export const DEFAULT_PANEL_WIDTHS: PanelWidthSettings = {
-  fileExplorerWidth: 250,
-  chatPanelWidth: 300,
-  isFileExplorerCollapsed: false,
-  isChatPanelCollapsed: false
+export const DEFAULT_LAYOUT_SETTINGS = {
+  [LayoutSettingKey.FILE_EXPLORER_WIDTH]: 250,
+  [LayoutSettingKey.CHAT_PANEL_WIDTH]: 300,
+  [LayoutSettingKey.IS_FILE_EXPLORER_COLLAPSED]: false,
+  [LayoutSettingKey.IS_CHAT_PANEL_COLLAPSED]: false
 };
 
 /**
@@ -92,31 +88,96 @@ export class SettingsManager {
   }
 
   /**
-   * Gets the application settings
-   * @returns The application settings
+   * Gets the LLM configuration
+   * @returns The LLM configuration
    */
-  async getSettings(): Promise<AppSettings> {
-    let settings = await this.db.settings.get(DEFAULT_SETTINGS_ID);
+  async getLlmConfig(): Promise<LlmProviderConfig> {
+    let config = await this.db.llmConfig.get({ provider: "openai" });
 
-    if (!settings) {
-      // Create default settings if they don't exist
-      settings = {
-        id: DEFAULT_SETTINGS_ID,
-        llmConfig: DEFAULT_LLM_CONFIG,
-        panelWidths: DEFAULT_PANEL_WIDTHS,
+    if (!config) {
+      // Create default LLM config if it doesn't exist
+      config = { ...DEFAULT_LLM_CONFIG };
+      await this.db.llmConfig.add(config);
+    }
+
+    return config;
+  }
+
+  /**
+   * Gets a specific layout setting
+   * @param key The setting key to retrieve
+   * @returns The layout setting value
+   */
+  async getLayoutSetting(key: LayoutSettingKey): Promise<any> {
+    console.log(`Getting layout setting for key: ${key}`);
+
+    // Try to find the setting
+    const setting = await this.db.layout.get(key);
+
+    // If setting doesn't exist, create and return default
+    if (!setting) {
+      console.log(`No setting found for ${key}. Using default.`);
+      const defaultValue = DEFAULT_LAYOUT_SETTINGS[key];
+
+      // Add the default setting to the database
+      const defaultSetting: LayoutSetting = {
+        key,
+        value: defaultValue,
         lastUpdated: new Date()
       };
 
-      await this.db.settings.add(settings);
-    } else if (!settings.panelWidths) {
-      // Add panel widths if they don't exist in existing settings
-      settings.panelWidths = DEFAULT_PANEL_WIDTHS;
-      await this.db.settings.update(DEFAULT_SETTINGS_ID, {
-        panelWidths: DEFAULT_PANEL_WIDTHS
-      });
+      await this.db.layout.add(defaultSetting);
+
+      return defaultValue;
     }
 
-    return settings;
+    console.log(`Retrieved setting for ${key}:`, setting.value);
+    return setting.value;
+  }
+
+  /**
+   * Updates a specific layout setting
+   * @param key The setting key to update
+   * @param value The new value for the setting
+   */
+  async updateLayoutSetting(key: LayoutSettingKey, value: any): Promise<void> {
+    console.log(`Updating layout setting for key: ${key}`, value);
+
+    // Create the setting object with the key
+    const setting: LayoutSetting = {
+      key,
+      value,
+      lastUpdated: new Date()
+    };
+
+    // Update or add the setting
+    await this.db.layout.put(setting);
+  }
+
+  /**
+   * Gets all layout settings
+   * @returns An object with all layout settings
+   */
+  async getLayoutSettings(): Promise<Record<LayoutSettingKey, any>> {
+    const settings: Partial<Record<LayoutSettingKey, any>> = {};
+
+    for (const key of Object.values(LayoutSettingKey)) {
+      settings[key] = await this.getLayoutSetting(key);
+    }
+
+    return settings as Record<LayoutSettingKey, any>;
+  }
+
+  /**
+   * Updates multiple layout settings
+   * @param settings Partial layout settings to update
+   */
+  async updateLayoutSettings(
+    settings: Partial<Record<LayoutSettingKey, any>>
+  ): Promise<void> {
+    for (const [key, value] of Object.entries(settings)) {
+      await this.updateLayoutSetting(key as LayoutSettingKey, value);
+    }
   }
 
   /**
@@ -126,19 +187,16 @@ export class SettingsManager {
   async updateLlmConfig(
     config: Partial<LlmProviderConfig>
   ): Promise<LlmProviderConfig> {
-    const settings = await this.getSettings();
+    const existingConfig = await this.getLlmConfig();
 
     // Update the configuration
     const updatedConfig = {
-      ...settings.llmConfig,
+      ...existingConfig,
       ...config
     };
 
-    // Update the settings
-    await this.db.settings.update(DEFAULT_SETTINGS_ID, {
-      llmConfig: updatedConfig,
-      lastUpdated: new Date()
-    });
+    // Update or add the configuration
+    await this.db.llmConfig.put(updatedConfig);
 
     return updatedConfig;
   }
@@ -147,15 +205,8 @@ export class SettingsManager {
    * Resets the LLM configuration to defaults
    */
   async resetLlmConfig(): Promise<LlmProviderConfig> {
-    const settings = await this.getSettings();
-
-    // Update the settings
-    await this.db.settings.update(DEFAULT_SETTINGS_ID, {
-      llmConfig: DEFAULT_LLM_CONFIG,
-      lastUpdated: new Date()
-    });
-
-    return DEFAULT_LLM_CONFIG;
+    await this.db.llmConfig.clear();
+    return this.updateLlmConfig(DEFAULT_LLM_CONFIG);
   }
 
   /**
@@ -219,30 +270,6 @@ export class SettingsManager {
       console.error("Error verifying connection:", error);
       throw error;
     }
-  }
-
-  /**
-   * Updates the panel width settings
-   * @param widths The new panel width settings
-   */
-  async updatePanelWidths(
-    widths: Partial<PanelWidthSettings>
-  ): Promise<PanelWidthSettings> {
-    const settings = await this.getSettings();
-
-    // Update the panel widths
-    const updatedWidths = {
-      ...settings.panelWidths,
-      ...widths
-    };
-
-    // Update the settings
-    await this.db.settings.update(DEFAULT_SETTINGS_ID, {
-      panelWidths: updatedWidths,
-      lastUpdated: new Date()
-    });
-
-    return updatedWidths;
   }
 }
 
