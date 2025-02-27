@@ -7,6 +7,7 @@ export interface LlmProviderConfig {
   apiKey: string;
   baseUrl: string;
   defaultModel: string;
+  provider?: "openai" | "mock";
   availableModels?: ModelInfo[];
 }
 
@@ -66,6 +67,7 @@ export const DEFAULT_LLM_CONFIG: LlmProviderConfig = {
   apiKey: import.meta.env.VITE_OPENAI_API_KEY || "",
   baseUrl: import.meta.env.VITE_OPENAI_BASE_URL || "https://api.openai.com/v1",
   defaultModel: import.meta.env.VITE_OPENAI_MODEL || "gpt-3.5-turbo",
+  provider: "openai",
   availableModels: []
 };
 

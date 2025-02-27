@@ -19,6 +19,8 @@
   "dependencies": {
     "@piddie/chat-management": "workspace:*",
     "@piddie/files-management": "workspace:*",
-    "dexie": "4.0.11"
+    "dexie": "4.0.11",
+    "events": "^3.3.0",
+    "openai": "^4.28.0"
   }
 }

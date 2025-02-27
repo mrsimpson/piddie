@@ -1,28 +1,68 @@
-import {
+import type {
   LlmClient,
   LlmMessage,
   LlmResponse,
-  LlmProviderConfig,
-  LlmStreamEvent
+  LlmProviderConfig
 } from "./types";
-import { EventEmitter } from "events";
-import OpenAI from "openai";
-import {
+import { LlmStreamEvent } from "./types";
+import { EventEmitter } from "./event-emitter";
+// Remove direct OpenAI import
+// import OpenAI from "openai";
+// Keep the type imports for compatibility
+import type {
   ChatCompletionUserMessageParam,
   ChatCompletionAssistantMessageParam,
   ChatCompletionSystemMessageParam
 } from "openai/resources/chat/completions";
+import type { ChatCompletionRole } from "openai/resources/chat";
+
+// Define interfaces for OpenAI API responses
+interface OpenAICompletionChoice {
+  message: {
+    role: ChatCompletionRole;
+    content: string | null;
+  };
+  index: number;
+  finish_reason: string;
+}
+
+interface OpenAICompletionResponse {
+  id: string;
+  object: string;
+  created: number;
+  model: string;
+  choices: OpenAICompletionChoice[];
+}
+
+interface OpenAIStreamChoice {
+  delta: {
+    content?: string;
+    role?: ChatCompletionRole;
+  };
+  index: number;
+  finish_reason: string | null;
+}
+
+interface OpenAIStreamResponse {
+  id: string;
+  object: string;
+  created: number;
+  model: string;
+  choices: OpenAIStreamChoice[];
+}
 
 export class OpenAiClient implements LlmClient {
   private config: LlmProviderConfig;
-  private client: OpenAI;
+  // Remove the OpenAI client instance
+  // private client: OpenAI;
 
   constructor(config: LlmProviderConfig) {
     this.config = config;
-    this.client = new OpenAI({
-      apiKey: config.apiKey,
-      baseURL: config.baseUrl
-    });
+    // Remove OpenAI client instantiation
+    // this.client = new OpenAI({
+    //   apiKey: config.apiKey,
+    //   baseURL: config.baseUrl
+    // });
   }
 
   /**
@@ -34,12 +74,29 @@ export class OpenAiClient implements LlmClient {
     // Convert LlmMessage to the appropriate OpenAI message type
     const openaiMessage = this.convertToOpenAIMessage(message);
 
-    const response = await this.client.chat.completions.create({
-      model: this.config.defaultModel,
-      messages: [openaiMessage]
+    // Use fetch API instead of OpenAI client
+    const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.config.apiKey}`
+      },
+      body: JSON.stringify({
+        model: this.config.defaultModel,
+        messages: [openaiMessage]
+      })
     });
 
-    const choice = response.choices[0];
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(
+        `OpenAI API error: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`
+      );
+    }
+
+    const data = (await response.json()) as OpenAICompletionResponse;
+    const choice = data.choices[0];
+
     if (!choice || !choice.message) {
       throw new Error("No response from OpenAI");
     }
@@ -53,11 +110,11 @@ export class OpenAiClient implements LlmClient {
         : "";
 
     return {
-      id: response.id,
+      id: data.id,
       chatId: message.chatId,
       content: content,
       role: responseData.role,
-      created: new Date(response.created * 1000), // Convert timestamp to Date
+      created: new Date(data.created * 1000), // Convert timestamp to Date
       parentId: message.id
     };
   }
@@ -86,26 +143,78 @@ export class OpenAiClient implements LlmClient {
         // Convert LlmMessage to the appropriate OpenAI message type
         const openaiMessage = this.convertToOpenAIMessage(message);
 
-        const stream = await this.client.chat.completions.create({
-          model: this.config.defaultModel,
-          messages: [openaiMessage],
-          stream: true
-        });
+        // Use fetch API with streaming
+        const fetchResponse = await fetch(
+          `${this.config.baseUrl}/chat/completions`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${this.config.apiKey}`
+            },
+            body: JSON.stringify({
+              model: this.config.defaultModel,
+              messages: [openaiMessage],
+              stream: true
+            })
+          }
+        );
 
-        // Process each chunk as it arrives
-        for await (const chunk of stream) {
-          const choice = chunk.choices[0];
-          if (!choice || !choice.delta) continue;
+        if (!fetchResponse.ok) {
+          const errorData = await fetchResponse.json().catch(() => ({}));
+          throw new Error(
+            `OpenAI API error: ${fetchResponse.status} ${fetchResponse.statusText} - ${JSON.stringify(errorData)}`
+          );
+        }
 
-          const deltaContent = choice.delta.content;
+        if (!fetchResponse.body) {
+          throw new Error("Response body is null");
+        }
 
-          if (
-            deltaContent !== undefined &&
-            deltaContent !== null &&
-            deltaContent !== ""
-          ) {
-            response.content += deltaContent;
-            eventEmitter.emit(LlmStreamEvent.DATA, { ...response });
+        // Create a reader from the response body stream
+        const reader = fetchResponse.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let buffer = "";
+
+        // Process the stream
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          // Decode the chunk and add it to the buffer
+          buffer += decoder.decode(value, { stream: true });
+
+          // Process complete lines in the buffer
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || ""; // Keep the last incomplete line in the buffer
+
+          for (const line of lines) {
+            if (line.trim() === "") continue;
+            if (line.trim() === "data: [DONE]") continue;
+
+            // Remove the "data: " prefix
+            const jsonLine = line.replace(/^data: /, "").trim();
+            if (!jsonLine) continue;
+
+            try {
+              const chunk = JSON.parse(jsonLine) as OpenAIStreamResponse;
+              const choice = chunk.choices[0];
+
+              if (!choice || !choice.delta) continue;
+
+              const deltaContent = choice.delta.content;
+
+              if (
+                deltaContent !== undefined &&
+                deltaContent !== null &&
+                deltaContent !== ""
+              ) {
+                response.content += deltaContent;
+                eventEmitter.emit(LlmStreamEvent.DATA, { ...response });
+              }
+            } catch (e) {
+              console.error("Error parsing JSON from stream:", e, jsonLine);
+            }
           }
         }
 

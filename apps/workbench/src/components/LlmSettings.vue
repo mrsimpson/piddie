@@ -23,6 +23,7 @@ const llmStore = useLlmStore();
 const apiKey = ref("");
 const baseUrl = ref("");
 const model = ref("");
+const provider = ref<"openai" | "mock">("openai");
 const isSaved = ref(false);
 const showApiKey = ref(false);
 const isSaving = ref(false);
@@ -37,8 +38,15 @@ const defaultModel = import.meta.env.VITE_OPENAI_MODEL || "gpt-3.5-turbo";
 const isApiKeySet = computed(() => !!apiKey.value);
 const hasAvailableModels = computed(() => llmStore.availableModels.length > 0);
 const availableModels = computed(() => {
+  // Always include the mock model
+  const mockModel = { id: "mock-model", name: "Mock Model (Development)" };
+
+  if (provider.value === "mock") {
+    return [mockModel];
+  }
+
   if (hasAvailableModels.value) {
-    return llmStore.availableModels;
+    return [...llmStore.availableModels];
   }
 
   // Fallback to default models if none are available from the API
@@ -56,8 +64,22 @@ watch(
     apiKey.value = newConfig.apiKey;
     baseUrl.value = newConfig.baseUrl;
     model.value = newConfig.defaultModel;
+    provider.value = newConfig.provider || "openai";
   },
   { deep: true }
+);
+
+// Watch for provider changes to update model selection
+watch(
+  () => provider.value,
+  (newProvider) => {
+    if (newProvider === "mock") {
+      model.value = "mock-model";
+    } else if (model.value === "mock-model") {
+      // If switching from mock to openai, set a default OpenAI model
+      model.value = "gpt-3.5-turbo";
+    }
+  }
 );
 
 // Watch for connection status changes
@@ -81,6 +103,7 @@ onMounted(() => {
   apiKey.value = llmStore.config.apiKey;
   baseUrl.value = llmStore.config.baseUrl;
   model.value = llmStore.config.defaultModel;
+  provider.value = llmStore.config.provider || "openai";
 });
 
 // Save settings to store
@@ -91,7 +114,8 @@ async function saveSettings() {
     const success = await llmStore.updateConfig({
       apiKey: apiKey.value,
       baseUrl: baseUrl.value,
-      defaultModel: model.value
+      defaultModel: model.value,
+      provider: provider.value
     });
 
     if (success) {
@@ -109,6 +133,12 @@ async function saveSettings() {
 
 // Verify connection and retrieve models
 async function verifyConnection() {
+  // Skip verification for mock provider
+  if (provider.value === "mock") {
+    verificationMessage.value = "Mock provider is always available.";
+    return;
+  }
+
   verificationMessage.value = "";
 
   try {
@@ -119,7 +149,8 @@ async function verifyConnection() {
     await llmStore.updateConfig({
       apiKey: apiKey.value,
       baseUrl: baseUrl.value,
-      defaultModel: model.value
+      defaultModel: model.value,
+      provider: provider.value
     });
 
     // Now verify with the saved config
@@ -175,7 +206,10 @@ async function resetToDefaults() {
       </div>
 
       <div v-else class="settings-form">
-        <div v-if="!isApiKeySet" class="api-key-warning">
+        <div
+          v-if="!isApiKeySet && provider === 'openai'"
+          class="api-key-warning"
+        >
           <p>
             ⚠️ API key not set. Chat functionality will not work without an API
             key.
@@ -183,6 +217,18 @@ async function resetToDefaults() {
         </div>
 
         <div class="form-group">
+          <label for="provider">Provider</label>
+          <select id="provider" v-model="provider">
+            <option value="openai">OpenAI</option>
+            <option value="mock">Mock (Development)</option>
+          </select>
+          <p class="help-text">
+            Select the LLM provider to use. Mock provider is for development and
+            testing.
+          </p>
+        </div>
+
+        <div class="form-group" v-if="provider === 'openai'">
           <label for="api-key">OpenAI API Key</label>
           <div class="api-key-input">
             <input
@@ -204,7 +250,7 @@ async function resetToDefaults() {
           </p>
         </div>
 
-        <div class="form-group">
+        <div class="form-group" v-if="provider === 'openai'">
           <label for="base-url">API Base URL</label>
           <input
             type="text"
@@ -217,7 +263,7 @@ async function resetToDefaults() {
           </p>
         </div>
 
-        <div class="verify-connection">
+        <div class="verify-connection" v-if="provider === 'openai'">
           <button
             type="button"
             class="verify-button"
@@ -268,13 +314,19 @@ async function resetToDefaults() {
               {{ modelOption.name }}
             </option>
           </select>
-          <p class="help-text" v-if="hasAvailableModels">
+          <p
+            class="help-text"
+            v-if="provider === 'openai' && hasAvailableModels"
+          >
             Models retrieved from OpenAI API.
             <span class="refresh-link" @click="verifyConnection">Refresh</span>
           </p>
-          <p class="help-text" v-else>
+          <p class="help-text" v-else-if="provider === 'openai'">
             Default models shown. Verify connection to retrieve available
             models.
+          </p>
+          <p class="help-text" v-else>
+            Mock model for development and testing.
           </p>
         </div>
 
@@ -313,7 +365,7 @@ async function resetToDefaults() {
     </div>
 
     <div v-else class="settings-form embedded">
-      <div v-if="!isApiKeySet" class="api-key-warning">
+      <div v-if="!isApiKeySet && provider === 'openai'" class="api-key-warning">
         <p>
           ⚠️ API key not set. Chat functionality will not work without an API
           key.
@@ -321,6 +373,14 @@ async function resetToDefaults() {
       </div>
 
       <div class="form-group">
+        <label for="provider-embedded">Provider</label>
+        <select id="provider-embedded" v-model="provider">
+          <option value="openai">OpenAI</option>
+          <option value="mock">Mock (Development)</option>
+        </select>
+      </div>
+
+      <div class="form-group" v-if="provider === 'openai'">
         <label for="api-key-embedded">API Key</label>
         <div class="api-key-input">
           <input
@@ -339,7 +399,7 @@ async function resetToDefaults() {
         </div>
       </div>
 
-      <div class="form-group">
+      <div class="form-group" v-if="provider === 'openai'">
         <label for="base-url-embedded">API Base URL</label>
         <input
           type="text"
@@ -363,7 +423,7 @@ async function resetToDefaults() {
       </div>
 
       <div class="embedded-actions">
-        <div class="verify-connection">
+        <div class="verify-connection" v-if="provider === 'openai'">
           <button
             type="button"
             class="verify-button"

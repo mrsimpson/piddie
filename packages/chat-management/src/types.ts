@@ -19,6 +19,7 @@ export interface Message {
   role: ChatCompletionRole;
   status: MessageStatus;
   created: Date;
+  username: string | undefined;
   parentId: string | undefined; // For threading/replies
 }
 
@@ -80,6 +81,18 @@ export interface ChatManager {
     chatId: string,
     messageId: string,
     status: MessageStatus
+  ): Promise<void>;
+
+  /**
+   * Updates a message's content
+   * @param chatId The ID of the chat containing the message
+   * @param messageId The ID of the message to update
+   * @param content The new content
+   */
+  updateMessageContent(
+    chatId: string,
+    messageId: string,
+    content: string
   ): Promise<void>;
 
   /**

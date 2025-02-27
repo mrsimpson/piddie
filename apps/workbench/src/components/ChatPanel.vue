@@ -29,9 +29,7 @@ const currentProject = computed(() => projectStore.currentProject);
 const showSettings = ref(false);
 
 // Computed properties for LLM settings
-const isModelSelected = computed(
-  () => !!llmStore.config.defaultModel && !!llmStore.config.apiKey
-);
+const isModelSelected = computed(() => !!llmStore.config.defaultModel);
 const selectedModelName = computed(() => {
   if (!llmStore.config.defaultModel) return "No model selected";
 
@@ -149,7 +147,9 @@ function handleCollapse(isCollapsed: boolean) {
           >
             <div class="message-header">
               <span class="message-role">{{
-                message.role === "user" ? "You" : "Assistant"
+                message.role === "user"
+                  ? "You"
+                  : message.username || "Assistant"
               }}</span>
               <span
                 v-if="message.status === MessageStatus.SENDING"

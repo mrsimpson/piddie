@@ -1,6 +1,6 @@
 import type { ChatCompletionRole } from "openai/resources/chat";
-import type { MessageStatus } from "../../chat-management/src/types";
-import type { EventEmitter } from "events";
+import type { MessageStatus } from "@piddie/chat-management";
+import type { EventEmitter } from "./event-emitter";
 
 /**
  * Represents a message sent to the LLM
@@ -34,6 +34,7 @@ export interface LlmProviderConfig {
   apiKey: string;
   baseUrl: string;
   defaultModel: string;
+  provider?: "openai" | "mock";
 }
 
 /**

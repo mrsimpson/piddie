@@ -213,6 +213,7 @@ describe("ChatManager", () => {
           chat.id,
           "Reply message",
           "assistant",
+          "",
           parentMessage.id
         );
 
@@ -248,7 +249,11 @@ describe("ChatManager", () => {
         messageMocks.update.mockResolvedValueOnce(1);
         chatMocks.update.mockResolvedValueOnce(1);
 
-        await chatManager.updateMessageStatus(message.id, MessageStatus.SENT);
+        await chatManager.updateMessageStatus(
+          message.chatId,
+          message.id,
+          MessageStatus.SENT
+        );
 
         expect(messageMocks.update).toHaveBeenCalledWith(message.id, {
           status: MessageStatus.SENT
@@ -262,7 +267,11 @@ describe("ChatManager", () => {
         messageMocks.get.mockResolvedValueOnce(undefined);
 
         await expect(
-          chatManager.updateMessageStatus("non-existent", MessageStatus.SENT)
+          chatManager.updateMessageStatus(
+            "chat_1",
+            "non-existent",
+            MessageStatus.SENT
+          )
         ).rejects.toThrow("Message not found");
       });
     });

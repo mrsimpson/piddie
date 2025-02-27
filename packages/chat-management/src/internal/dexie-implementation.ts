@@ -68,6 +68,7 @@ export class DexieChatManager implements ChatManager {
     chatId: string,
     content: string,
     role: ChatCompletionRole,
+    username = "",
     parentId?: string
   ): Promise<Message> {
     const chat = await this.db.chats.get(chatId);
@@ -82,6 +83,7 @@ export class DexieChatManager implements ChatManager {
       role,
       created: new Date(),
       status: MessageStatus.SENT,
+      username,
       parentId
     };
 
@@ -92,6 +94,7 @@ export class DexieChatManager implements ChatManager {
   }
 
   async updateMessageStatus(
+    chatId: string,
     messageId: string,
     status: MessageStatus
   ): Promise<void> {
@@ -101,10 +104,30 @@ export class DexieChatManager implements ChatManager {
     }
 
     await this.db.messages.update(messageId, { status });
-    await this.db.chats.update(message.chatId, { lastUpdated: new Date() });
+    await this.db.chats.update(chatId, { lastUpdated: new Date() });
   }
 
-  async listChats(): Promise<Chat[]> {
+  /**
+   * Updates a message's content
+   * @param chatId The ID of the chat containing the message
+   * @param messageId The ID of the message to update
+   * @param content The new content
+   */
+  async updateMessageContent(
+    chatId: string,
+    messageId: string,
+    content: string
+  ): Promise<void> {
+    const message = await this.db.messages.get(messageId);
+    if (!message) {
+      throw new Error("Message not found");
+    }
+
+    await this.db.messages.update(messageId, { content });
+    await this.db.chats.update(chatId, { lastUpdated: new Date() });
+  }
+
+  async listChats(limit?: number, offset = 0): Promise<Chat[]> {
     const chats = (await this.db.chats.toArray()) || [];
     const result: Chat[] = [];
 
@@ -120,10 +143,18 @@ export class DexieChatManager implements ChatManager {
       });
     }
 
-    return result.sort(
+    // Sort chats by lastUpdated (newest first)
+    const sortedResult = result.sort(
       (a, b) =>
         (b.lastUpdated?.getTime() || 0) - (a.lastUpdated?.getTime() || 0)
     );
+
+    // Apply pagination if limit is provided
+    if (limit !== undefined) {
+      return sortedResult.slice(offset, offset + limit);
+    }
+
+    return sortedResult;
   }
 
   async deleteChat(id: string): Promise<void> {

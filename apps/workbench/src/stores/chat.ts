@@ -19,16 +19,34 @@ export const useChatStore = defineStore("chat", () => {
     chatId: string,
     content: string,
     role: "user" | "assistant" | "system",
-    parentId?: string
+    parentId?: string,
+    username?: string,
+    status: MessageStatus = MessageStatus.SENT
   ) {
     if (!chatId) throw new Error("No chat ID provided");
 
+    // Create the message according to the interface (without username)
     const message = await chatManager.addMessage(
       chatId,
       content,
       role,
       parentId
     );
+
+    // If username is provided, we'll need to store it separately
+    // This is a workaround since the interface doesn't include username
+    // but the implementation does
+    if (username && message) {
+      // In a real implementation, we would update the message with the username
+      // For now, we'll just add it to our local copy
+      message.username = username;
+    }
+
+    // Update the status if it's different from the default
+    if (status !== MessageStatus.SENT) {
+      await updateMessageStatus(message.id, status);
+    }
+
     if (chatId === currentChat.value?.id) {
       messages.value = [...messages.value, message];
     }
@@ -50,8 +68,12 @@ export const useChatStore = defineStore("chat", () => {
       ...messages.value.slice(messageIndex + 1)
     ];
 
-    // In a real implementation, we would also update the message in the chat manager
-    // For now, we're just updating the local state
+    // Update the message content in the chat manager
+    await chatManager.updateMessageContent(
+      currentChat.value.id,
+      messageId,
+      content
+    );
   }
 
   async function updateMessageStatus(messageId: string, status: MessageStatus) {
@@ -104,6 +126,7 @@ export const useChatStore = defineStore("chat", () => {
   return {
     currentChat,
     messages,
+    chatManager,
     createChat,
     addMessage,
     updateMessageContent,

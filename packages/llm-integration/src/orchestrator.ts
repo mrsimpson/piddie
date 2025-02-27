@@ -1,21 +1,19 @@
-import { LlmClient, LlmMessage, LlmResponse, LlmStreamEvent } from "./types";
-import { ChatManager, MessageStatus } from "../../chat-management/src/types";
-import { EventEmitter } from "events";
+import type { LlmClient, LlmMessage, LlmResponse } from "./types";
+import { LlmStreamEvent } from "./types";
+import { type ChatManager, MessageStatus } from "@piddie/chat-management";
+import { EventEmitter } from "./event-emitter";
 
 export class Orchestrator {
   private client: LlmClient;
-  private chatManager: ChatManager | undefined;
-
-  constructor(client: LlmClient, chatManager?: ChatManager) {
-    this.client = client;
-    this.chatManager = chatManager;
-  }
+  private chatManager: ChatManager;
 
   /**
-   * Registers a chat manager to provide conversation history
-   * @param chatManager The chat manager instance
+   * Creates a new Orchestrator instance
+   * @param client The LLM client to use
+   * @param chatManager The chat manager for conversation history
    */
-  registerChatManager(chatManager: ChatManager): void {
+  constructor(client: LlmClient, chatManager: ChatManager) {
+    this.client = client;
     this.chatManager = chatManager;
   }
 
@@ -41,26 +39,32 @@ export class Orchestrator {
       // Process response for tool calls or other special handling
       const processedResponse = await this.processLlmResponse(response);
 
-      // Update message status if chat manager is available
-      if (this.chatManager) {
+      // Update message status
+      try {
         await this.chatManager.updateMessageStatus(
           message.chatId,
-          message.id,
+          processedResponse.parentId || message.id, // Use the parent ID from the response if available
           MessageStatus.SENT
         );
+      } catch (statusError) {
+        console.error("Error updating message status:", statusError);
+        // Continue despite status update error
       }
 
       return processedResponse;
     } catch (error) {
       console.error("Error processing message:", error);
 
-      // Update message status if chat manager is available
-      if (this.chatManager) {
+      // Update message status to ERROR
+      try {
         await this.chatManager.updateMessageStatus(
           message.chatId,
           message.id,
           MessageStatus.ERROR
         );
+      } catch (statusError) {
+        console.error("Error updating message status:", statusError);
+        // Continue despite status update error
       }
 
       throw error;
@@ -76,7 +80,7 @@ export class Orchestrator {
     const eventEmitter = new EventEmitter();
 
     try {
-      // Get chat history if chat manager is available
+      // Get chat history
       const chatHistory = await this.getChatHistory(message.chatId);
 
       // Enhance message with context and tools
@@ -98,31 +102,43 @@ export class Orchestrator {
       });
 
       stream.on(LlmStreamEvent.END, async (response: LlmResponse) => {
-        // Process final response
-        fullResponse = await this.processLlmResponse(response);
+        try {
+          // Process final response
+          fullResponse = await this.processLlmResponse(response);
 
-        // Update message status if chat manager is available
-        if (this.chatManager) {
-          await this.chatManager.updateMessageStatus(
-            message.chatId,
-            message.id,
-            MessageStatus.SENT
-          );
+          // Update message status
+          try {
+            await this.chatManager.updateMessageStatus(
+              message.chatId,
+              fullResponse.parentId || message.id, // Use the parent ID from the response if available
+              MessageStatus.SENT
+            );
+          } catch (statusError) {
+            console.error("Error updating message status:", statusError);
+            // Continue despite status update error
+          }
+        } catch (processingError) {
+          console.error("Error processing final response:", processingError);
+          fullResponse = response; // Use original response if processing fails
+        } finally {
+          // Always emit the END event, even if there were errors
+          eventEmitter.emit(LlmStreamEvent.END, fullResponse || response);
         }
-
-        eventEmitter.emit(LlmStreamEvent.END, fullResponse);
       });
 
       stream.on(LlmStreamEvent.ERROR, async (error: Error) => {
         console.error("Error streaming response:", error);
 
-        // Update message status if chat manager is available
-        if (this.chatManager) {
+        // Update message status to ERROR
+        try {
           await this.chatManager.updateMessageStatus(
             message.chatId,
             message.id,
             MessageStatus.ERROR
           );
+        } catch (statusError) {
+          console.error("Error updating message status:", statusError);
+          // Continue despite status update error
         }
 
         eventEmitter.emit(LlmStreamEvent.ERROR, error);
@@ -130,13 +146,16 @@ export class Orchestrator {
     } catch (error) {
       console.error("Error setting up message stream:", error);
 
-      // Update message status if chat manager is available
-      if (this.chatManager) {
+      // Update message status to ERROR
+      try {
         await this.chatManager.updateMessageStatus(
           message.chatId,
           message.id,
           MessageStatus.ERROR
         );
+      } catch (statusError) {
+        console.error("Error updating message status:", statusError);
+        // Continue despite status update error
       }
 
       eventEmitter.emit(LlmStreamEvent.ERROR, error);
@@ -153,22 +172,20 @@ export class Orchestrator {
   private async getChatHistory(chatId: string): Promise<LlmMessage[]> {
     let chatHistory: LlmMessage[] = [];
 
-    if (this.chatManager) {
-      try {
-        const chat = await this.chatManager.getChat(chatId);
-        // Convert chat messages to LLM messages
-        chatHistory = chat.messages.map((m) => ({
-          id: m.id,
-          chatId: m.chatId,
-          content: m.content,
-          role: m.role,
-          status: m.status,
-          created: m.created,
-          parentId: m.parentId
-        }));
-      } catch (error) {
-        console.error("Error getting chat history:", error);
-      }
+    try {
+      const chat = await this.chatManager.getChat(chatId);
+      // Convert chat messages to LLM messages
+      chatHistory = chat.messages.map((m) => ({
+        id: m.id,
+        chatId: m.chatId,
+        content: m.content,
+        role: m.role,
+        status: m.status,
+        created: m.created,
+        parentId: m.parentId
+      }));
+    } catch (error) {
+      console.error("Error getting chat history:", error);
     }
 
     return chatHistory;

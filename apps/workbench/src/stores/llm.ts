@@ -5,69 +5,66 @@ import { MessageStatus } from "@piddie/chat-management";
 import settingsManager from "./settings-db";
 import type { LlmProviderConfig, ModelInfo } from "./settings-db";
 
-enum LlmStreamEvent {
-  DATA = "data",
-  END = "end",
-  ERROR = "error"
-}
+// Import from the llm-integration package
+import { createLlmAdapter, LlmStreamEvent } from "@piddie/llm-integration";
 
-// Mock implementation of the LLM adapter until the real one is available
-function createLlmAdapter(config: LlmProviderConfig) {
-  // This is a mock implementation that will be replaced with the real one
-  return {
-    processMessage: async (message: any) => {
-      // Simulate a delay
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+// Remove the local mock implementation and use the real one from the package
+// function createLlmAdapter(config: LlmProviderConfig) {
+//   // This is a mock implementation that will be replaced with the real one
+//   return {
+//     processMessage: async (message: any) => {
+//       // Simulate a delay
+//       await new Promise((resolve) => setTimeout(resolve, 1000));
 
-      // Return a mock response
-      return {
-        id: crypto.randomUUID(),
-        chatId: message.chatId,
-        content: `This is a mock response to: "${message.content}"`,
-        role: "assistant",
-        created: new Date(),
-        parentId: message.id
-      };
-    },
-    processMessageStream: async (message: any) => {
-      // Create an event emitter
-      const eventEmitter = new EventTarget();
+//       // Return a mock response
+//       return {
+//         id: crypto.randomUUID(),
+//         chatId: message.chatId,
+//         content: `This is a mock response to: "${message.content}"`,
+//         role: "assistant",
+//         created: new Date(),
+//         parentId: message.id
+//       };
+//     },
+//     processMessageStream: async (message: any) => {
+//       // Create an event emitter
+//       const eventEmitter = new EventTarget();
 
-      // Simulate streaming with a delay
-      setTimeout(() => {
-        const response = {
-          id: crypto.randomUUID(),
-          chatId: message.chatId,
-          content: `This is a mock response to: "${message.content}"`,
-          role: "assistant",
-          created: new Date(),
-          parentId: message.id
-        };
+//       // Simulate streaming with a delay
+//       setTimeout(() => {
+//         const response = {
+//           id: crypto.randomUUID(),
+//           chatId: message.chatId,
+//           content: `This is a mock response to: "${message.content}"`,
+//           role: "assistant",
+//           created: new Date(),
+//           parentId: message.id
+//         };
 
-        // Emit the data event
-        eventEmitter.dispatchEvent(
-          new CustomEvent(LlmStreamEvent.DATA, { detail: response })
-        );
+//         // Emit the data event
+//         eventEmitter.dispatchEvent(
+//           new CustomEvent(LlmStreamEvent.DATA, { detail: response })
+//         );
 
-        // Emit the end event
-        eventEmitter.dispatchEvent(
-          new CustomEvent(LlmStreamEvent.END, { detail: response })
-        );
-      }, 1000);
+//         // Emit the end event
+//         eventEmitter.dispatchEvent(
+//           new CustomEvent(LlmStreamEvent.END, { detail: response })
+//         );
+//       }, 1000);
 
-      // Add event listener methods to make it compatible with the expected interface
-      return {
-        on: (event: string, callback: (data: any) => void) => {
-          eventEmitter.addEventListener(event, (e: Event) => {
-            const customEvent = e as CustomEvent;
-            callback(customEvent.detail);
-          });
-          return eventEmitter;
-        }
-      };
-    }
-  };
-}
+//       // Add event listener methods to make it compatible with the expected interface
+//       return {
+//         on: (event: string, callback: (data: any) => void) => {
+//           eventEmitter.addEventListener(event, (e: Event) => {
+//             const customEvent = e as CustomEvent;
+//             callback(customEvent.detail);
+//           });
+//           return eventEmitter;
+//         }
+//       };
+//     }
+//   };
+// }
 
 export const useLlmStore = defineStore("llm", () => {
   const chatStore = useChatStore();
@@ -84,11 +81,12 @@ export const useLlmStore = defineStore("llm", () => {
   const config = reactive<LlmProviderConfig>({
     apiKey: "",
     baseUrl: "https://api.openai.com/v1",
-    defaultModel: "gpt-3.5-turbo"
+    defaultModel: "gpt-3.5-turbo",
+    provider: "openai" // Set default provider
   });
 
-  // LLM adapter instance
-  let llmAdapter = createLlmAdapter(config);
+  // LLM adapter instance - pass the chat manager for conversation history
+  let llmAdapter = createLlmAdapter(config, chatStore.chatManager);
 
   // Load settings from database on store initialization
   onMounted(async () => {
@@ -108,7 +106,7 @@ export const useLlmStore = defineStore("llm", () => {
       }
 
       // Recreate the adapter with the loaded configuration
-      llmAdapter = createLlmAdapter(config);
+      llmAdapter = createLlmAdapter(config, chatStore.chatManager);
     } catch (err) {
       console.error("Error loading LLM settings:", err);
       error.value = err instanceof Error ? err : new Error(String(err));
@@ -164,7 +162,7 @@ export const useLlmStore = defineStore("llm", () => {
       Object.assign(config, updatedConfig);
 
       // Recreate the adapter with the new configuration
-      llmAdapter = createLlmAdapter(config);
+      llmAdapter = createLlmAdapter(config, chatStore.chatManager);
 
       return true;
     } catch (err) {
@@ -186,7 +184,7 @@ export const useLlmStore = defineStore("llm", () => {
       Object.assign(config, defaultConfig);
 
       // Recreate the adapter with the default configuration
-      llmAdapter = createLlmAdapter(config);
+      llmAdapter = createLlmAdapter(config, chatStore.chatManager);
 
       return true;
     } catch (err) {
@@ -209,7 +207,7 @@ export const useLlmStore = defineStore("llm", () => {
   ) {
     try {
       // Check if API key is set
-      if (!config.apiKey) {
+      if (!config.apiKey && config.provider !== "mock") {
         throw new Error(
           "API key is not set. Please configure your LLM settings."
         );
@@ -217,6 +215,7 @@ export const useLlmStore = defineStore("llm", () => {
 
       error.value = null;
       isProcessing.value = true;
+      isStreaming.value = useStreaming;
 
       // If no chatId is provided, create a new chat
       if (!chatId) {
@@ -227,12 +226,20 @@ export const useLlmStore = defineStore("llm", () => {
       // Add the user message to the chat
       const userMessage = await chatStore.addMessage(chatId, content, "user");
 
-      // Create a placeholder for the assistant's response
+      // Get the model name to use as the username for the assistant message
+      const modelName =
+        config.defaultModel === "mock-model"
+          ? "Mock Model"
+          : config.defaultModel;
+
+      // Create a placeholder for the assistant's response with SENDING status
       const assistantMessage = await chatStore.addMessage(
         chatId,
         "",
         "assistant",
-        userMessage.id
+        userMessage.id,
+        modelName, // Pass the model name as the username
+        MessageStatus.SENDING // Set initial status to SENDING
       );
 
       // Convert the message to the format expected by the LLM adapter
@@ -246,11 +253,16 @@ export const useLlmStore = defineStore("llm", () => {
         parentId: userMessage.parentId
       };
 
-      if (useStreaming) {
-        // Use streaming for a better user experience
-        isStreaming.value = true;
-        streamingMessageId.value = assistantMessage.id;
+      // Reset streaming message ID
+      streamingMessageId.value = assistantMessage.id;
 
+      const finalizeProcessing = () => {
+        isStreaming.value = false;
+        isProcessing.value = false;
+        streamingMessageId.value = null;
+      };
+
+      if (useStreaming) {
         const stream = await llmAdapter.processMessageStream(llmMessage);
 
         stream.on(LlmStreamEvent.DATA, (chunk: { content: string }) => {
@@ -259,22 +271,18 @@ export const useLlmStore = defineStore("llm", () => {
         });
 
         stream.on(LlmStreamEvent.END, () => {
-          isStreaming.value = false;
-          streamingMessageId.value = null;
-          isProcessing.value = false;
+          // Let the orchestrator handle status updates
+          // We only need to finalize processing on our end
+          finalizeProcessing();
         });
 
         stream.on(LlmStreamEvent.ERROR, (err: Error) => {
+          // Set error value
           error.value = err;
-          isStreaming.value = false;
-          streamingMessageId.value = null;
-          isProcessing.value = false;
 
-          // Update the message status to error
-          chatStore.updateMessageStatus(
-            assistantMessage.id,
-            MessageStatus.ERROR
-          );
+          // Let the orchestrator handle status updates
+          // We only need to finalize processing on our end
+          finalizeProcessing();
         });
       } else {
         // Use non-streaming for simpler implementation
@@ -282,12 +290,19 @@ export const useLlmStore = defineStore("llm", () => {
 
         // Update the assistant message with the response
         chatStore.updateMessageContent(assistantMessage.id, response.content);
-        isProcessing.value = false;
+
+        // Let the orchestrator handle status updates
+        // We only need to finalize processing on our end
+        finalizeProcessing();
       }
     } catch (err) {
       console.error("Error sending message:", err);
       error.value = err instanceof Error ? err : new Error(String(err));
+
+      // Ensure states are reset in case of an error
+      isStreaming.value = false;
       isProcessing.value = false;
+      streamingMessageId.value = null;
     }
   }
 
