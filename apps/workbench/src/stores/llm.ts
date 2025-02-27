@@ -8,64 +8,6 @@ import type { LlmProviderConfig, ModelInfo } from "./settings-db";
 // Import from the llm-integration package
 import { createLlmAdapter, LlmStreamEvent } from "@piddie/llm-integration";
 
-// Remove the local mock implementation and use the real one from the package
-// function createLlmAdapter(config: LlmProviderConfig) {
-//   // This is a mock implementation that will be replaced with the real one
-//   return {
-//     processMessage: async (message: any) => {
-//       // Simulate a delay
-//       await new Promise((resolve) => setTimeout(resolve, 1000));
-
-//       // Return a mock response
-//       return {
-//         id: crypto.randomUUID(),
-//         chatId: message.chatId,
-//         content: `This is a mock response to: "${message.content}"`,
-//         role: "assistant",
-//         created: new Date(),
-//         parentId: message.id
-//       };
-//     },
-//     processMessageStream: async (message: any) => {
-//       // Create an event emitter
-//       const eventEmitter = new EventTarget();
-
-//       // Simulate streaming with a delay
-//       setTimeout(() => {
-//         const response = {
-//           id: crypto.randomUUID(),
-//           chatId: message.chatId,
-//           content: `This is a mock response to: "${message.content}"`,
-//           role: "assistant",
-//           created: new Date(),
-//           parentId: message.id
-//         };
-
-//         // Emit the data event
-//         eventEmitter.dispatchEvent(
-//           new CustomEvent(LlmStreamEvent.DATA, { detail: response })
-//         );
-
-//         // Emit the end event
-//         eventEmitter.dispatchEvent(
-//           new CustomEvent(LlmStreamEvent.END, { detail: response })
-//         );
-//       }, 1000);
-
-//       // Add event listener methods to make it compatible with the expected interface
-//       return {
-//         on: (event: string, callback: (data: any) => void) => {
-//           eventEmitter.addEventListener(event, (e: Event) => {
-//             const customEvent = e as CustomEvent;
-//             callback(customEvent.detail);
-//           });
-//           return eventEmitter;
-//         }
-//       };
-//     }
-//   };
-// }
-
 export const useLlmStore = defineStore("llm", () => {
   const chatStore = useChatStore();
   const isStreaming = ref(false);
