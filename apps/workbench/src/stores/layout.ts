@@ -1,7 +1,7 @@
 import { ref, reactive, onMounted } from "vue";
 import { defineStore } from "pinia";
 import settingsManager from "./settings-db";
-import { LayoutSettingKey } from "./settings-db";
+import { WorkbenchSettingKey } from "./settings-db";
 
 export const useLayoutStore = defineStore("layout", () => {
   // Reactive layout settings object
@@ -22,17 +22,18 @@ export const useLayoutStore = defineStore("layout", () => {
       isLoading.value = true;
 
       // Load each setting individually
-      layout.fileExplorerWidth = await settingsManager.getLayoutSetting(
-        LayoutSettingKey.FILE_EXPLORER_WIDTH
+      layout.fileExplorerWidth = await settingsManager.getWorkbenchSetting(
+        WorkbenchSettingKey.FILE_EXPLORER_WIDTH
       );
-      layout.chatPanelWidth = await settingsManager.getLayoutSetting(
-        LayoutSettingKey.CHAT_PANEL_WIDTH
+      layout.chatPanelWidth = await settingsManager.getWorkbenchSetting(
+        WorkbenchSettingKey.CHAT_PANEL_WIDTH
       );
-      layout.isFileExplorerCollapsed = await settingsManager.getLayoutSetting(
-        LayoutSettingKey.IS_FILE_EXPLORER_COLLAPSED
-      );
-      layout.isChatPanelCollapsed = await settingsManager.getLayoutSetting(
-        LayoutSettingKey.IS_CHAT_PANEL_COLLAPSED
+      layout.isFileExplorerCollapsed =
+        await settingsManager.getWorkbenchSetting(
+          WorkbenchSettingKey.IS_FILE_EXPLORER_COLLAPSED
+        );
+      layout.isChatPanelCollapsed = await settingsManager.getWorkbenchSetting(
+        WorkbenchSettingKey.IS_CHAT_PANEL_COLLAPSED
       );
 
       console.log("Layout store: Loaded settings", layout);
@@ -60,32 +61,32 @@ export const useLayoutStore = defineStore("layout", () => {
 
       // Update each setting individually
       if (settings.fileExplorerWidth !== undefined) {
-        await settingsManager.updateLayoutSetting(
-          LayoutSettingKey.FILE_EXPLORER_WIDTH,
+        await settingsManager.updateWorkbenchSetting(
+          WorkbenchSettingKey.FILE_EXPLORER_WIDTH,
           settings.fileExplorerWidth
         );
         layout.fileExplorerWidth = settings.fileExplorerWidth;
       }
 
       if (settings.chatPanelWidth !== undefined) {
-        await settingsManager.updateLayoutSetting(
-          LayoutSettingKey.CHAT_PANEL_WIDTH,
+        await settingsManager.updateWorkbenchSetting(
+          WorkbenchSettingKey.CHAT_PANEL_WIDTH,
           settings.chatPanelWidth
         );
         layout.chatPanelWidth = settings.chatPanelWidth;
       }
 
       if (settings.isFileExplorerCollapsed !== undefined) {
-        await settingsManager.updateLayoutSetting(
-          LayoutSettingKey.IS_FILE_EXPLORER_COLLAPSED,
+        await settingsManager.updateWorkbenchSetting(
+          WorkbenchSettingKey.IS_FILE_EXPLORER_COLLAPSED,
           settings.isFileExplorerCollapsed
         );
         layout.isFileExplorerCollapsed = settings.isFileExplorerCollapsed;
       }
 
       if (settings.isChatPanelCollapsed !== undefined) {
-        await settingsManager.updateLayoutSetting(
-          LayoutSettingKey.IS_CHAT_PANEL_COLLAPSED,
+        await settingsManager.updateWorkbenchSetting(
+          WorkbenchSettingKey.IS_CHAT_PANEL_COLLAPSED,
           settings.isChatPanelCollapsed
         );
         layout.isChatPanelCollapsed = settings.isChatPanelCollapsed;

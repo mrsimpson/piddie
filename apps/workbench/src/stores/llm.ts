@@ -24,6 +24,7 @@ export const useLlmStore = defineStore("llm", () => {
     apiKey: "",
     baseUrl: "https://api.openai.com/v1",
     defaultModel: "gpt-3.5-turbo",
+    selectedModel: "gpt-3.5-turbo",
     provider: "openai" // Set default provider
   });
 
@@ -34,10 +35,15 @@ export const useLlmStore = defineStore("llm", () => {
   onMounted(async () => {
     try {
       isLoading.value = true;
+
+      // Load LLM config
       const loadedConfig = await settingsManager.getLlmConfig();
 
+      // Load selected provider from workbench settings
+      const selectedProvider = await settingsManager.getSelectedProvider();
+
       // Update the reactive config object
-      Object.assign(config, loadedConfig);
+      Object.assign(config, loadedConfig, { provider: selectedProvider });
 
       // Set available models if they exist
       if (
@@ -97,11 +103,23 @@ export const useLlmStore = defineStore("llm", () => {
    */
   async function updateConfig(newConfig: Partial<LlmProviderConfig>) {
     try {
-      // Update the database
-      const updatedConfig = await settingsManager.updateLlmConfig(newConfig);
+      // If provider is being updated, save it to workbench settings
+      if (newConfig.provider) {
+        await settingsManager.updateSelectedProvider(newConfig.provider);
+      }
 
-      // Update the reactive config object
-      Object.assign(config, updatedConfig);
+      // Remove provider from newConfig as it's stored in workbench settings
+      const { provider, ...configWithoutProvider } = newConfig;
+
+      // Update the database
+      const updatedConfig = await settingsManager.updateLlmConfig(
+        configWithoutProvider
+      );
+
+      // Update the reactive config object with both the updated config and provider
+      Object.assign(config, updatedConfig, {
+        provider: provider || config.provider
+      });
 
       // Recreate the adapter with the new configuration
       llmAdapter = createLlmAdapter(config, chatStore.chatManager);
@@ -122,8 +140,11 @@ export const useLlmStore = defineStore("llm", () => {
       // Reset the database
       const defaultConfig = await settingsManager.resetLlmConfig();
 
+      // Reset the selected provider to default
+      await settingsManager.updateSelectedProvider("openai");
+
       // Update the reactive config object
-      Object.assign(config, defaultConfig);
+      Object.assign(config, defaultConfig, { provider: "openai" });
 
       // Recreate the adapter with the default configuration
       llmAdapter = createLlmAdapter(config, chatStore.chatManager);
@@ -175,9 +196,9 @@ export const useLlmStore = defineStore("llm", () => {
 
       // Get the model name to use as the username for the assistant message
       const modelName =
-        config.defaultModel === "mock-model"
+        config.provider === "mock"
           ? "Mock Model"
-          : config.defaultModel;
+          : config.selectedModel || config.defaultModel;
 
       // Create a placeholder for the assistant's response with SENDING status
       const assistantMessage = await chatStore.addMessage(

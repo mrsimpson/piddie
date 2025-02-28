@@ -63,8 +63,8 @@ watch(
   (newConfig) => {
     apiKey.value = newConfig.apiKey;
     baseUrl.value = newConfig.baseUrl;
-    model.value = newConfig.defaultModel;
     provider.value = newConfig.provider || "openai";
+    model.value = newConfig.selectedModel || newConfig.defaultModel;
   },
   { deep: true }
 );
@@ -74,9 +74,10 @@ watch(
   () => provider.value,
   (newProvider) => {
     if (newProvider === "mock") {
+      // Use the previously selected mock model or default to "mock-model"
       model.value = "mock-model";
     } else if (model.value === "mock-model") {
-      // If switching from mock to openai, set a default OpenAI model
+      // If switching from mock to openai, use the previously selected OpenAI model
       model.value = "gpt-3.5-turbo";
     }
   }
@@ -102,8 +103,10 @@ watch(
 onMounted(() => {
   apiKey.value = llmStore.config.apiKey;
   baseUrl.value = llmStore.config.baseUrl;
-  model.value = llmStore.config.defaultModel;
   provider.value = llmStore.config.provider || "openai";
+
+  // Get the selected model for the current provider
+  model.value = llmStore.config.selectedModel || llmStore.config.defaultModel;
 });
 
 // Save settings to store
@@ -115,6 +118,7 @@ async function saveSettings() {
       apiKey: apiKey.value,
       baseUrl: baseUrl.value,
       defaultModel: model.value,
+      selectedModel: model.value,
       provider: provider.value
     });
 
@@ -150,7 +154,8 @@ async function verifyConnection() {
       apiKey: apiKey.value,
       baseUrl: baseUrl.value,
       defaultModel: model.value,
-      provider: provider.value
+      selectedModel: model.value,
+      provider: provider.value // This will be saved to workbench settings
     });
 
     // Now verify with the saved config

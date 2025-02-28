@@ -7,6 +7,7 @@ export interface LlmProviderConfig {
   apiKey: string;
   baseUrl: string;
   defaultModel: string;
+  selectedModel?: string;
   provider?: "openai" | "mock";
   availableModels?: ModelInfo[];
 }
@@ -21,17 +22,26 @@ export interface ModelInfo {
 }
 
 /**
- * Interface for individual layout setting
+ * Interface for individual workbench setting
  */
-export interface LayoutSetting {
-  key: LayoutSettingKey;
+export interface WorkbenchSetting {
+  key: WorkbenchSettingKey;
   value: any;
   lastUpdated: Date;
 }
 
 /**
- * Enum for layout setting keys
+ * Enum for workbench setting keys
  */
+export enum WorkbenchSettingKey {
+  FILE_EXPLORER_WIDTH = "fileExplorerWidth",
+  CHAT_PANEL_WIDTH = "chatPanelWidth",
+  IS_FILE_EXPLORER_COLLAPSED = "isFileExplorerCollapsed",
+  IS_CHAT_PANEL_COLLAPSED = "isChatPanelCollapsed",
+  SELECTED_PROVIDER = "selectedProvider"
+}
+
+// Keep these for migration purposes
 export enum LayoutSettingKey {
   FILE_EXPLORER_WIDTH = "fileExplorerWidth",
   CHAT_PANEL_WIDTH = "chatPanelWidth",
@@ -39,12 +49,19 @@ export enum LayoutSettingKey {
   IS_CHAT_PANEL_COLLAPSED = "isChatPanelCollapsed"
 }
 
+export interface LayoutSetting {
+  key: LayoutSettingKey;
+  value: any;
+  lastUpdated: Date;
+}
+
 /**
  * Database schema for application settings
  */
 export class SettingsDatabase extends Dexie {
   llmConfig!: Dexie.Table<LlmProviderConfig, string>;
-  layout!: Dexie.Table<LayoutSetting, LayoutSettingKey>;
+  workbench!: Dexie.Table<WorkbenchSetting, WorkbenchSettingKey>;
+  layout!: Dexie.Table<LayoutSetting, LayoutSettingKey>; // Keep for migration
 
   constructor() {
     super("piddie-settings");
@@ -53,6 +70,66 @@ export class SettingsDatabase extends Dexie {
       llmConfig: "provider",
       layout: "key, lastUpdated"
     });
+
+    this.version(7)
+      .stores({
+        llmConfig: "provider",
+        workbench: "key, lastUpdated",
+        layout: null // Mark for deletion after migration
+      })
+      .upgrade(async (tx) => {
+        console.log("Migrating from layout to workbench table");
+
+        // Get all layout settings
+        const layoutSettings = await tx.table("layout").toArray();
+
+        // Convert layout settings to workbench settings
+        const workbenchSettings = layoutSettings.map((setting) => {
+          // Map old keys to new keys
+          let newKey: WorkbenchSettingKey;
+
+          switch (setting.key) {
+            case LayoutSettingKey.FILE_EXPLORER_WIDTH:
+              newKey = WorkbenchSettingKey.FILE_EXPLORER_WIDTH;
+              break;
+            case LayoutSettingKey.CHAT_PANEL_WIDTH:
+              newKey = WorkbenchSettingKey.CHAT_PANEL_WIDTH;
+              break;
+            case LayoutSettingKey.IS_FILE_EXPLORER_COLLAPSED:
+              newKey = WorkbenchSettingKey.IS_FILE_EXPLORER_COLLAPSED;
+              break;
+            case LayoutSettingKey.IS_CHAT_PANEL_COLLAPSED:
+              newKey = WorkbenchSettingKey.IS_CHAT_PANEL_COLLAPSED;
+              break;
+            default:
+              newKey = setting.key as unknown as WorkbenchSettingKey;
+          }
+
+          return {
+            key: newKey,
+            value: setting.value,
+            lastUpdated: setting.lastUpdated
+          };
+        });
+
+        // Add default selected provider if it doesn't exist
+        const hasSelectedProvider = workbenchSettings.some(
+          (setting) => setting.key === WorkbenchSettingKey.SELECTED_PROVIDER
+        );
+
+        if (!hasSelectedProvider) {
+          workbenchSettings.push({
+            key: WorkbenchSettingKey.SELECTED_PROVIDER,
+            value: "openai",
+            lastUpdated: new Date()
+          });
+        }
+
+        // Add workbench settings to the new table
+        await tx.table("workbench").bulkAdd(workbenchSettings);
+
+        console.log("Migration complete");
+      });
   }
 }
 
@@ -63,6 +140,7 @@ export const DEFAULT_LLM_CONFIG: LlmProviderConfig = {
   apiKey: import.meta.env.VITE_OPENAI_API_KEY || "",
   baseUrl: import.meta.env.VITE_OPENAI_BASE_URL || "https://api.openai.com/v1",
   defaultModel: import.meta.env.VITE_OPENAI_MODEL || "gpt-3.5-turbo",
+  selectedModel: import.meta.env.VITE_OPENAI_MODEL || "gpt-3.5-turbo",
   provider: "openai",
   availableModels: []
 };
@@ -75,6 +153,17 @@ export const DEFAULT_LAYOUT_SETTINGS = {
   [LayoutSettingKey.CHAT_PANEL_WIDTH]: 300,
   [LayoutSettingKey.IS_FILE_EXPLORER_COLLAPSED]: false,
   [LayoutSettingKey.IS_CHAT_PANEL_COLLAPSED]: false
+};
+
+/**
+ * Default workbench settings
+ */
+export const DEFAULT_WORKBENCH_SETTINGS = {
+  [WorkbenchSettingKey.FILE_EXPLORER_WIDTH]: 250,
+  [WorkbenchSettingKey.CHAT_PANEL_WIDTH]: 300,
+  [WorkbenchSettingKey.IS_FILE_EXPLORER_COLLAPSED]: false,
+  [WorkbenchSettingKey.IS_CHAT_PANEL_COLLAPSED]: false,
+  [WorkbenchSettingKey.SELECTED_PROVIDER]: "openai"
 };
 
 /**
@@ -104,29 +193,29 @@ export class SettingsManager {
   }
 
   /**
-   * Gets a specific layout setting
+   * Gets a specific workbench setting
    * @param key The setting key to retrieve
-   * @returns The layout setting value
+   * @returns The workbench setting value
    */
-  async getLayoutSetting(key: LayoutSettingKey): Promise<any> {
-    console.log(`Getting layout setting for key: ${key}`);
+  async getWorkbenchSetting(key: WorkbenchSettingKey): Promise<any> {
+    console.log(`Getting workbench setting for key: ${key}`);
 
     // Try to find the setting
-    const setting = await this.db.layout.get(key);
+    const setting = await this.db.workbench.get(key);
 
     // If setting doesn't exist, create and return default
     if (!setting) {
       console.log(`No setting found for ${key}. Using default.`);
-      const defaultValue = DEFAULT_LAYOUT_SETTINGS[key];
+      const defaultValue = DEFAULT_WORKBENCH_SETTINGS[key];
 
       // Add the default setting to the database
-      const defaultSetting: LayoutSetting = {
+      const defaultSetting: WorkbenchSetting = {
         key,
         value: defaultValue,
         lastUpdated: new Date()
       };
 
-      await this.db.layout.add(defaultSetting);
+      await this.db.workbench.add(defaultSetting);
 
       return defaultValue;
     }
@@ -136,48 +225,72 @@ export class SettingsManager {
   }
 
   /**
-   * Updates a specific layout setting
+   * Updates a specific workbench setting
    * @param key The setting key to update
    * @param value The new value for the setting
    */
-  async updateLayoutSetting(key: LayoutSettingKey, value: any): Promise<void> {
-    console.log(`Updating layout setting for key: ${key}`, value);
+  async updateWorkbenchSetting(
+    key: WorkbenchSettingKey,
+    value: any
+  ): Promise<void> {
+    console.log(`Updating workbench setting for key: ${key}`, value);
 
     // Create the setting object with the key
-    const setting: LayoutSetting = {
+    const setting: WorkbenchSetting = {
       key,
       value,
       lastUpdated: new Date()
     };
 
     // Update or add the setting
-    await this.db.layout.put(setting);
+    await this.db.workbench.put(setting);
   }
 
   /**
-   * Gets all layout settings
-   * @returns An object with all layout settings
+   * Gets all workbench settings
+   * @returns An object with all workbench settings
    */
-  async getLayoutSettings(): Promise<Record<LayoutSettingKey, any>> {
-    const settings: Partial<Record<LayoutSettingKey, any>> = {};
+  async getWorkbenchSettings(): Promise<Record<WorkbenchSettingKey, any>> {
+    const settings: Partial<Record<WorkbenchSettingKey, any>> = {};
 
-    for (const key of Object.values(LayoutSettingKey)) {
-      settings[key] = await this.getLayoutSetting(key);
+    for (const key of Object.values(WorkbenchSettingKey)) {
+      settings[key] = await this.getWorkbenchSetting(key);
     }
 
-    return settings as Record<LayoutSettingKey, any>;
+    return settings as Record<WorkbenchSettingKey, any>;
   }
 
   /**
-   * Updates multiple layout settings
-   * @param settings Partial layout settings to update
+   * Updates multiple workbench settings
+   * @param settings Partial workbench settings to update
    */
-  async updateLayoutSettings(
-    settings: Partial<Record<LayoutSettingKey, any>>
+  async updateWorkbenchSettings(
+    settings: Partial<Record<WorkbenchSettingKey, any>>
   ): Promise<void> {
     for (const [key, value] of Object.entries(settings)) {
-      await this.updateLayoutSetting(key as LayoutSettingKey, value);
+      await this.updateWorkbenchSetting(key as WorkbenchSettingKey, value);
     }
+  }
+
+  /**
+   * Gets the selected provider from workbench settings
+   * @returns The selected provider
+   */
+  async getSelectedProvider(): Promise<"openai" | "mock"> {
+    return this.getWorkbenchSetting(
+      WorkbenchSettingKey.SELECTED_PROVIDER
+    ) as Promise<"openai" | "mock">;
+  }
+
+  /**
+   * Updates the selected provider in workbench settings
+   * @param provider The provider to select
+   */
+  async updateSelectedProvider(provider: "openai" | "mock"): Promise<void> {
+    await this.updateWorkbenchSetting(
+      WorkbenchSettingKey.SELECTED_PROVIDER,
+      provider
+    );
   }
 
   /**

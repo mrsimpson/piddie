@@ -45,7 +45,7 @@ const leftPanelWidth = computed(() => {
 async function loadPanelWidths() {
   try {
     console.group("ProjectView: Load Panel Widths");
-    const settings = await settingsManager.getLayoutSettings();
+    const settings = await settingsManager.getWorkbenchSettings();
     console.log("Loaded settings:", settings);
 
     fileExplorerWidth.value = settings.fileExplorerWidth;
@@ -77,7 +77,7 @@ async function savePanelWidths() {
       isChatPanelCollapsed: isChatPanelCollapsed.value
     });
 
-    await settingsManager.updateLayoutSettings({
+    await settingsManager.updateWorkbenchSettings({
       fileExplorerWidth: fileExplorerWidth.value,
       chatPanelWidth: chatPanelWidth.value,
       isFileExplorerCollapsed: isFileExplorerCollapsed.value,

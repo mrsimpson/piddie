@@ -34,6 +34,7 @@ export interface LlmProviderConfig {
   apiKey: string;
   baseUrl: string;
   defaultModel: string;
+  selectedModel?: string;
   provider?: "openai" | "mock";
 }
 
