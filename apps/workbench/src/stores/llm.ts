@@ -6,7 +6,11 @@ import settingsManager from "./settings-db";
 import type { LlmProviderConfig, ModelInfo } from "./settings-db";
 
 // Import from the llm-integration package
-import { createLlmAdapter, LlmStreamEvent } from "@piddie/llm-integration";
+import {
+  createLlmAdapter,
+  LlmStreamEvent,
+  type LlmResponse
+} from "@piddie/llm-integration";
 
 export const useLlmStore = defineStore("llm", () => {
   const chatStore = useChatStore();
@@ -232,11 +236,11 @@ export const useLlmStore = defineStore("llm", () => {
       if (useStreaming) {
         const stream = await llmAdapter.processMessageStream(llmMessage);
 
-        stream.on(LlmStreamEvent.DATA, (chunk: { content: unknown }) => {
+        stream.on(LlmStreamEvent.DATA, (chunk: unknown) => {
           // Update the assistant message with the new content
           chatStore.updateMessageContent(
             assistantMessage.id,
-            chunk.content as string
+            (chunk as LlmResponse).content as string
           );
         });
 

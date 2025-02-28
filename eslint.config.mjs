@@ -45,7 +45,8 @@ export default [
       ".pnpm-store/**",
       "pnpm-lock.yaml",
       "/packages/**",
-      "docs/.vitepress/cache/**"
+      "docs/.vitepress/cache/**",
+      "cline"
     ]
   }
 ];

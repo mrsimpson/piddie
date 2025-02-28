@@ -214,6 +214,9 @@ describe("LLM Adapter", () => {
         // Replace the mocked constructor to return our instance with the spy
         vi.mocked(EventEmitter).mockImplementationOnce(() => mockEmitter);
 
+        // Call processMessageStream which should trigger the error
+        await orchestrator.processMessageStream(message);
+
         // Verify message status was updated to ERROR
         expect(mockChatManager.updateMessageStatus).toHaveBeenCalledWith(
           message.chatId,

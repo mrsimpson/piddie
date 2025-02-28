@@ -48,10 +48,10 @@ async function loadPanelWidths() {
     const settings = await settingsManager.getWorkbenchSettings();
     console.log("Loaded settings:", settings);
 
-    fileExplorerWidth.value = settings.fileExplorerWidth;
-    chatPanelWidth.value = settings.chatPanelWidth;
-    isFileExplorerCollapsed.value = settings.isFileExplorerCollapsed;
-    isChatPanelCollapsed.value = settings.isChatPanelCollapsed;
+    fileExplorerWidth.value = settings.fileExplorerWidth as number;
+    chatPanelWidth.value = settings.chatPanelWidth as number;
+    isFileExplorerCollapsed.value = settings.isFileExplorerCollapsed as boolean;
+    isChatPanelCollapsed.value = settings.isChatPanelCollapsed as boolean;
 
     console.log("Applied panel widths:", {
       fileExplorerWidth: fileExplorerWidth.value,
