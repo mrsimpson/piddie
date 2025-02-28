@@ -2,7 +2,7 @@
  * A simple EventEmitter implementation for browser environments
  */
 export class EventEmitter {
-  private events: Record<string, Array<(data: any) => void>> = {};
+  private events: Record<string, Array<(data: unknown) => void>> = {};
 
   /**
    * Register an event handler
@@ -10,7 +10,7 @@ export class EventEmitter {
    * @param listener The event listener function
    * @returns This instance for chaining
    */
-  on(event: string, listener: (data: any) => void): EventEmitter {
+  on(event: string, listener: (data: unknown) => void): EventEmitter {
     if (!this.events[event]) {
       this.events[event] = [];
     }
@@ -23,7 +23,7 @@ export class EventEmitter {
    * @param event The event name
    * @param data The data to pass to listeners
    */
-  emit(event: string, data?: any): void {
+  emit(event: string, data?: unknown): void {
     const listeners = this.events[event];
     if (listeners) {
       listeners.forEach((listener) => listener(data));
@@ -36,7 +36,7 @@ export class EventEmitter {
    * @param listener The listener to remove
    * @returns This instance for chaining
    */
-  off(event: string, listener: (data: any) => void): EventEmitter {
+  off(event: string, listener: (data: unknown) => void): EventEmitter {
     const listeners = this.events[event];
     if (listeners) {
       this.events[event] = listeners.filter((l) => l !== listener);
@@ -50,8 +50,8 @@ export class EventEmitter {
    * @param listener The event listener function
    * @returns This instance for chaining
    */
-  once(event: string, listener: (data: any) => void): EventEmitter {
-    const onceWrapper = (data: any) => {
+  once(event: string, listener: (data: unknown) => void): EventEmitter {
+    const onceWrapper = (data: unknown) => {
       listener(data);
       this.off(event, onceWrapper);
     };

@@ -22,19 +22,19 @@ export const useLayoutStore = defineStore("layout", () => {
       isLoading.value = true;
 
       // Load each setting individually
-      layout.fileExplorerWidth = await settingsManager.getWorkbenchSetting(
+      layout.fileExplorerWidth = (await settingsManager.getWorkbenchSetting(
         WorkbenchSettingKey.FILE_EXPLORER_WIDTH
-      );
-      layout.chatPanelWidth = await settingsManager.getWorkbenchSetting(
+      )) as number;
+      layout.chatPanelWidth = (await settingsManager.getWorkbenchSetting(
         WorkbenchSettingKey.CHAT_PANEL_WIDTH
-      );
+      )) as number;
       layout.isFileExplorerCollapsed =
-        await settingsManager.getWorkbenchSetting(
+        (await settingsManager.getWorkbenchSetting(
           WorkbenchSettingKey.IS_FILE_EXPLORER_COLLAPSED
-        );
-      layout.isChatPanelCollapsed = await settingsManager.getWorkbenchSetting(
+        )) as boolean;
+      layout.isChatPanelCollapsed = (await settingsManager.getWorkbenchSetting(
         WorkbenchSettingKey.IS_CHAT_PANEL_COLLAPSED
-      );
+      )) as boolean;
 
       console.log("Layout store: Loaded settings", layout);
     } catch (err) {

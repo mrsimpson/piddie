@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createLlmAdapter, createMockLlmAdapter } from "../src";
 import { Orchestrator } from "../src/orchestrator";
-import { MockLlmClient } from "../src/mock-client";
 import { OpenAiClient } from "../src/openai-client";
 import {
   LlmStreamEvent,
@@ -214,8 +213,6 @@ describe("LLM Adapter", () => {
 
         // Replace the mocked constructor to return our instance with the spy
         vi.mocked(EventEmitter).mockImplementationOnce(() => mockEmitter);
-
-        const eventEmitter = await orchestrator.processMessageStream(message);
 
         // Verify message status was updated to ERROR
         expect(mockChatManager.updateMessageStatus).toHaveBeenCalledWith(

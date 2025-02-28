@@ -95,16 +95,18 @@ export class Orchestrator {
       // Process stream chunks
       let fullResponse: LlmResponse | null = null;
 
-      stream.on(LlmStreamEvent.DATA, async (chunk: LlmResponse) => {
+      stream.on(LlmStreamEvent.DATA, async (chunk: unknown) => {
         // Process chunk for tool calls or other special handling
-        const processedChunk = await this.processLlmResponseChunk(chunk);
+        const processedChunk = await this.processLlmResponseChunk(
+          chunk as LlmResponse
+        );
         eventEmitter.emit(LlmStreamEvent.DATA, processedChunk);
       });
 
-      stream.on(LlmStreamEvent.END, async (response: LlmResponse) => {
+      stream.on(LlmStreamEvent.END, async (response: unknown) => {
         try {
           // Process final response
-          fullResponse = await this.processLlmResponse(response);
+          fullResponse = await this.processLlmResponse(response as LlmResponse);
 
           // Update message status
           try {
@@ -119,14 +121,14 @@ export class Orchestrator {
           }
         } catch (processingError) {
           console.error("Error processing final response:", processingError);
-          fullResponse = response; // Use original response if processing fails
+          fullResponse = response as LlmResponse; // Use original response if processing fails
         } finally {
           // Always emit the END event, even if there were errors
           eventEmitter.emit(LlmStreamEvent.END, fullResponse || response);
         }
       });
 
-      stream.on(LlmStreamEvent.ERROR, async (error: Error) => {
+      stream.on(LlmStreamEvent.ERROR, async (error: unknown) => {
         console.error("Error streaming response:", error);
 
         // Update message status to ERROR

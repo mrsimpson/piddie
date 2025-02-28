@@ -26,7 +26,7 @@ export interface ModelInfo {
  */
 export interface WorkbenchSetting {
   key: WorkbenchSettingKey;
-  value: any;
+  value: unknown;
   lastUpdated: Date;
 }
 
@@ -51,7 +51,7 @@ export enum LayoutSettingKey {
 
 export interface LayoutSetting {
   key: LayoutSettingKey;
-  value: any;
+  value: unknown;
   lastUpdated: Date;
 }
 
@@ -197,7 +197,7 @@ export class SettingsManager {
    * @param key The setting key to retrieve
    * @returns The workbench setting value
    */
-  async getWorkbenchSetting(key: WorkbenchSettingKey): Promise<any> {
+  async getWorkbenchSetting(key: WorkbenchSettingKey): Promise<unknown> {
     console.log(`Getting workbench setting for key: ${key}`);
 
     // Try to find the setting
@@ -231,7 +231,7 @@ export class SettingsManager {
    */
   async updateWorkbenchSetting(
     key: WorkbenchSettingKey,
-    value: any
+    value: unknown
   ): Promise<void> {
     console.log(`Updating workbench setting for key: ${key}`, value);
 
@@ -250,14 +250,14 @@ export class SettingsManager {
    * Gets all workbench settings
    * @returns An object with all workbench settings
    */
-  async getWorkbenchSettings(): Promise<Record<WorkbenchSettingKey, any>> {
-    const settings: Partial<Record<WorkbenchSettingKey, any>> = {};
+  async getWorkbenchSettings(): Promise<Record<WorkbenchSettingKey, unknown>> {
+    const settings: Partial<Record<WorkbenchSettingKey, unknown>> = {};
 
     for (const key of Object.values(WorkbenchSettingKey)) {
       settings[key] = await this.getWorkbenchSetting(key);
     }
 
-    return settings as Record<WorkbenchSettingKey, any>;
+    return settings as Record<WorkbenchSettingKey, unknown>;
   }
 
   /**
@@ -265,7 +265,7 @@ export class SettingsManager {
    * @param settings Partial workbench settings to update
    */
   async updateWorkbenchSettings(
-    settings: Partial<Record<WorkbenchSettingKey, any>>
+    settings: Partial<Record<WorkbenchSettingKey, unknown>>
   ): Promise<void> {
     for (const [key, value] of Object.entries(settings)) {
       await this.updateWorkbenchSetting(key as WorkbenchSettingKey, value);
@@ -358,10 +358,12 @@ export class SettingsManager {
 
       // Extract model information
       const models: ModelInfo[] = data.data
-        .map((model: any) => ({
-          id: model.id,
-          name: model.id.replace(/^gpt-/, "GPT ").replace(/-/g, " "),
-          created: model.created
+        .map((model: unknown) => ({
+          id: (model as ModelInfo).id,
+          name: (model as ModelInfo).id
+            .replace(/^gpt-/, "GPT ")
+            .replace(/-/g, " "),
+          created: (model as ModelInfo).created
         }))
         .sort((a: ModelInfo, b: ModelInfo) => {
           // Sort by creation date (newest first)

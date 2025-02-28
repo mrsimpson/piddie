@@ -232,9 +232,12 @@ export const useLlmStore = defineStore("llm", () => {
       if (useStreaming) {
         const stream = await llmAdapter.processMessageStream(llmMessage);
 
-        stream.on(LlmStreamEvent.DATA, (chunk: { content: string }) => {
+        stream.on(LlmStreamEvent.DATA, (chunk: { content: unknown }) => {
           // Update the assistant message with the new content
-          chatStore.updateMessageContent(assistantMessage.id, chunk.content);
+          chatStore.updateMessageContent(
+            assistantMessage.id,
+            chunk.content as string
+          );
         });
 
         stream.on(LlmStreamEvent.END, () => {
@@ -243,9 +246,9 @@ export const useLlmStore = defineStore("llm", () => {
           finalizeProcessing();
         });
 
-        stream.on(LlmStreamEvent.ERROR, (err: Error) => {
+        stream.on(LlmStreamEvent.ERROR, (err: unknown) => {
           // Set error value
-          error.value = err;
+          error.value = err instanceof Error ? err : new Error(String(err));
 
           // Let the orchestrator handle status updates
           // We only need to finalize processing on our end
