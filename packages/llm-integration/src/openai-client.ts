@@ -137,6 +137,9 @@ export class OpenAiClient implements LlmClient {
       parentId: message.id
     };
 
+    // Flag to track if we've had any successful chunks
+    let hasReceivedAnyChunks = false;
+
     // Start the streaming request
     const streamRequest = async () => {
       try {
@@ -198,6 +201,13 @@ export class OpenAiClient implements LlmClient {
 
             try {
               const chunk = JSON.parse(jsonLine) as OpenAIStreamResponse;
+
+              // Check if chunk and choices exist before accessing
+              if (!chunk || !chunk.choices || !Array.isArray(chunk.choices) || chunk.choices.length === 0) {
+                console.warn("Received malformed chunk from OpenAI API:", jsonLine);
+                continue;
+              }
+
               const choice = chunk.choices[0];
 
               if (!choice || !choice.delta) continue;
@@ -211,9 +221,15 @@ export class OpenAiClient implements LlmClient {
               ) {
                 response.content += deltaContent;
                 eventEmitter.emit(LlmStreamEvent.DATA, { ...response });
+                hasReceivedAnyChunks = true;
               }
             } catch (e) {
               console.error("Error parsing JSON from stream:", e, jsonLine);
+              // Log the raw response for debugging
+              console.error("Raw response that caused the error:", jsonLine);
+
+              // Don't emit an error event here, just log it and continue processing
+              // This allows the stream to continue even if one chunk is malformed
             }
           }
         }
@@ -222,7 +238,37 @@ export class OpenAiClient implements LlmClient {
         eventEmitter.emit(LlmStreamEvent.END, response);
       } catch (error) {
         console.error("Error streaming response:", error);
-        eventEmitter.emit(LlmStreamEvent.ERROR, error);
+
+        // Check if the error is related to the LiteLLM proxy serialization issue
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        if (errorMessage.includes("MockValSer") && errorMessage.includes("SchemaSerializer")) {
+          console.warn("Detected LiteLLM proxy serialization issue. This is likely a server-side configuration problem.");
+
+          // If we haven't received any chunks yet, try falling back to non-streaming API
+          if (!hasReceivedAnyChunks) {
+            console.log("Attempting to fall back to non-streaming API...");
+            try {
+              // Try to use the non-streaming API as a fallback
+              const fallbackResponse = await this.sendMessage(message);
+              eventEmitter.emit(LlmStreamEvent.DATA, fallbackResponse);
+              eventEmitter.emit(LlmStreamEvent.END, fallbackResponse);
+              return;
+            } catch (fallbackError) {
+              console.error("Fallback to non-streaming API also failed:", fallbackError);
+            }
+          }
+
+          // Create a more user-friendly error
+          const friendlyError = new Error(
+            "The LLM service encountered a serialization error. This is likely a server-side configuration issue. " +
+            "Please check your LLM provider settings or try again later."
+          );
+
+          eventEmitter.emit(LlmStreamEvent.ERROR, friendlyError);
+        } else {
+          // For other errors, just pass them through
+          eventEmitter.emit(LlmStreamEvent.ERROR, error);
+        }
       }
     };
 

@@ -50,13 +50,26 @@ async function createProject() {
         : firstLine
       : "New Project";
 
-  const project = await projectStore.createProject(projectName);
-  const chat = await chatStore.createChat({ projectId: project.id });
+  try {
+    // Create the project
+    const project = await projectStore.createProject(projectName);
 
-  // Use the LLM store to send the message, which will trigger the LLM interaction
-  await llmStore.sendMessage(projectPrompt.value, chat.id);
+    // Create a chat and explicitly set it as the current chat
+    const chat = await chatStore.createChat({ projectId: project.id });
 
-  router.push(`/projects/${project.id}`);
+    // Ensure the chat is loaded as the current chat
+    await chatStore.loadChat(chat.id);
+
+    // Use the LLM store to send the message, which will trigger the LLM interaction
+    // Wait for the message to be sent before navigating
+    await llmStore.sendMessage(projectPrompt.value, chat.id);
+
+    // Navigate to the project page
+    router.push(`/projects/${project.id}`);
+  } catch (error) {
+    console.error("Error creating project:", error);
+    // Handle error (could add error display to the UI)
+  }
 }
 
 function useTemplate(prompt: string) {

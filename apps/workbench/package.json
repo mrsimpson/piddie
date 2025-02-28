@@ -10,7 +10,8 @@
     "build-only": "vite build",
     "type-check": "vue-tsc --build",
     "lint": "eslint .",
-    "format": "prettier --write src/"
+    "format": "prettier --write src/",
+    "test": "vitest --run --passWithNoTests"
   },
   "dependencies": {
     "@piddie/chat-management": "workspace:*",
@@ -19,7 +20,6 @@
     "@piddie/project-management": "workspace:*",
     "@piddie/shared-types": "workspace:*",
     "@shoelace-style/shoelace": "^2.19.1",
-    "@vue/test-utils": "2.4.6",
     "@webcontainer/api": "1.5.1-internal.6",
     "dexie": "4.0.11",
     "pinia": "3.0.1",
@@ -29,6 +29,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^4.2.3",
+    "@vue/test-utils": "2.4.6",
     "@vue/tsconfig": "^0.7.0",
     "typescript": "~5.7.3",
     "vite": "^6.0.11",

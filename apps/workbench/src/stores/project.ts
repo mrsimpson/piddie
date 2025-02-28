@@ -4,10 +4,12 @@ import type { Project } from "../types/project";
 import { createProjectManager } from "@piddie/project-management";
 import { useChatStore } from "./chat";
 import { useFileSystemStore } from "./file-system";
+import { storeToRefs } from "pinia";
 
 export const useProjectStore = defineStore("project", () => {
   const projectManager = createProjectManager();
   const chatStore = useChatStore();
+  const { currentChat } = storeToRefs(chatStore);
   const fileSystemStore = useFileSystemStore();
   const currentProject = ref<Project | null>(null);
   const projects = ref<Project[]>([]);
@@ -34,9 +36,20 @@ export const useProjectStore = defineStore("project", () => {
     try {
       isInitializing.value = true;
 
+      // Check if the current chat is already associated with the project
+      const currentChatIsForProject =
+        currentChat.value?.metadata &&
+        typeof currentChat.value.metadata === "object" &&
+        "projectId" in currentChat.value.metadata &&
+        currentChat.value.metadata.projectId === projectId;
+
       // Clean up existing resources
       await fileSystemStore.cleanup();
-      await chatStore.cleanup();
+
+      // Only clean up chat if it's not already associated with the project
+      if (!currentChatIsForProject) {
+        await chatStore.cleanup();
+      }
 
       // Load project
       currentProject.value = await projectManager.openProject(projectId);
@@ -46,20 +59,22 @@ export const useProjectStore = defineStore("project", () => {
         await fileSystemStore.initializeForProject(currentProject.value);
       }
 
-      // Initialize chat
-      const chats = await chatStore.listChats();
-      const projectChat = chats.find(
-        (chat) =>
-          chat.metadata &&
-          typeof chat.metadata === "object" &&
-          "projectId" in chat.metadata &&
-          chat.metadata.projectId === projectId
-      );
+      // Initialize chat only if it's not already associated with the project
+      if (!currentChatIsForProject) {
+        const chats = await chatStore.listChats();
+        const projectChat = chats.find(
+          (chat) =>
+            chat.metadata &&
+            typeof chat.metadata === "object" &&
+            "projectId" in chat.metadata &&
+            chat.metadata.projectId === projectId
+        );
 
-      if (projectChat) {
-        await chatStore.loadChat(projectChat.id);
-      } else if (currentProject.value) {
-        await chatStore.createChat({ projectId: currentProject.value.id });
+        if (projectChat) {
+          await chatStore.loadChat(projectChat.id);
+        } else if (currentProject.value) {
+          await chatStore.createChat({ projectId: currentProject.value.id });
+        }
       }
 
       isChatVisible.value = true;
