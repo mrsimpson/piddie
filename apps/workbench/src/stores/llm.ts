@@ -166,7 +166,12 @@ export const useLlmStore = defineStore("llm", () => {
       }
 
       // Add the user message to the chat
-      const userMessage = await chatStore.addMessage(chatId, content, "user");
+      const userMessage = await chatStore.addMessage(
+        chatId,
+        content,
+        "user",
+        "Developer"
+      );
 
       // Get the model name to use as the username for the assistant message
       const modelName =
@@ -179,7 +184,6 @@ export const useLlmStore = defineStore("llm", () => {
         chatId,
         "",
         "assistant",
-        userMessage.id,
         modelName, // Pass the model name as the username
         MessageStatus.SENDING // Set initial status to SENDING
       );

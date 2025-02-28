@@ -19,8 +19,8 @@ export const useChatStore = defineStore("chat", () => {
     chatId: string,
     content: string,
     role: "user" | "assistant" | "system",
+    username: string,
     parentId?: string,
-    username?: string,
     status: MessageStatus = MessageStatus.SENT
   ) {
     if (!chatId) throw new Error("No chat ID provided");
@@ -30,6 +30,7 @@ export const useChatStore = defineStore("chat", () => {
       chatId,
       content,
       role,
+      username || role,
       parentId
     );
 
