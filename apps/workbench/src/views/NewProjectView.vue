@@ -1,19 +1,39 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, computed } from "vue";
 import { useRouter } from "vue-router";
 import { useProjectStore } from "../stores/project";
 import { useChatStore } from "../stores/chat";
 import { useLlmStore } from "../stores/llm";
+import LlmSettings from "../components/LlmSettings.vue";
 import "@shoelace-style/shoelace/dist/components/textarea/textarea.js";
 import "@shoelace-style/shoelace/dist/components/button/button.js";
 import "@shoelace-style/shoelace/dist/components/card/card.js";
 import "@shoelace-style/shoelace/dist/components/tooltip/tooltip.js";
+import "@shoelace-style/shoelace/dist/components/icon/icon.js";
+import "@shoelace-style/shoelace/dist/components/spinner/spinner.js";
 
 const router = useRouter();
 const projectStore = useProjectStore();
 const chatStore = useChatStore();
 const llmStore = useLlmStore();
 const projectPrompt = ref("");
+const errorMessage = ref("");
+const showSettings = ref(false);
+const isCreating = ref(false);
+
+// Computed property to check if a model is selected
+const isModelSelected = computed(() => !!llmStore.config.defaultModel);
+
+// Computed property to get the selected model name
+const selectedModelName = computed(() => {
+  if (!llmStore.config.defaultModel) return "";
+
+  // Find the model in available models
+  const modelInfo = llmStore.availableModels.find(
+    (m) => m.id === llmStore.config.defaultModel
+  );
+  return modelInfo ? modelInfo.name : llmStore.config.defaultModel;
+});
 
 const samplePrompts = [
   {
@@ -37,7 +57,19 @@ const samplePrompts = [
 ];
 
 async function createProject() {
-  if (!projectPrompt.value.trim()) return;
+  if (!projectPrompt.value.trim()) {
+    errorMessage.value = "Please enter a project description";
+    return;
+  }
+
+  // Check if a model is selected
+  if (!isModelSelected.value) {
+    errorMessage.value = "Please select an LLM model before starting a project";
+    return;
+  }
+
+  errorMessage.value = ""; // Clear any previous error
+  isCreating.value = true; // Set loading state
 
   // Generate a project name from the prompt
   const promptLines = projectPrompt.value.trim().split("\n");
@@ -60,20 +92,34 @@ async function createProject() {
     // Ensure the chat is loaded as the current chat
     await chatStore.loadChat(chat.id);
 
-    // Use the LLM store to send the message, which will trigger the LLM interaction
-    // Wait for the message to be sent before navigating
-    await llmStore.sendMessage(projectPrompt.value, chat.id);
+    // Store the message content to send
+    const messageContent = projectPrompt.value;
 
-    // Navigate to the project page
+    // Navigate to the project page immediately
     router.push(`/projects/${project.id}`);
+
+    // Start the LLM interaction in the background without awaiting it
+    // This allows the navigation to happen immediately
+    llmStore.sendMessage(messageContent, chat.id).catch((error) => {
+      console.error("Error sending message to LLM:", error);
+      // We don't need to set errorMessage here since we've already navigated away
+    });
   } catch (error) {
     console.error("Error creating project:", error);
-    // Handle error (could add error display to the UI)
+    errorMessage.value =
+      error instanceof Error
+        ? error.message
+        : "An error occurred while creating the project";
+    isCreating.value = false; // Reset loading state on error
   }
 }
 
 function useTemplate(prompt: string) {
   projectPrompt.value = prompt;
+}
+
+function toggleSettings() {
+  showSettings.value = !showSettings.value;
 }
 </script>
 
@@ -86,9 +132,46 @@ function useTemplate(prompt: string) {
         resize="auto"
         rows="10"
       />
-      <sl-button variant="primary" size="large" @click="createProject">
-        Start Project
+
+      <!-- Error message display -->
+      <div v-if="errorMessage" class="error-message">
+        {{ errorMessage }}
+      </div>
+
+      <sl-button
+        variant="primary"
+        size="large"
+        @click="createProject"
+        :disabled="!isModelSelected || !projectPrompt.trim() || isCreating"
+      >
+        <span v-if="isCreating">
+          <sl-spinner></sl-spinner>
+          Creating project...
+        </span>
+        <span v-else-if="isModelSelected">
+          Start developing with {{ selectedModelName }}
+        </span>
+        <span v-else> Start Project </span>
       </sl-button>
+
+      <!-- LLM Settings Component - only show if no model selected or settings toggled -->
+      <div
+        v-if="!isModelSelected || showSettings"
+        class="llm-settings-container"
+      >
+        <LlmSettings :embedded="true" />
+      </div>
+
+      <!-- Model selection status or change link -->
+      <div v-if="!isModelSelected" class="model-status-message">
+        Please select a model in the settings above before starting a project
+      </div>
+      <div v-else class="change-model-link">
+        <a href="#" @click.prevent="toggleSettings">
+          <span v-if="!showSettings">Change model</span>
+          <span v-else>Hide model settings</span>
+        </a>
+      </div>
     </div>
 
     <div class="templates">
@@ -177,5 +260,74 @@ sl-textarea::part(base) {
   color: var(--sl-color-neutral-700);
   font-size: 0.9rem;
   line-height: 1.4;
+}
+
+.llm-settings-container {
+  margin: 1rem 0;
+  border-radius: var(--sl-border-radius-medium);
+  overflow: hidden;
+}
+
+.model-selected-info {
+  margin: 1rem 0;
+  padding: 0.75rem;
+  background-color: var(--sl-color-success-100);
+  border-radius: var(--sl-border-radius-medium);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.model-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--sl-color-success-700);
+  font-weight: var(--sl-font-weight-semibold);
+}
+
+.model-badge sl-icon {
+  font-size: 1.2rem;
+}
+
+.error-message {
+  margin: 1rem 0;
+  padding: 0.75rem;
+  background-color: var(--sl-color-danger-100);
+  color: var(--sl-color-danger-700);
+  border-radius: var(--sl-border-radius-medium);
+  font-size: 0.9rem;
+}
+
+.model-status-message {
+  margin-top: 0.75rem;
+  color: var(--sl-color-warning-700);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.change-model-link {
+  margin-top: 0.5rem;
+  text-align: center;
+  font-size: 0.75rem;
+}
+
+.change-model-link a {
+  color: var(--sl-color-neutral-500);
+  text-decoration: none;
+}
+
+.change-model-link a:hover {
+  text-decoration: underline;
+  color: var(--sl-color-primary-600);
+}
+
+sl-button::part(base) {
+  min-width: 200px;
+}
+
+sl-button sl-spinner {
+  margin-right: 0.5rem;
+  font-size: 1rem;
 }
 </style>

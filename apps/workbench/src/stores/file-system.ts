@@ -6,13 +6,18 @@ import {
   WebContainerFileSystem,
   BrowserSyncTarget,
   WebContainerSyncTarget,
-  type FileSystem
+  type FileSystem,
+  deleteIndexedDB
 } from "@piddie/files-management";
 import type { SynchronizedFileSystem } from "../types/file-system";
 import { createSynchronizedFileSystem } from "../types/file-system";
 import { WATCHER_PRIORITIES } from "@piddie/shared-types";
 import { WebContainer } from "@webcontainer/api";
 import type { Project } from "@piddie/project-management";
+import {
+  projectEvents,
+  ProjectEventName
+} from "@piddie/project-management/src/internal/DexieProjectManager";
 import type { SyncTarget } from "@piddie/shared-types";
 
 let webContainer: WebContainer | null = null;
@@ -35,6 +40,27 @@ export const useFileSystemStore = defineStore("file-system", () => {
 
   // Monitor sync status
   let monitorInterval: number | undefined = undefined;
+
+  // Listen for project deletion events
+  projectEvents.on(
+    ProjectEventName.PROJECT_DELETED,
+    async (projectId: string) => {
+      try {
+        console.log(`Project deleted event received for project: ${projectId}`);
+        await deleteProjectFileSystem(projectId);
+      } catch (error) {
+        console.error(
+          `Error deleting project file system for project ${projectId}:`,
+          error
+        );
+      }
+    }
+  );
+
+  // Clean up event listener on unmount
+  onUnmounted(() => {
+    projectEvents.removeAllListeners(ProjectEventName.PROJECT_DELETED);
+  });
 
   function stopMonitoring() {
     if (monitorInterval !== undefined) {
@@ -302,6 +328,26 @@ export const useFileSystemStore = defineStore("file-system", () => {
     );
   }
 
+  /**
+   * Deletes the IndexedDB database for a project
+   * @param projectId The ID of the project to delete the file system for
+   */
+  async function deleteProjectFileSystem(projectId: string): Promise<void> {
+    try {
+      console.log(`Deleting IndexedDB database for project: ${projectId}`);
+      await deleteIndexedDB(projectId);
+      console.log(
+        `Successfully deleted IndexedDB database for project: ${projectId}`
+      );
+    } catch (error) {
+      console.error(
+        `Failed to delete IndexedDB database for project ${projectId}:`,
+        error
+      );
+      throw error;
+    }
+  }
+
   return {
     syncManager,
     systems,
@@ -310,6 +356,7 @@ export const useFileSystemStore = defineStore("file-system", () => {
     addSyncTarget,
     cleanup,
     initialized,
-    getBrowserFileSystem
+    getBrowserFileSystem,
+    deleteProjectFileSystem
   };
 });
