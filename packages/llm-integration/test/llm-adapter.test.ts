@@ -1,14 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createLlmAdapter, createMockLlmAdapter } from "../src";
-import { Orchestrator } from "../src/orchestrator";
-import { OpenAiClient } from "../src/openai-client";
+import { Orchestrator } from "../src/Orchestrator";
+import { LiteLlmClient } from "../src/LiteLlmClient";
 import {
   LlmStreamEvent,
   type LlmMessage,
   type LlmProviderConfig
 } from "../src/types";
 import { MessageStatus } from "@piddie/chat-management";
-import { EventEmitter } from "../src/event-emitter";
+import { EventEmitter } from "../src/EventEmitter";
 
 // Mock the ChatManager
 const mockChatManager = {
@@ -24,7 +24,7 @@ const mockChatManager = {
 // Mock the OpenAI client
 vi.mock("../src/openai-client", () => {
   return {
-    OpenAiClient: vi.fn().mockImplementation(() => ({
+    LiteLlmClient: vi.fn().mockImplementation(() => ({
       sendMessage: vi.fn().mockResolvedValue({
         id: "response-id",
         chatId: "chat-id",
@@ -60,10 +60,13 @@ describe("LLM Adapter", () => {
 
     // Setup test data
     config = {
+      name: "LiteLLM",
+      description: "LiteLLM API",
+      model: "gpt-3.5-turbo",
       apiKey: "test-api-key",
       baseUrl: "https://api.openai.com/v1",
       defaultModel: "gpt-3.5-turbo",
-      provider: "openai" as const
+      provider: "litellm" as const
     };
 
     message = {
@@ -72,7 +75,8 @@ describe("LLM Adapter", () => {
       content: "Hello, world!",
       role: "user",
       status: MessageStatus.SENT,
-      created: new Date()
+      created: new Date(),
+      provider: "litellm" as const
     };
 
     // Mock chat history
@@ -98,24 +102,24 @@ describe("LLM Adapter", () => {
 
   describe("Factory Functions", () => {
     it("should create an OpenAI adapter when provider is openai", () => {
-      const adapter = createLlmAdapter(config, mockChatManager);
+      const adapter = createLlmAdapter(config);
       expect(adapter).toBeInstanceOf(Orchestrator);
-      expect(OpenAiClient).toHaveBeenCalledWith(config);
+      expect(LiteLlmClient).toHaveBeenCalledWith(config);
     });
 
     it("should create a mock adapter when provider is mock", () => {
       const mockConfig = { ...config, provider: "mock" as const };
-      const adapter = createLlmAdapter(mockConfig, mockChatManager);
+      const adapter = createLlmAdapter(mockConfig);
       expect(adapter).toBeInstanceOf(Orchestrator);
-      // OpenAiClient should not be called
-      expect(OpenAiClient).not.toHaveBeenCalled();
+      // LiteLlmClient should not be called
+      expect(LiteLlmClient).not.toHaveBeenCalled();
     });
 
     it("should create a mock adapter with createMockLlmAdapter", () => {
-      const adapter = createMockLlmAdapter(mockChatManager);
+      const adapter = createMockLlmAdapter();
       expect(adapter).toBeInstanceOf(Orchestrator);
-      // OpenAiClient should not be called
-      expect(OpenAiClient).not.toHaveBeenCalled();
+      // LiteLlmClient should not be called
+      expect(LiteLlmClient).not.toHaveBeenCalled();
     });
   });
 
@@ -138,7 +142,7 @@ describe("LLM Adapter", () => {
         })
       };
 
-      orchestrator = new Orchestrator(mockClient, mockChatManager);
+      orchestrator = new Orchestrator(mockClient);
     });
 
     describe("processMessage", () => {
@@ -188,7 +192,10 @@ describe("LLM Adapter", () => {
 
     describe("processMessageStream", () => {
       it("should set up a stream and return an event emitter", async () => {
-        const eventEmitter = await orchestrator.processMessageStream(message);
+        const eventEmitter = await orchestrator.processMessageStream(
+          message,
+          vi.fn()
+        );
 
         // Verify chat history was retrieved
         expect(mockChatManager.getChat).toHaveBeenCalledWith(message.chatId);

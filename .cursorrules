@@ -19,6 +19,7 @@ The application we are working on uses the following tech stack:
 - Vite for Build
 - Vitest as test runner
 - Playwright for End-to-End testing
+- PNPM as package manager
 
 If you want to use additional libraries, frameworks, or tools, describe their unique benefits and why they are a good fit for the application. Use them only if explicitly asked to.
 
@@ -39,7 +40,7 @@ If you want to use additional libraries, frameworks, or tools, describe their un
 
 - Classes: PascalCase
 - Variables, functions, methods: camelCase
-- Files, directories: kebab-case
+- Directories: kebab-case
 - Constants, env variables: UPPERCASE
 - Files according to the artifact they expose. e. g. "MyClass.ts", "myFunction.ts"
 

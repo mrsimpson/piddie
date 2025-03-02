@@ -2,10 +2,11 @@ import type {
   LlmClient,
   LlmMessage,
   LlmResponse,
-  LlmProviderConfig
+  LlmProviderConfig,
+  LlmStreamChunk
 } from "./types";
 import { LlmStreamEvent } from "./types";
-import { EventEmitter } from "./event-emitter";
+import { EventEmitter } from "./EventEmitter";
 // Remove direct OpenAI import
 // import OpenAI from "openai";
 // Keep the type imports for compatibility
@@ -51,18 +52,11 @@ interface OpenAIStreamResponse {
   choices: OpenAIStreamChoice[];
 }
 
-export class OpenAiClient implements LlmClient {
+export class LiteLlmClient implements LlmClient {
   private config: LlmProviderConfig;
-  // Remove the OpenAI client instance
-  // private client: OpenAI;
 
   constructor(config: LlmProviderConfig) {
     this.config = config;
-    // Remove OpenAI client instantiation
-    // this.client = new OpenAI({
-    //   apiKey: config.apiKey,
-    //   baseURL: config.baseUrl
-    // });
   }
 
   /**
@@ -82,7 +76,10 @@ export class OpenAiClient implements LlmClient {
         Authorization: `Bearer ${this.config.apiKey}`
       },
       body: JSON.stringify({
-        model: this.config.selectedModel || this.config.defaultModel,
+        model:
+          this.config.selectedModel ||
+          this.config.model ||
+          this.config.defaultModel,
         messages: [openaiMessage]
       })
     });
@@ -156,7 +153,10 @@ export class OpenAiClient implements LlmClient {
               Authorization: `Bearer ${this.config.apiKey}`
             },
             body: JSON.stringify({
-              model: this.config.selectedModel || this.config.defaultModel,
+              model:
+                this.config.selectedModel ||
+                this.config.model ||
+                this.config.defaultModel,
               messages: [openaiMessage],
               stream: true
             })
@@ -228,7 +228,11 @@ export class OpenAiClient implements LlmClient {
                 deltaContent !== ""
               ) {
                 response.content += deltaContent;
-                eventEmitter.emit(LlmStreamEvent.DATA, { ...response });
+                const streamChunk: LlmStreamChunk = {
+                  content: deltaContent,
+                  isFinal: false
+                };
+                eventEmitter.emit(LlmStreamEvent.DATA, streamChunk);
                 hasReceivedAnyChunks = true;
               }
             } catch (e) {
@@ -241,6 +245,13 @@ export class OpenAiClient implements LlmClient {
             }
           }
         }
+
+        // Send a final chunk with isFinal=true
+        const finalChunk: LlmStreamChunk = {
+          content: response.content,
+          isFinal: true
+        };
+        eventEmitter.emit(LlmStreamEvent.DATA, finalChunk);
 
         // Emit the end event when the stream is complete
         eventEmitter.emit(LlmStreamEvent.END, response);
@@ -296,9 +307,9 @@ export class OpenAiClient implements LlmClient {
   }
 
   /**
-   * Converts an LlmMessage to the appropriate OpenAI message type
+   * Converts an LlmMessage to an OpenAI message format
    * @param message The LlmMessage to convert
-   * @returns The appropriate OpenAI message type
+   * @returns The OpenAI message format
    */
   private convertToOpenAIMessage(
     message: LlmMessage
@@ -306,28 +317,36 @@ export class OpenAiClient implements LlmClient {
     | ChatCompletionUserMessageParam
     | ChatCompletionAssistantMessageParam
     | ChatCompletionSystemMessageParam {
-    switch (message.role) {
-      case "user":
-        return {
-          role: "user",
-          content: message.content
-        };
-      case "assistant":
-        return {
-          role: "assistant",
-          content: message.content
-        };
-      case "system":
-        return {
-          role: "system",
-          content: message.content
-        };
-      default:
-        // Default to user if role is not recognized
-        return {
-          role: "user",
-          content: message.content
-        };
+    // Handle system prompt if present
+    if (message.systemPrompt) {
+      return {
+        role: "system",
+        content: message.systemPrompt
+      };
     }
+
+    // Handle regular message based on role
+    if (message.role === "user") {
+      return {
+        role: "user",
+        content: message.content
+      };
+    } else if (message.role === "assistant") {
+      return {
+        role: "assistant",
+        content: message.content
+      };
+    } else if (message.role === "system") {
+      return {
+        role: "system",
+        content: message.content
+      };
+    }
+
+    // Default to user if role is not recognized
+    return {
+      role: "user",
+      content: message.content
+    };
   }
 }

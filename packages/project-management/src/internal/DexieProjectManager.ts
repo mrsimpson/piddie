@@ -1,7 +1,7 @@
 import Dexie, { type Table } from "dexie";
 import type { Project, ProjectManager } from "../types";
 import type { ChatManager } from "@piddie/chat-management";
-import { generateProjectId } from "../utils/generate-project-id";
+import { generateProjectId } from "../utils/generateProjectId";
 
 /**
  * Error thrown when unable to generate a unique project ID

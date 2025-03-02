@@ -1,20 +1,87 @@
-import type { LlmClient, LlmMessage, LlmResponse } from "./types";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { LlmAdapter } from "./index";
+import type {
+  LlmMessage,
+  LlmResponse,
+  LlmProviderConfig,
+  LlmStreamChunk,
+  LlmClient
+} from "./types";
 import { LlmStreamEvent } from "./types";
-import { type ChatManager, MessageStatus } from "@piddie/chat-management";
-import { EventEmitter } from "./event-emitter";
 
-export class Orchestrator {
+/**
+ * Orchestrator for LLM interactions
+ * Manages LLM providers, MCP servers, and message processing
+ */
+export class Orchestrator implements LlmAdapter {
+  private llmProviders: Map<string, LlmProviderConfig> = new Map();
+  private mcpServers: Map<string, McpServer> = new Map();
   private client: LlmClient;
-  private chatManager: ChatManager;
 
   /**
-   * Creates a new Orchestrator instance
+   * Creates a new Orchestrator
    * @param client The LLM client to use
-   * @param chatManager The chat manager for conversation history
    */
-  constructor(client: LlmClient, chatManager: ChatManager) {
+  constructor(client: LlmClient) {
     this.client = client;
-    this.chatManager = chatManager;
+  }
+
+  /**
+   * Registers an LLM provider with the orchestrator
+   * @param name The name of the provider
+   * @param config The provider configuration
+   */
+  registerLlmProvider(name: string, config: LlmProviderConfig): void {
+    this.llmProviders.set(name, config);
+  }
+
+  /**
+   * Gets an LLM provider by name
+   * @param name The name of the provider
+   * @returns The provider configuration or undefined if not found
+   */
+  getLlmProvider(name: string): LlmProviderConfig | undefined {
+    return this.llmProviders.get(name);
+  }
+
+  /**
+   * Unregisters an LLM provider from the orchestrator
+   * @param name The name of the provider
+   * @returns True if the provider was unregistered, false if it wasn't registered
+   */
+  unregisterLlmProvider(name: string): boolean {
+    return this.llmProviders.delete(name);
+  }
+
+  /**
+   * Register an MCP server
+   * @param server The MCP server to register
+   */
+  registerMcpServer(server: any): void {
+    const serverName =
+      server.server && typeof server.server === "object"
+        ? (server.server as any).name || "unknown"
+        : "unknown";
+
+    this.mcpServers.set(serverName, server);
+  }
+
+  /**
+   * Gets an MCP server by name
+   * @param name The name of the server
+   * @returns The server or undefined if not found
+   */
+  getMcpServer(name: string): McpServer | undefined {
+    return this.mcpServers.get(name);
+  }
+
+  /**
+   * Unregisters an MCP server from the orchestrator
+   * @param name The name of the server
+   * @returns True if the server was unregistered, false if it wasn't registered
+   */
+  unregisterMcpServer(name: string): boolean {
+    return this.mcpServers.delete(name);
   }
 
   /**
@@ -23,241 +90,176 @@ export class Orchestrator {
    * @returns The LLM response
    */
   async processMessage(message: LlmMessage): Promise<LlmResponse> {
-    try {
-      // Get chat history if chat manager is available
-      const chatHistory = await this.getChatHistory(message.chatId);
+    // Enhance the message with system prompt if needed
+    const enhancedMessage = this.enhanceMessage(message);
 
-      // Enhance message with context and tools
-      const enhancedMessage = await this.enhanceMessageWithContext(
-        message,
-        chatHistory
-      );
-
-      // Send message to LLM
-      const response = await this.client.sendMessage(enhancedMessage);
-
-      // Process response for tool calls or other special handling
-      const processedResponse = await this.processLlmResponse(response);
-
-      // Update message status
-      try {
-        await this.chatManager.updateMessageStatus(
-          message.chatId,
-          processedResponse.parentId || message.id, // Use the parent ID from the response if available
-          MessageStatus.SENT
-        );
-      } catch (statusError) {
-        console.error("Error updating message status:", statusError);
-        // Continue despite status update error
-      }
-
-      return processedResponse;
-    } catch (error) {
-      console.error("Error processing message:", error);
-
-      // Update message status to ERROR
-      try {
-        await this.chatManager.updateMessageStatus(
-          message.chatId,
-          message.id,
-          MessageStatus.ERROR
-        );
-      } catch (statusError) {
-        console.error("Error updating message status:", statusError);
-        // Continue despite status update error
-      }
-
-      throw error;
-    }
+    // Process the message with the client
+    return this.client.sendMessage(enhancedMessage);
   }
 
   /**
    * Processes a message by enhancing it with context and tools before streaming the response from the LLM
    * @param message The message to process
-   * @returns An event emitter that emits 'data', 'end', and 'error' events
+   * @param onChunk Callback for each chunk of the response
+   * @returns The complete response from the LLM
    */
-  async processMessageStream(message: LlmMessage): Promise<EventEmitter> {
-    const eventEmitter = new EventEmitter();
+  async processMessageStream(
+    message: LlmMessage,
+    onChunk: (chunk: LlmStreamChunk) => void
+  ): Promise<LlmResponse> {
+    // Enhance the message with system prompt if needed
+    const enhancedMessage = this.enhanceMessage(message);
 
-    try {
-      // Get chat history
-      const chatHistory = await this.getChatHistory(message.chatId);
+    // Process the message with the client
+    const stream = this.client.streamMessage(enhancedMessage);
 
-      // Enhance message with context and tools
-      const enhancedMessage = await this.enhanceMessageWithContext(
-        message,
-        chatHistory
-      );
-
-      // Stream message to LLM
-      const stream = this.client.streamMessage(enhancedMessage);
-
-      // Process stream chunks
-      let fullResponse: LlmResponse | null = null;
-
-      stream.on(LlmStreamEvent.DATA, async (chunk: unknown) => {
-        // Process chunk for tool calls or other special handling
-        const processedChunk = await this.processLlmResponseChunk(
-          chunk as LlmResponse
-        );
-        eventEmitter.emit(LlmStreamEvent.DATA, processedChunk);
+    // Create a promise that resolves when the stream ends
+    return new Promise<LlmResponse>((resolve, reject) => {
+      // Set up event handlers
+      stream.on(LlmStreamEvent.DATA, (data: unknown) => {
+        onChunk(data as LlmStreamChunk);
       });
 
-      stream.on(LlmStreamEvent.END, async (response: unknown) => {
-        try {
-          // Process final response
-          fullResponse = await this.processLlmResponse(response as LlmResponse);
-
-          // Update message status
-          try {
-            await this.chatManager.updateMessageStatus(
-              message.chatId,
-              fullResponse.parentId || message.id, // Use the parent ID from the response if available
-              MessageStatus.SENT
-            );
-          } catch (statusError) {
-            console.error("Error updating message status:", statusError);
-            // Continue despite status update error
-          }
-        } catch (processingError) {
-          console.error("Error processing final response:", processingError);
-          fullResponse = response as LlmResponse; // Use original response if processing fails
-        } finally {
-          // Always emit the END event, even if there were errors
-          eventEmitter.emit(LlmStreamEvent.END, fullResponse || response);
-        }
+      stream.on(LlmStreamEvent.END, (data: unknown) => {
+        resolve(data as LlmResponse);
       });
 
-      stream.on(LlmStreamEvent.ERROR, async (error: unknown) => {
-        console.error("Error streaming response:", error);
-
-        // Update message status to ERROR
-        try {
-          await this.chatManager.updateMessageStatus(
-            message.chatId,
-            message.id,
-            MessageStatus.ERROR
-          );
-        } catch (statusError) {
-          console.error("Error updating message status:", statusError);
-          // Continue despite status update error
-        }
-
-        eventEmitter.emit(LlmStreamEvent.ERROR, error);
+      stream.on(LlmStreamEvent.ERROR, (data: unknown) => {
+        reject(data as Error);
       });
-    } catch (error) {
-      console.error("Error setting up message stream:", error);
-
-      // Update message status to ERROR
-      try {
-        await this.chatManager.updateMessageStatus(
-          message.chatId,
-          message.id,
-          MessageStatus.ERROR
-        );
-      } catch (statusError) {
-        console.error("Error updating message status:", statusError);
-        // Continue despite status update error
-      }
-
-      eventEmitter.emit(LlmStreamEvent.ERROR, error);
-    }
-
-    return eventEmitter;
+    });
   }
 
   /**
-   * Gets the chat history for a chat
-   * @param chatId The ID of the chat
-   * @returns The chat history as LLM messages
-   */
-  private async getChatHistory(chatId: string): Promise<LlmMessage[]> {
-    let chatHistory: LlmMessage[] = [];
-
-    try {
-      const chat = await this.chatManager.getChat(chatId);
-      // Convert chat messages to LLM messages
-      chatHistory = chat.messages.map((m) => ({
-        id: m.id,
-        chatId: m.chatId,
-        content: m.content,
-        role: m.role,
-        status: m.status,
-        created: m.created,
-        parentId: m.parentId
-      }));
-    } catch (error) {
-      console.error("Error getting chat history:", error);
-    }
-
-    return chatHistory;
-  }
-
-  /**
-   * Enhances a message with context and tools using the MCP
+   * Enhances a message with system prompt and tool definitions
    * @param message The message to enhance
-   * @param chatHistory The chat history for context
    * @returns The enhanced message
    */
-  private async enhanceMessageWithContext(
-    message: LlmMessage,
-    chatHistory: LlmMessage[]
-  ): Promise<LlmMessage> {
-    // This is where we would use the MCP to enhance the message
-    // For now, we'll just add the chat history to the message content
+  private enhanceMessage(message: LlmMessage): LlmMessage {
+    // Clone the message to avoid modifying the original
+    const enhancedMessage = { ...message };
 
-    // In a real implementation, we would:
-    // 1. Get relevant context from the context manager
-    // 2. Get available tools from the actions manager
-    // 3. Format the message with the context and tools
+    // Add system prompt if not already present
+    if (!enhancedMessage.systemPrompt) {
+      enhancedMessage.systemPrompt = this.generateSystemPrompt();
+    }
 
-    return {
-      ...message,
-      content: `
-Chat History:
-${chatHistory.map((m) => `${m.role}: ${m.content}`).join("\n")}
-
-User Message:
-${message.content}
-      `.trim()
-    };
+    return enhancedMessage;
   }
 
   /**
-   * Processes an LLM response for tool calls or other special handling
-   * @param response The LLM response to process
-   * @returns The processed response
+   * Generates a system prompt that includes available MCP servers and their operations
+   * @returns The generated system prompt
    */
-  private async processLlmResponse(
-    response: LlmResponse
-  ): Promise<LlmResponse> {
-    // This is where we would use the MCP to process the response
-    // For now, we'll just return the response as-is
+  private generateSystemPrompt(): string {
+    let prompt = "You are a helpful AI assistant. ";
 
-    // In a real implementation, we would:
-    // 1. Check for tool calls in the response
-    // 2. Execute the tool calls using the actions manager
-    // 3. Format the response with the tool call results
+    // Add MCP server information if available
+    if (this.mcpServers.size > 0) {
+      prompt += "You have access to the following tools:\n\n";
 
-    return response;
+      // Add each MCP server's schema
+      for (const [name, server] of this.mcpServers.entries()) {
+        const schema = this.getServerSchema(server);
+        prompt += `## ${name}\n`;
+        prompt += `${schema.description || "No description available"}\n\n`;
+
+        // Add operations
+        if (schema.operations) {
+          prompt += "### Operations\n\n";
+          for (const [opName, operation] of Object.entries(schema.operations)) {
+            prompt += `#### ${opName}\n`;
+
+            // Safely access properties with type checking
+            const opDescription =
+              typeof operation === "object" &&
+              operation !== null &&
+              "description" in operation
+                ? operation.description
+                : "No description available";
+
+            prompt += `${opDescription}\n\n`;
+
+            // Add parameters if they exist and are properly structured
+            if (
+              typeof operation === "object" &&
+              operation !== null &&
+              "parameters" in operation
+            ) {
+              const parameters = operation.parameters;
+
+              if (typeof parameters === "object" && parameters !== null) {
+                prompt += "Parameters:\n";
+
+                // Safely access required parameters
+                const required =
+                  "required" in parameters && Array.isArray(parameters.required)
+                    ? parameters.required
+                    : [];
+
+                // Safely access properties
+                if (
+                  "properties" in parameters &&
+                  typeof parameters.properties === "object" &&
+                  parameters.properties !== null
+                ) {
+                  for (const [paramName, param] of Object.entries(
+                    parameters.properties
+                  )) {
+                    const isRequired = required.includes(paramName);
+
+                    // Safely access description
+                    const paramDescription =
+                      typeof param === "object" &&
+                      param !== null &&
+                      "description" in param
+                        ? param.description
+                        : "No description";
+
+                    prompt += `- ${paramName}${isRequired ? " (required)" : ""}: ${paramDescription}\n`;
+                  }
+                }
+
+                prompt += "\n";
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return prompt;
   }
 
   /**
-   * Processes an LLM response chunk for tool calls or other special handling
-   * @param chunk The LLM response chunk to process
-   * @returns The processed chunk
+   * Gets the schema for an MCP server
+   * @param server The MCP server
+   * @returns The schema object
    */
-  private async processLlmResponseChunk(
-    chunk: LlmResponse
-  ): Promise<LlmResponse> {
-    // This is where we would use the MCP to process the response chunk
-    // For now, we'll just return the chunk as-is
+  private getServerSchema(server: McpServer): any {
+    // Try to get the schema from the server
+    try {
+      // For FileManagementMcpServer that implements getSchema
+      if ("getSchema" in server && typeof server.getSchema === "function") {
+        return server.getSchema();
+      }
 
-    // In a real implementation, we would:
-    // 1. Check for partial tool calls in the chunk
-    // 2. Accumulate tool call data
-    // 3. Execute complete tool calls when ready
-
-    return chunk;
+      // For standard MCP servers, construct a basic schema
+      const serverObj =
+        server.server && typeof server.server === "object" ? server.server : {};
+      return {
+        name: (serverObj as any).name || "unknown",
+        description:
+          (serverObj as any).description || "No description available",
+        operations: {} // We would need to extract operations from the server
+      };
+    } catch (error) {
+      console.error("Error getting schema from server:", error);
+      return {
+        name: "unknown",
+        description: "Failed to get schema",
+        operations: {}
+      };
+    }
   }
 }

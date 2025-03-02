@@ -1,19 +1,38 @@
-import { ref, reactive, onMounted } from "vue";
+import { ref, reactive, onMounted, watch } from "vue";
 import { defineStore } from "pinia";
 import { useChatStore } from "./chat";
+import { useFileSystemStore } from "./file-system";
 import { MessageStatus } from "@piddie/chat-management";
+import { FileManagementMcpServer } from "@piddie/files-management";
+import type { FileSystem } from "@piddie/shared-types";
 import settingsManager from "./settings-db";
-import type { LlmProviderConfig, ModelInfo } from "./settings-db";
+import type {
+  LlmProviderConfig as WorkbenchLlmConfig,
+  ModelInfo
+} from "./settings-db";
+import { LlmProviderFactory } from "../adapters/LlmProviderFactory";
+import type { ProviderType } from "../adapters/LlmProviderFactory";
 
 // Import from the llm-integration package
 import {
   createLlmAdapter,
   LlmStreamEvent,
-  type LlmResponse
+  type LlmResponse,
+  type LlmStreamChunk,
+  type LlmProviderConfig,
+  type LlmMessage
 } from "@piddie/llm-integration";
+
+/**
+ * Interface for the file system store required by the MCP server
+ */
+interface FileSystemStore {
+  getActiveFileSystem(): FileSystem | null;
+}
 
 export const useLlmStore = defineStore("llm", () => {
   const chatStore = useChatStore();
+  const fileSystemStoreInstance = useFileSystemStore();
   const isStreaming = ref(false);
   const isProcessing = ref(false);
   const streamingMessageId = ref<string | null>(null);
@@ -22,18 +41,77 @@ export const useLlmStore = defineStore("llm", () => {
   const isVerifying = ref(false);
   const connectionStatus = ref<"none" | "success" | "error">("none");
   const availableModels = ref<ModelInfo[]>([]);
+  const fileManagementMcpServer = ref<FileManagementMcpServer | null>(null);
 
-  // Reactive configuration object
-  const config = reactive<LlmProviderConfig>({
+  // Create a wrapper for the file system store that implements the FileSystemStore interface
+  const fileSystemStore: FileSystemStore = {
+    getActiveFileSystem: () => fileSystemStoreInstance.getBrowserFileSystem()
+  };
+
+  // Reactive configuration object for workbench
+  const workbenchConfig = reactive<WorkbenchLlmConfig>({
     apiKey: "",
-    baseUrl: "https://api.openai.com/v1",
-    defaultModel: "gpt-3.5-turbo",
-    selectedModel: "gpt-3.5-turbo",
-    provider: "openai" // Set default provider
+    baseUrl: "http://localhost:4000/v1",
+    defaultModel: "",
+    selectedModel: "",
+    provider: "litellm" // Set default provider
   });
 
-  // LLM adapter instance - pass the chat manager for conversation history
-  let llmAdapter = createLlmAdapter(config, chatStore.chatManager);
+  // Create LLM provider config for the LLM integration package
+  const getLlmProviderConfig = (): LlmProviderConfig => {
+    let name, description;
+
+    if (workbenchConfig.provider === "litellm") {
+      name = "LiteLLM";
+      description = "LiteLLM API";
+    } else if (workbenchConfig.provider === "ollama") {
+      name = "Ollama";
+      description = "Local Ollama Instance";
+    } else {
+      name = "Mock";
+      description = "Mock LLM Provider";
+    }
+
+    // Log the config being created for debugging
+    console.log("Creating LLM provider config:", {
+      name,
+      description,
+      provider: workbenchConfig.provider,
+      apiKeyLength: workbenchConfig.apiKey ? workbenchConfig.apiKey.length : 0,
+      baseUrl: workbenchConfig.baseUrl,
+      model: workbenchConfig.selectedModel || workbenchConfig.defaultModel
+    });
+
+    return {
+      name,
+      description,
+      apiKey: workbenchConfig.apiKey,
+      model: workbenchConfig.selectedModel || workbenchConfig.defaultModel,
+      baseUrl: workbenchConfig.baseUrl,
+      selectedModel: workbenchConfig.selectedModel,
+      defaultModel: workbenchConfig.defaultModel,
+      provider: workbenchConfig.provider
+    };
+  };
+
+  // LLM adapter instance
+  let llmAdapter = createLlmAdapter(getLlmProviderConfig());
+
+  // Watch for file system initialization and register the MCP server
+  watch(
+    () => fileSystemStoreInstance.initialized,
+    (initialized) => {
+      if (initialized) {
+        // Create and register the file management MCP server
+        fileManagementMcpServer.value = new FileManagementMcpServer(
+          fileSystemStore
+        );
+        // Get the MCP server instance from the FileManagementMcpServer
+        llmAdapter.registerMcpServer(fileManagementMcpServer.value.mcpServer);
+        console.log("File management MCP server registered with LLM adapter");
+      }
+    }
+  );
 
   // Load settings from database on store initialization
   onMounted(async () => {
@@ -47,7 +125,9 @@ export const useLlmStore = defineStore("llm", () => {
       const selectedProvider = await settingsManager.getSelectedProvider();
 
       // Update the reactive config object
-      Object.assign(config, loadedConfig, { provider: selectedProvider });
+      Object.assign(workbenchConfig, loadedConfig, {
+        provider: selectedProvider
+      });
 
       // Set available models if they exist
       if (
@@ -58,7 +138,17 @@ export const useLlmStore = defineStore("llm", () => {
       }
 
       // Recreate the adapter with the loaded configuration
-      llmAdapter = createLlmAdapter(config, chatStore.chatManager);
+      llmAdapter = createLlmAdapter(getLlmProviderConfig());
+
+      // Register the file management MCP server if file system is already initialized
+      if (fileSystemStoreInstance.initialized) {
+        fileManagementMcpServer.value = new FileManagementMcpServer(
+          fileSystemStore
+        );
+        // Get the MCP server instance from the FileManagementMcpServer
+        llmAdapter.registerMcpServer(fileManagementMcpServer.value.mcpServer);
+        console.log("File management MCP server registered with LLM adapter");
+      }
     } catch (err) {
       console.error("Error loading LLM settings:", err);
       error.value = err instanceof Error ? err : new Error(String(err));
@@ -68,7 +158,7 @@ export const useLlmStore = defineStore("llm", () => {
   });
 
   /**
-   * Verifies the connection to the OpenAI API and retrieves available models
+   * Verifies the connection to the LLM provider API and retrieves available models
    */
   async function verifyConnection() {
     try {
@@ -78,18 +168,36 @@ export const useLlmStore = defineStore("llm", () => {
 
       // Log the config being used for verification
       console.log("Verifying connection with config:", {
-        baseUrl: config.baseUrl,
-        apiKeyLength: config.apiKey ? config.apiKey.length : 0,
-        model: config.defaultModel
+        provider: workbenchConfig.provider,
+        baseUrl: workbenchConfig.baseUrl,
+        apiKeyLength: workbenchConfig.apiKey
+          ? workbenchConfig.apiKey.length
+          : 0,
+        model: workbenchConfig.defaultModel
       });
 
-      // Verify the connection and get available models
-      const models = await settingsManager.verifyConnection({ ...config });
+      if (!workbenchConfig.provider) {
+        throw new Error("No provider selected");
+      }
+
+      // Get the adapter for the current provider
+      const adapter = LlmProviderFactory.getAdapter(workbenchConfig.provider);
+
+      // Fetch models using the adapter
+      const models = await adapter.fetchModels(
+        workbenchConfig.baseUrl,
+        workbenchConfig.apiKey
+      );
 
       // Update the available models
       availableModels.value = models;
-      connectionStatus.value = "success";
 
+      // Update the config with the available models
+      await settingsManager.updateLlmConfig({
+        availableModels: models
+      });
+
+      connectionStatus.value = "success";
       return true;
     } catch (err) {
       console.error("Error verifying connection:", err);
@@ -105,11 +213,22 @@ export const useLlmStore = defineStore("llm", () => {
    * Updates the LLM configuration and saves it to the database
    * @param newConfig The new configuration
    */
-  async function updateConfig(newConfig: Partial<LlmProviderConfig>) {
+  async function updateConfig(newConfig: Partial<WorkbenchLlmConfig>) {
     try {
       // If provider is being updated, save it to workbench settings
       if (newConfig.provider) {
         await settingsManager.updateSelectedProvider(newConfig.provider);
+      }
+
+      // If availableModels is being updated, update the reactive ref directly
+      if (newConfig.availableModels) {
+        availableModels.value = newConfig.availableModels;
+      }
+
+      // Ensure API key is preserved if not explicitly provided in the new config
+      if (newConfig.provider && !newConfig.apiKey) {
+        // If switching providers but no API key provided, keep the current one
+        newConfig.apiKey = workbenchConfig.apiKey;
       }
 
       // Remove provider from newConfig as it's stored in workbench settings
@@ -121,12 +240,17 @@ export const useLlmStore = defineStore("llm", () => {
       );
 
       // Update the reactive config object with both the updated config and provider
-      Object.assign(config, updatedConfig, {
-        provider: provider || config.provider
+      Object.assign(workbenchConfig, updatedConfig, {
+        provider: provider || workbenchConfig.provider
       });
 
       // Recreate the adapter with the new configuration
-      llmAdapter = createLlmAdapter(config, chatStore.chatManager);
+      llmAdapter = createLlmAdapter(getLlmProviderConfig());
+
+      // Re-register the file management MCP server if it exists
+      if (fileManagementMcpServer.value) {
+        llmAdapter.registerMcpServer(fileManagementMcpServer.value.mcpServer);
+      }
 
       return true;
     } catch (err) {
@@ -145,13 +269,18 @@ export const useLlmStore = defineStore("llm", () => {
       const defaultConfig = await settingsManager.resetLlmConfig();
 
       // Reset the selected provider to default
-      await settingsManager.updateSelectedProvider("openai");
+      await settingsManager.updateSelectedProvider("litellm");
 
       // Update the reactive config object
-      Object.assign(config, defaultConfig, { provider: "openai" });
+      Object.assign(workbenchConfig, defaultConfig, { provider: "litellm" });
 
       // Recreate the adapter with the default configuration
-      llmAdapter = createLlmAdapter(config, chatStore.chatManager);
+      llmAdapter = createLlmAdapter(getLlmProviderConfig());
+
+      // Re-register the file management MCP server if it exists
+      if (fileManagementMcpServer.value) {
+        llmAdapter.registerMcpServer(fileManagementMcpServer.value.mcpServer);
+      }
 
       return true;
     } catch (err) {
@@ -174,7 +303,7 @@ export const useLlmStore = defineStore("llm", () => {
   ) {
     try {
       // Check if API key is set
-      if (!config.apiKey && config.provider !== "mock") {
+      if (!workbenchConfig.apiKey && workbenchConfig.provider !== "mock") {
         throw new Error(
           "API key is not set. Please configure your LLM settings."
         );
@@ -200,9 +329,9 @@ export const useLlmStore = defineStore("llm", () => {
 
       // Get the model name to use as the username for the assistant message
       const modelName =
-        config.provider === "mock"
+        workbenchConfig.provider === "mock"
           ? "Mock Model"
-          : config.selectedModel || config.defaultModel;
+          : workbenchConfig.selectedModel || workbenchConfig.defaultModel;
 
       // Create a placeholder for the assistant's response with SENDING status
       const assistantMessage = await chatStore.addMessage(
@@ -214,14 +343,15 @@ export const useLlmStore = defineStore("llm", () => {
       );
 
       // Convert the message to the format expected by the LLM adapter
-      const llmMessage = {
+      const llmMessage: LlmMessage = {
         id: userMessage.id,
         chatId: userMessage.chatId,
         content: userMessage.content,
         role: userMessage.role,
         status: userMessage.status,
         created: userMessage.created,
-        parentId: userMessage.parentId
+        parentId: userMessage.parentId,
+        provider: workbenchConfig.provider || "litellm" // Ensure provider is never undefined
       };
 
       // Reset streaming message ID
@@ -234,30 +364,39 @@ export const useLlmStore = defineStore("llm", () => {
       };
 
       if (useStreaming) {
-        const stream = await llmAdapter.processMessageStream(llmMessage);
+        // Keep track of accumulated content
+        let accumulatedContent = "";
 
-        stream.on(LlmStreamEvent.DATA, (chunk: unknown) => {
-          // Update the assistant message with the new content
+        const handleChunk = (chunk: LlmStreamChunk) => {
+          // Append the new content to the accumulated content
+          accumulatedContent += chunk.content;
+
+          // Update the assistant message with the accumulated content
           chatStore.updateMessageContent(
             assistantMessage.id,
-            (chunk as LlmResponse).content as string
+            accumulatedContent
           );
-        });
+        };
 
-        stream.on(LlmStreamEvent.END, () => {
-          // Let the orchestrator handle status updates
-          // We only need to finalize processing on our end
+        try {
+          // Process the message with streaming
+          const response = await llmAdapter.processMessageStream(
+            llmMessage,
+            handleChunk
+          );
+
+          // Update the assistant message with the final response
+          // This is already done by the handleChunk function, but we'll do it again
+          // to ensure the final content is set correctly
+          chatStore.updateMessageContent(assistantMessage.id, response.content);
+
+          // Finalize processing
           finalizeProcessing();
-        });
-
-        stream.on(LlmStreamEvent.ERROR, (err: unknown) => {
+        } catch (err) {
           // Set error value
           error.value = err instanceof Error ? err : new Error(String(err));
-
-          // Let the orchestrator handle status updates
-          // We only need to finalize processing on our end
           finalizeProcessing();
-        });
+        }
       } else {
         // Use non-streaming for simpler implementation
         const response = await llmAdapter.processMessage(llmMessage);
@@ -291,6 +430,34 @@ export const useLlmStore = defineStore("llm", () => {
     }
   }
 
+  /**
+   * Gets the stored configuration for a specific provider
+   * @param providerType The provider type to get configuration for
+   * @returns The stored configuration for the provider, or undefined if not found
+   */
+  async function getStoredProviderConfig(
+    providerType: ProviderType
+  ): Promise<WorkbenchLlmConfig | undefined> {
+    try {
+      // Get all stored configurations
+      const storedConfig = await settingsManager.getLlmConfig();
+
+      // If the requested provider matches the current stored provider, return the full config
+      if (storedConfig.provider === providerType) {
+        return storedConfig;
+      }
+
+      // Otherwise, return undefined as we don't currently store separate configs per provider
+      return undefined;
+    } catch (err) {
+      console.error(
+        `Error getting stored config for provider ${providerType}:`,
+        err
+      );
+      return undefined;
+    }
+  }
+
   return {
     isStreaming,
     isProcessing,
@@ -299,12 +466,13 @@ export const useLlmStore = defineStore("llm", () => {
     connectionStatus,
     streamingMessageId,
     error,
-    config,
+    config: workbenchConfig, // Expose the workbench config
     availableModels,
     verifyConnection,
     updateConfig,
     resetConfig,
     sendMessage,
-    cancelStreaming
+    cancelStreaming,
+    getStoredProviderConfig
   };
 });

@@ -46,6 +46,7 @@ The Orchestrator will implement MCP host functionality by:
 The Orchestrator will define tools for common operations:
 
 1. File Management Tools:
+
    - read_file: Read the contents of a file
    - write_file: Write content to a file
    - list_files: List files in a directory
@@ -68,6 +69,7 @@ The Orchestrator will construct system prompts that:
 3. Set expectations for the LLM's behavior
 
 For file management, the system prompt will:
+
 - List available file operations
 - Provide examples of how to use file operations
 - Instruct the LLM to use file operations when appropriate

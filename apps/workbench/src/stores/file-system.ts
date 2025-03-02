@@ -285,6 +285,23 @@ export const useFileSystemStore = defineStore("file-system", () => {
     }
   }
 
+  /**
+   * Gets the active file system
+   * @returns The active file system or null if not available
+   */
+  function getBrowserFileSystem(): FileSystem | null {
+    if (systems.value.length === 0) {
+      return null;
+    }
+
+    // we write to the BrowserFileSystem
+    return (
+      systems.value.find(
+        (system) => system.fileSystem instanceof BrowserFileSystem
+      )?.fileSystem ?? null
+    );
+  }
+
   return {
     syncManager,
     systems,
@@ -292,6 +309,7 @@ export const useFileSystemStore = defineStore("file-system", () => {
     initializeForProject,
     addSyncTarget,
     cleanup,
-    initialized
+    initialized,
+    getBrowserFileSystem
   };
 });

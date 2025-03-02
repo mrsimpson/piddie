@@ -1,16 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { OpenAiClient } from "../src/openai-client";
+import { LiteLlmClient } from "../src/LiteLlmClient";
 import { LlmMessage, LlmProviderConfig } from "../src/types";
 import { MessageStatus } from "@piddie/chat-management";
 
-describe("OpenAiClient", () => {
+describe("LiteLlmClient", () => {
   const config: LlmProviderConfig = {
     apiKey: "test-api-key",
     baseUrl: "https://api.openai.com/v1",
     defaultModel: "text-davinci-003"
   };
 
-  const client = new OpenAiClient(config);
+  const client = new LiteLlmClient(config);
 
   // Mock response data
   const mockResponseData = {

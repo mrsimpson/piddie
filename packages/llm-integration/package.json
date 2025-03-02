@@ -17,6 +17,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.6.1",
     "@piddie/chat-management": "workspace:*",
     "@piddie/files-management": "workspace:*",
     "dexie": "4.0.11",

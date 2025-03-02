@@ -1,6 +1,11 @@
-import type { LlmClient, LlmMessage, LlmResponse } from "./types";
+import type {
+  LlmClient,
+  LlmMessage,
+  LlmResponse,
+  LlmStreamChunk
+} from "./types";
 import { LlmStreamEvent } from "./types";
-import { EventEmitter } from "./event-emitter";
+import { EventEmitter } from "./EventEmitter";
 
 /**
  * A mock implementation of the LLM client for testing and development
@@ -48,7 +53,11 @@ export class MockLlmClient implements LlmClient {
     // Simulate streaming with a delay
     setTimeout(() => {
       // Emit the data event with the content
-      eventEmitter.emit(LlmStreamEvent.DATA, { content: fullResponse.content });
+      const chunk: LlmStreamChunk = {
+        content: fullResponse.content,
+        isFinal: true
+      };
+      eventEmitter.emit(LlmStreamEvent.DATA, chunk);
 
       // Emit the end event after a short delay to simulate streaming completion
       setTimeout(() => {

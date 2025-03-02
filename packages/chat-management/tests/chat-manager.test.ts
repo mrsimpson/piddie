@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { Chat, Message } from "../src/types";
 import { MessageStatus } from "../src/types";
 import type { Table } from "dexie";
-import { DexieChatManager } from "../src/internal/dexie-implementation";
-import { ChatDatabase } from "../src/internal/dexie-implementation";
+import { DexieChatManager } from "../src/internal/DexieChatManager";
+import { ChatDatabase } from "../src/internal/DexieChatManager";
 
 // Create mock functions for chats table
 const chatMocks = {

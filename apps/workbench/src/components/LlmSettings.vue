@@ -2,6 +2,8 @@
 import { ref, onMounted, computed, watch, defineProps } from "vue";
 import { useLlmStore } from "../stores/llm";
 import CollapsiblePanel from "./ui/CollapsiblePanel.vue";
+import { LlmProviderFactory } from "../adapters/LlmProviderFactory";
+import type { ProviderType } from "../adapters/LlmProviderFactory";
 import "@shoelace-style/shoelace/dist/components/input/input.js";
 import "@shoelace-style/shoelace/dist/components/button/button.js";
 import "@shoelace-style/shoelace/dist/components/select/select.js";
@@ -9,6 +11,7 @@ import "@shoelace-style/shoelace/dist/components/option/option.js";
 import "@shoelace-style/shoelace/dist/components/spinner/spinner.js";
 import "@shoelace-style/shoelace/dist/components/alert/alert.js";
 import "@shoelace-style/shoelace/dist/components/icon/icon.js";
+import type { LlmProviderConfig } from "@/stores/settings-db";
 
 const props = defineProps({
   embedded: {
@@ -23,38 +26,51 @@ const llmStore = useLlmStore();
 const apiKey = ref("");
 const baseUrl = ref("");
 const model = ref("");
-const provider = ref<"openai" | "mock">("openai");
+const provider = ref<ProviderType>("litellm");
 const isSaved = ref(false);
 const showApiKey = ref(false);
 const isSaving = ref(false);
 const verificationMessage = ref("");
 
-// Default values from environment variables
-const defaultBaseUrl =
-  import.meta.env.VITE_OPENAI_BASE_URL || "https://api.openai.com/v1";
-const defaultModel = import.meta.env.VITE_OPENAI_MODEL || "gpt-3.5-turbo";
-
 // Computed properties
+const currentAdapter = computed(() => {
+  return LlmProviderFactory.getAdapter(provider.value);
+});
+
 const isApiKeySet = computed(() => !!apiKey.value);
 const hasAvailableModels = computed(() => llmStore.availableModels.length > 0);
 const availableModels = computed(() => {
-  // Always include the mock model
-  const mockModel = { id: "mock-model", name: "Mock Model (Development)" };
-
+  // For mock provider, always use the default models from the adapter
   if (provider.value === "mock") {
-    return [mockModel];
+    return LlmProviderFactory.getAdapter("mock").getDefaultModels();
   }
 
+  // For other providers, use models from the store if available
   if (hasAvailableModels.value) {
     return [...llmStore.availableModels];
   }
 
-  // Fallback to default models if none are available from the API
-  return [
-    { id: "gpt-3.5-turbo", name: "GPT 3.5 Turbo" },
-    { id: "gpt-4", name: "GPT 4" },
-    { id: "gpt-4-turbo", name: "GPT 4 Turbo" }
-  ];
+  // If no models are available from the API, use defaults from the adapter
+  return currentAdapter.value.getDefaultModels();
+});
+
+const requiresApiKey = computed(() => {
+  return currentAdapter.value.requiresApiKey();
+});
+
+const baseUrlHelpText = computed(() => {
+  return currentAdapter.value.getBaseUrlHelpText();
+});
+
+const defaultBaseUrl = computed(() => {
+  return currentAdapter.value.getDefaultBaseUrl();
+});
+
+const providerOptions = computed(() => {
+  return LlmProviderFactory.getProviderTypes().map((type) => ({
+    value: type,
+    label: LlmProviderFactory.getProviderDisplayName(type)
+  }));
 });
 
 // Watch for changes in the store config
@@ -63,22 +79,50 @@ watch(
   (newConfig) => {
     apiKey.value = newConfig.apiKey;
     baseUrl.value = newConfig.baseUrl;
-    provider.value = newConfig.provider || "openai";
+    provider.value = newConfig.provider || "litellm";
     model.value = newConfig.selectedModel || newConfig.defaultModel;
   },
   { deep: true }
 );
 
-// Watch for provider changes to update model selection
+// Watch for provider changes to update model selection and base URL
 watch(
   () => provider.value,
-  (newProvider) => {
-    if (newProvider === "mock") {
-      // Use the previously selected mock model or default to "mock-model"
-      model.value = "mock-model";
-    } else if (model.value === "mock-model") {
-      // If switching from mock to openai, use the previously selected OpenAI model
-      model.value = "gpt-3.5-turbo";
+  async (newProvider) => {
+    const adapter = LlmProviderFactory.getAdapter(newProvider);
+
+    // Load the stored config for this provider from the database
+    const storedConfig = await llmStore.getStoredProviderConfig(newProvider);
+
+    // Preserve the current API key when switching providers
+    const currentApiKey = apiKey.value;
+
+    // Update base URL to the stored value or default
+    baseUrl.value = storedConfig?.baseUrl || adapter.getDefaultBaseUrl();
+
+    // Update model to the stored value or default
+    model.value =
+      storedConfig?.selectedModel ||
+      storedConfig?.defaultModel ||
+      adapter.getDefaultModel();
+
+    // Save the updated configuration to the store
+    await llmStore.updateConfig({
+      provider: newProvider,
+      baseUrl: baseUrl.value,
+      selectedModel: model.value,
+      defaultModel: model.value,
+      apiKey: currentApiKey // Preserve the API key
+    });
+
+    // Automatically verify connection when switching providers to load available models
+    // Skip verification if API key is required but not set (except for mock provider)
+    if (
+      newProvider === "mock" ||
+      !adapter.requiresApiKey() ||
+      (adapter.requiresApiKey() && currentApiKey)
+    ) {
+      verifyConnection();
     }
   }
 );
@@ -103,18 +147,28 @@ watch(
 onMounted(() => {
   apiKey.value = llmStore.config.apiKey;
   baseUrl.value = llmStore.config.baseUrl;
-  provider.value = llmStore.config.provider || "openai";
+  provider.value = llmStore.config.provider || "litellm";
 
   // Get the selected model for the current provider
   model.value = llmStore.config.selectedModel || llmStore.config.defaultModel;
 });
 
-// Save settings to store
+// Function to save settings
 async function saveSettings() {
   isSaving.value = true;
 
   try {
-    const success = await llmStore.updateConfig({
+    // Log the configuration being saved
+    console.log("Saving LLM settings:", {
+      apiKey: apiKey.value ? `${apiKey.value.substring(0, 5)}...` : "none",
+      baseUrl: baseUrl.value,
+      defaultModel: model.value,
+      selectedModel: model.value,
+      provider: provider.value
+    });
+
+    // Save the settings to the store
+    await llmStore.updateConfig({
       apiKey: apiKey.value,
       baseUrl: baseUrl.value,
       defaultModel: model.value,
@@ -122,12 +176,16 @@ async function saveSettings() {
       provider: provider.value
     });
 
-    if (success) {
-      isSaved.value = true;
-      setTimeout(() => {
-        isSaved.value = false;
-      }, 3000);
+    // After saving, verify the connection if provider is not mock and API key is set
+    if (provider.value !== "mock" && apiKey.value) {
+      await verifyConnection();
     }
+
+    // Show saved message
+    isSaved.value = true;
+    setTimeout(() => {
+      isSaved.value = false;
+    }, 3000);
   } catch (error) {
     console.error("Error saving settings:", error);
   } finally {
@@ -140,6 +198,21 @@ async function verifyConnection() {
   // Skip verification for mock provider
   if (provider.value === "mock") {
     verificationMessage.value = "Mock provider is always available.";
+
+    // For mock provider, update the models through the store
+    const mockAdapter = LlmProviderFactory.getAdapter("mock");
+    const mockModels = mockAdapter.getDefaultModels();
+
+    // Update the store with the mock models
+    await llmStore.updateConfig({
+      availableModels: mockModels,
+      provider: provider.value,
+      baseUrl: baseUrl.value,
+      selectedModel: model.value,
+      defaultModel: model.value,
+      apiKey: apiKey.value // Include the API key
+    });
+
     return;
   }
 
@@ -155,11 +228,31 @@ async function verifyConnection() {
       baseUrl: baseUrl.value,
       defaultModel: model.value,
       selectedModel: model.value,
-      provider: provider.value // This will be saved to workbench settings
+      provider: provider.value
     });
 
     // Now verify with the saved config
     await llmStore.verifyConnection();
+
+    // After verification, ensure the model is still set correctly
+    if (llmStore.availableModels.length > 0) {
+      // Find if the current model exists in the available models
+      const modelExists = llmStore.availableModels.some(
+        (m) => m.id === model.value
+      );
+
+      // If not, select the first available model
+      if (!modelExists) {
+        model.value = llmStore.availableModels[0].id;
+
+        // Update the store with the new model
+        await llmStore.updateConfig({
+          selectedModel: model.value,
+          defaultModel: model.value,
+          apiKey: apiKey.value // Include the API key
+        });
+      }
+    }
   } catch (error) {
     console.error("Error during verification:", error);
     verificationMessage.value =
@@ -211,10 +304,7 @@ async function resetToDefaults() {
       </div>
 
       <div v-else class="settings-form">
-        <div
-          v-if="!isApiKeySet && provider === 'openai'"
-          class="api-key-warning"
-        >
+        <div v-if="requiresApiKey && !isApiKeySet" class="api-key-warning">
           <p>
             ⚠️ API key not set. Chat functionality will not work without an API
             key.
@@ -224,23 +314,27 @@ async function resetToDefaults() {
         <div class="form-group">
           <label for="provider">Provider</label>
           <select id="provider" v-model="provider">
-            <option value="openai">OpenAI</option>
-            <option value="mock">Mock (Development)</option>
+            <option
+              v-for="option in providerOptions"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </option>
           </select>
           <p class="help-text">
-            Select the LLM provider to use. Mock provider is for development and
-            testing.
+            {{ currentAdapter.getDescription() }}
           </p>
         </div>
 
-        <div class="form-group" v-if="provider === 'openai'">
-          <label for="api-key">OpenAI API Key</label>
+        <div class="form-group" v-if="requiresApiKey">
+          <label for="api-key">API Key</label>
           <div class="api-key-input">
             <input
               :type="showApiKey ? 'text' : 'password'"
               id="api-key"
               v-model="apiKey"
-              placeholder="Enter your OpenAI API key"
+              :placeholder="currentAdapter.getApiKeyPlaceholder()"
             />
             <button
               type="button"
@@ -255,25 +349,30 @@ async function resetToDefaults() {
           </p>
         </div>
 
-        <div class="form-group" v-if="provider === 'openai'">
+        <div class="form-group" v-if="provider !== 'mock'">
           <label for="base-url">API Base URL</label>
           <input
             type="text"
             id="base-url"
             v-model="baseUrl"
-            placeholder="https://api.openai.com/v1"
+            :placeholder="defaultBaseUrl"
           />
           <p class="help-text">
-            Change this if you're using a proxy or alternative endpoint.
+            {{ baseUrlHelpText }}
           </p>
         </div>
 
-        <div class="verify-connection" v-if="provider === 'openai'">
+        <div class="verify-connection">
           <button
             type="button"
             class="verify-button"
             @click="verifyConnection"
-            :disabled="!apiKey || llmStore.isVerifying || isSaving"
+            :disabled="
+              (requiresApiKey && !apiKey) ||
+              llmStore.isVerifying ||
+              isSaving ||
+              provider === 'mock'
+            "
           >
             <span v-if="llmStore.isVerifying || isSaving">
               <sl-spinner class="verify-spinner"></sl-spinner>
@@ -319,14 +418,11 @@ async function resetToDefaults() {
               {{ modelOption.name }}
             </option>
           </select>
-          <p
-            class="help-text"
-            v-if="provider === 'openai' && hasAvailableModels"
-          >
-            Models retrieved from OpenAI API.
+          <p class="help-text" v-if="hasAvailableModels && provider !== 'mock'">
+            Models retrieved from API.
             <span class="refresh-link" @click="verifyConnection">Refresh</span>
           </p>
-          <p class="help-text" v-else-if="provider === 'openai'">
+          <p class="help-text" v-else-if="provider !== 'mock'">
             Default models shown. Verify connection to retrieve available
             models.
           </p>
@@ -370,7 +466,7 @@ async function resetToDefaults() {
     </div>
 
     <div v-else class="settings-form embedded">
-      <div v-if="!isApiKeySet && provider === 'openai'" class="api-key-warning">
+      <div v-if="requiresApiKey && !isApiKeySet" class="api-key-warning">
         <p>
           ⚠️ API key not set. Chat functionality will not work without an API
           key.
@@ -380,19 +476,24 @@ async function resetToDefaults() {
       <div class="form-group">
         <label for="provider-embedded">Provider</label>
         <select id="provider-embedded" v-model="provider">
-          <option value="openai">OpenAI</option>
-          <option value="mock">Mock (Development)</option>
+          <option
+            v-for="option in providerOptions"
+            :key="option.value"
+            :value="option.value"
+          >
+            {{ option.label }}
+          </option>
         </select>
       </div>
 
-      <div class="form-group" v-if="provider === 'openai'">
+      <div class="form-group" v-if="requiresApiKey">
         <label for="api-key-embedded">API Key</label>
         <div class="api-key-input">
           <input
             :type="showApiKey ? 'text' : 'password'"
             id="api-key-embedded"
             v-model="apiKey"
-            placeholder="Enter your API key"
+            :placeholder="currentAdapter.getApiKeyPlaceholder()"
           />
           <button
             type="button"
@@ -404,13 +505,13 @@ async function resetToDefaults() {
         </div>
       </div>
 
-      <div class="form-group" v-if="provider === 'openai'">
+      <div class="form-group" v-if="provider !== 'mock'">
         <label for="base-url-embedded">API Base URL</label>
         <input
           type="text"
           id="base-url-embedded"
           v-model="baseUrl"
-          placeholder="https://api.openai.com/v1"
+          :placeholder="defaultBaseUrl"
         />
       </div>
 
@@ -428,12 +529,17 @@ async function resetToDefaults() {
       </div>
 
       <div class="embedded-actions">
-        <div class="verify-connection" v-if="provider === 'openai'">
+        <div class="verify-connection">
           <button
             type="button"
             class="verify-button"
             @click="verifyConnection"
-            :disabled="!apiKey || llmStore.isVerifying || isSaving"
+            :disabled="
+              (requiresApiKey && !apiKey) ||
+              llmStore.isVerifying ||
+              isSaving ||
+              provider === 'mock'
+            "
           >
             <span v-if="llmStore.isVerifying || isSaving">
               <sl-spinner class="verify-spinner"></sl-spinner>

@@ -15,13 +15,13 @@ Defines core types for LLM integration:
 - `LlmProviderConfig`: Configuration for the LLM provider.
 - `LlmClient`: Interface for the LLM client.
 
-### 2. OpenAI LLM Client (`openai-client.ts`)
+### 2. LiteLLM LLM Client (`LiteLlmClient.ts`)
 
 Implements the necessary interfaces to send messages and receive (streamed) responses:
 
-- `OpenAiClient`: Sends messages to the OpenAI API and processes responses via the `litellm-proxy`.
+- `LiteLlmClient`: Sends messages to the LiteLLM API and processes responses via the `litellm-proxy`.
 
-### 3. Orchestrator (`orchestrator.ts`)
+### 3. Orchestrator (`Orchestrator.ts`)
 
 The central component that:
 
@@ -38,6 +38,7 @@ The Orchestrator injects a system prompt that instructs the LLM about available 
 3. Sets expectations for when and how to use these tools
 
 The system prompt is combined with formal tool definitions that specify:
+
 - Tool names and descriptions
 - Required and optional parameters
 - Expected return values
@@ -52,20 +53,20 @@ graph TD
         UI[User Interface]
         FS[FileSystem Store]
     end
-    
+
     subgraph "LLM Integration"
         O[Orchestrator]
         LC[LLM Client]
     end
-    
+
     subgraph "File System"
         BFS[Browser File System]
     end
-    
+
     subgraph "External"
         LLM[LLM Provider]
     end
-    
+
     UI --> FS
     FS --> BFS
     FS --> O
@@ -83,18 +84,18 @@ sequenceDiagram
     participant Orchestrator as Orchestrator (MCP Host)
     participant LLM
     participant BFS as Browser File System
-    
+
     User->>Workbench: Request to write code
     Workbench->>Orchestrator: Forward request
-    
+
     Orchestrator->>Orchestrator: Enhance with system prompt & tools
     Orchestrator->>LLM: Send enhanced request
-    
+
     LLM->>Orchestrator: Response with write_file tool call
-    
+
     Orchestrator->>BFS: Execute write_file operation
     BFS->>Orchestrator: Operation result
-    
+
     Orchestrator->>Orchestrator: Format response with results
     Orchestrator->>Workbench: Return enhanced response
     Workbench->>User: Display response
@@ -105,16 +106,19 @@ sequenceDiagram
 For file operations (e.g., writing files), the interaction follows this sequence:
 
 1. **Initialization Phase**:
+
    - The Orchestrator (MCP Host) receives the BrowserFileSystem instance from the workbench
    - Tool definitions are registered with the LLM client
    - System prompt is configured to instruct the LLM about available tools
 
 2. **Request Phase**:
+
    - User sends a message requesting a file operation
    - Orchestrator enhances the message with context and tool definitions
    - Enhanced message is sent to the LLM
 
 3. **Response and Tool Execution Phase**:
+
    - LLM generates a response that includes a tool call (e.g., write_file)
    - Orchestrator detects the tool call in the response
    - Orchestrator executes the file operation using the BrowserFileSystem
@@ -123,7 +127,6 @@ For file operations (e.g., writing files), the interaction follows this sequence
 4. **Result Integration Phase**:
    - Orchestrator formats a new response that includes both the LLM's text and the operation results
    - Final response is returned to the user
-
 
 ### 4. Main Entry Point (`index.ts`)
 

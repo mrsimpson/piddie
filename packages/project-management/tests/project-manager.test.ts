@@ -3,10 +3,10 @@ import type { Project } from "../src/types";
 import {
   DexieProjectManager,
   ProjectDatabase
-} from "../src/internal/dexie-implementation";
+} from "../src/internal/DexieProjectManager";
 import type { Table } from "dexie";
 import type { Chat, ChatManager } from "@piddie/chat-management";
-import { generateProjectId } from "../src/utils/generate-project-id";
+import { generateProjectId } from "../src/utils/generateProjectId";
 
 // Create mock functions
 const projectMocks = {

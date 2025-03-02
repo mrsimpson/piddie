@@ -1,64 +1,123 @@
 import type { ChatCompletionRole } from "openai/resources/chat";
 import type { MessageStatus } from "@piddie/chat-management";
-import type { EventEmitter } from "./event-emitter";
+import type { EventEmitter } from "./EventEmitter";
 
 /**
- * Represents a message sent to the LLM
+ * Interface for LLM messages
  */
 export interface LlmMessage {
+  /** Unique identifier for the message */
   id: string;
+
+  /** ID of the chat this message belongs to */
   chatId: string;
+
+  /** Content of the message */
   content: string;
+
+  /** Role of the message sender (user, assistant, system) */
   role: ChatCompletionRole;
+
+  /** Status of the message */
   status: MessageStatus;
+
+  /** Timestamp when the message was created */
   created: Date;
-  parentId?: string | undefined;
+
+  /** ID of the parent message, if any */
+  parentId?: string;
+
+  /** System prompt to use for this message */
+  systemPrompt?: string;
+
+  /** Provider to use for this message */
+  provider: string;
 }
 
 /**
- * Represents a response from the LLM
+ * Interface for LLM responses
  */
 export interface LlmResponse {
+  /** Unique identifier for the response */
   id: string;
+
+  /** ID of the chat this response belongs to */
   chatId: string;
+
+  /** Content of the response */
   content: string;
+
+  /** Role of the response sender (usually 'assistant') */
   role: ChatCompletionRole;
+
+  /** Timestamp when the response was created */
   created: Date;
-  parentId?: string | undefined;
+
+  /** ID of the parent message */
+  parentId?: string;
+
+  /** Tool calls included in the response */
+  tool_calls?: Array<{
+    function: {
+      name: string;
+      arguments: string | Record<string, unknown>;
+    };
+  }>;
 }
 
 /**
- * Configuration for the LLM provider
- */
-export interface LlmProviderConfig {
-  apiKey: string;
-  baseUrl: string;
-  defaultModel: string;
-  selectedModel?: string;
-  provider?: "openai" | "mock";
-}
-
-/**
- * Interface for the LLM client
+ * Interface for LLM client
  */
 export interface LlmClient {
   /**
-   * Sends a message to the LLM and receives a response
-   * @param message The message to send
-   * @returns A promise that resolves to the LLM response
+   * Process a message and return a response
+   * @param message The message to process
+   * @returns The response from the LLM
    */
   sendMessage(message: LlmMessage): Promise<LlmResponse>;
 
   /**
-   * Sends a message to the LLM and streams the response
-   * @param message The message to send
+   * Process a message and stream the response
+   * @param message The message to process
    * @returns An event emitter that emits 'data', 'end', and 'error' events
    */
   streamMessage(message: LlmMessage): EventEmitter;
 }
 
 /**
- * Events emitted by the LLM client during streaming
+ * Interface for LLM provider configuration
+ */
+export interface LlmProviderConfig {
+  /** Name of the provider */
+  name: string;
+
+  /** Description of the provider */
+  description: string;
+
+  /** API key for the provider */
+  apiKey: string;
+
+  /** Model to use for the provider */
+  model: string;
+
+  /** Base URL for the provider API */
+  baseUrl?: string;
+
+  /** Selected model for the provider */
+  selectedModel?: string;
+
+  /** Default model for the provider */
+  defaultModel?: string;
+
+  /** Provider type (openai, mock, etc.) */
+  provider?: string;
+
+  /** Client implementation for the provider */
+  client?: LlmClient;
+}
+
+/**
+ * Enum for LLM stream events
  */
 export enum LlmStreamEvent {
   DATA = "data",
@@ -67,14 +126,12 @@ export enum LlmStreamEvent {
 }
 
 /**
- * Data structure for streaming response chunks
+ * Interface for LLM stream chunks
  */
 export interface LlmStreamChunk {
-  id: string;
-  chatId: string;
+  /** Content of the chunk */
   content: string;
-  role: ChatCompletionRole;
-  created: Date;
-  parentId?: string | undefined;
-  isComplete: boolean;
+
+  /** Whether this is the final chunk */
+  isFinal: boolean;
 }
