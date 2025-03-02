@@ -30,6 +30,10 @@ function handleDelete() {
 async function handleConfirmDelete() {
   await projectStore.deleteProject(props.project.id);
   showDeleteConfirmation.value = false;
+
+  // Explicitly refresh the project list
+  await projectStore.loadProjects();
+
   router.push("/projects/new");
 }
 

@@ -18,6 +18,12 @@ export class ChatDatabase extends Dexie {
       chats: "id, created, lastUpdated",
       messages: "id, chatId, created, status, [chatId+created]"
     });
+
+    // Add a new version with the projectId index
+    this.version(2).stores({
+      chats: "id, created, lastUpdated, projectId",
+      messages: "id, chatId, created, status, [chatId+created]"
+    });
   }
 }
 
@@ -32,11 +38,15 @@ export class DexieChatManager implements ChatManager {
     this.db = db || new ChatDatabase();
   }
 
-  async createChat(metadata?: Record<string, unknown>): Promise<Chat> {
+  async createChat(
+    projectId: string,
+    metadata?: Record<string, unknown>
+  ): Promise<Chat> {
     const chat: Omit<Chat, "messages"> = {
       id: `chat_${Date.now()}`,
       created: new Date(),
       lastUpdated: new Date(),
+      projectId,
       metadata: metadata || undefined
     };
 
@@ -129,6 +139,44 @@ export class DexieChatManager implements ChatManager {
 
   async listChats(limit?: number, offset = 0): Promise<Chat[]> {
     const chats = (await this.db.chats.toArray()) || [];
+    const result: Chat[] = [];
+
+    for (const chat of chats) {
+      const messages = await this.db.messages
+        .where("chatId")
+        .equals(chat.id)
+        .sortBy("created");
+
+      result.push({
+        ...chat,
+        messages
+      });
+    }
+
+    // Sort chats by lastUpdated (newest first)
+    const sortedResult = result.sort(
+      (a, b) =>
+        (b.lastUpdated?.getTime() || 0) - (a.lastUpdated?.getTime() || 0)
+    );
+
+    // Apply pagination if limit is provided
+    if (limit !== undefined) {
+      return sortedResult.slice(offset, offset + limit);
+    }
+
+    return sortedResult;
+  }
+
+  async listProjectChats(
+    projectId: string,
+    limit?: number,
+    offset = 0
+  ): Promise<Chat[]> {
+    // Get all chats for the project
+    const chats = await this.db.chats
+      .where("projectId")
+      .equals(projectId)
+      .toArray();
     const result: Chat[] = [];
 
     for (const chat of chats) {

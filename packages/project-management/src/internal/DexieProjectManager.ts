@@ -73,10 +73,7 @@ export class DexieProjectManager implements ProjectManager {
 
     // Create chat first to ensure it exists
     if (this.chatManager) {
-      await this.chatManager.createChat({
-        projectId,
-        projectName: name
-      });
+      await this.chatManager.createChat(projectId);
     }
 
     const project: Project = {

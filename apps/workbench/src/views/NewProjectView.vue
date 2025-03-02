@@ -87,7 +87,7 @@ async function createProject() {
     const project = await projectStore.createProject(projectName);
 
     // Create a chat and explicitly set it as the current chat
-    const chat = await chatStore.createChat({ projectId: project.id });
+    const chat = await chatStore.createChat(project.id);
 
     // Ensure the chat is loaded as the current chat
     await chatStore.loadChat(chat.id);

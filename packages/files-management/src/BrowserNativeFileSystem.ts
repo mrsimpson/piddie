@@ -370,4 +370,13 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
     const lastSlash = normalized.lastIndexOf("/");
     return lastSlash === -1 ? normalized : normalized.slice(lastSlash + 1);
   }
+
+  /**
+   * Disposes of the file system
+   * For BrowserNativeFileSystem, this is a no-op as there are no persistent resources to clean up
+   */
+  override async dispose(): Promise<void> {
+    // No persistent resources to clean up
+    return Promise.resolve();
+  }
 }

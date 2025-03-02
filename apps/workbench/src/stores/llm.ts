@@ -298,7 +298,7 @@ export const useLlmStore = defineStore("llm", () => {
    */
   async function sendMessage(
     content: string,
-    chatId?: string,
+    chatId: string,
     useStreaming = true
   ) {
     try {
@@ -312,12 +312,6 @@ export const useLlmStore = defineStore("llm", () => {
       error.value = null;
       isProcessing.value = true;
       isStreaming.value = useStreaming;
-
-      // If no chatId is provided, create a new chat
-      if (!chatId) {
-        const chat = await chatStore.createChat();
-        chatId = chat.id;
-      }
 
       // Add the user message to the chat
       const userMessage = await chatStore.addMessage(

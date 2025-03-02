@@ -63,20 +63,14 @@ watch(
     if (newProjectId) {
       // Try to load the chat associated with this project
       const chats = await chatStore.listChats();
-      const projectChat = chats.find(
-        (chat) =>
-          chat.metadata &&
-          typeof chat.metadata === "object" &&
-          "projectId" in chat.metadata &&
-          chat.metadata.projectId === newProjectId
-      );
+      const projectChat = chats.find((chat) => chat.projectId === newProjectId);
 
       if (projectChat) {
         // Load existing chat if found
         await chatStore.loadChat(projectChat.id);
       } else {
         // Create a new chat if none exists for this project
-        await chatStore.createChat({ projectId: newProjectId });
+        await chatStore.createChat(newProjectId);
       }
     }
   },

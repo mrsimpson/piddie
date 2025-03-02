@@ -11,6 +11,10 @@ import {
 } from "@piddie/shared-types";
 import type { WebContainer } from "@webcontainer/api";
 
+/**
+ * WebContainer implementation of the FileSystem interface.
+ * This implementation uses WebContainer for file system operations.
+ */
 export class WebContainerFileSystem implements FileSystem {
   protected currentState: FileSystemStateType = "uninitialized";
   protected lockState: LockState = { isLocked: false };
@@ -422,5 +426,14 @@ export class WebContainerFileSystem implements FileSystem {
     const hashBuffer = await crypto.subtle.digest("SHA-256", data);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  /**
+   * Disposes of the file system
+   * For WebContainerFileSystem, this is a no-op as the WebContainer is managed externally
+   */
+  async dispose(): Promise<void> {
+    // WebContainer is managed externally, so this is a no-op
+    return Promise.resolve();
   }
 }

@@ -8,8 +8,11 @@ export const useChatStore = defineStore("chat", () => {
   const currentChat = ref<Chat | null>(null);
   const messages = ref<Message[]>([]);
 
-  async function createChat(metadata?: Record<string, unknown>) {
-    const chat = await chatManager.createChat(metadata);
+  async function createChat(
+    projectId: string,
+    metadata?: Record<string, unknown>
+  ) {
+    const chat = await chatManager.createChat(projectId, metadata);
     currentChat.value = chat;
     messages.value = chat.messages;
     return chat;
@@ -112,6 +115,14 @@ export const useChatStore = defineStore("chat", () => {
     return chatManager.listChats(limit, offset);
   }
 
+  async function listProjectChats(
+    projectId: string,
+    limit?: number,
+    offset = 0
+  ) {
+    return chatManager.listProjectChats(projectId, limit, offset);
+  }
+
   async function deleteChat(chatId: string) {
     await chatManager.deleteChat(chatId);
     if (currentChat.value?.id === chatId) {
@@ -134,6 +145,7 @@ export const useChatStore = defineStore("chat", () => {
     updateMessageStatus,
     loadChat,
     listChats,
+    listProjectChats,
     deleteChat,
     cleanup
   };

@@ -31,6 +31,7 @@ export interface Chat {
   messages: Message[];
   created: Date;
   lastUpdated: Date;
+  projectId: string;
   metadata: Record<string, unknown> | undefined; // For chat-specific data
 }
 
@@ -40,9 +41,13 @@ export interface Chat {
 export interface ChatManager {
   /**
    * Creates a new chat conversation
+   * @param projectId project ID this chat belongs to
    * @param metadata Optional metadata for the chat
    */
-  createChat(metadata?: Record<string, unknown>): Promise<Chat>;
+  createChat(
+    projectId: string,
+    metadata?: Record<string, unknown>
+  ): Promise<Chat>;
 
   /**
    * Adds a message to a chat
@@ -72,6 +77,18 @@ export interface ChatManager {
    * @param offset Optional offset for pagination
    */
   listChats(limit?: number, offset?: number): Promise<Chat[]>;
+
+  /**
+   * Lists chats for a specific project
+   * @param projectId The ID of the project to list chats for
+   * @param limit Optional limit on the number of chats to return
+   * @param offset Optional offset for pagination
+   */
+  listProjectChats(
+    projectId: string,
+    limit?: number,
+    offset?: number
+  ): Promise<Chat[]>;
 
   /**
    * Updates a message's status

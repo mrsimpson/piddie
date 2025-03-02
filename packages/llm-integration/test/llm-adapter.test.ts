@@ -22,7 +22,7 @@ const mockChatManager = {
 };
 
 // Mock the OpenAI client
-vi.mock("../src/openai-client", () => {
+vi.mock("../src/LiteLlmClient", () => {
   return {
     LiteLlmClient: vi.fn().mockImplementation(() => ({
       sendMessage: vi.fn().mockResolvedValue({
@@ -41,7 +41,7 @@ vi.mock("../src/openai-client", () => {
 });
 
 // Mock the EventEmitter
-vi.mock("../src/event-emitter", () => {
+vi.mock("../src/EventEmitter", () => {
   return {
     EventEmitter: vi.fn().mockImplementation(() => ({
       on: vi.fn().mockReturnThis(),
@@ -101,7 +101,7 @@ describe("LLM Adapter", () => {
   });
 
   describe("Factory Functions", () => {
-    it("should create an OpenAI adapter when provider is openai", () => {
+    it("should create a LiteLLM adapter when provider is openai", () => {
       const adapter = createLlmAdapter(config);
       expect(adapter).toBeInstanceOf(Orchestrator);
       expect(LiteLlmClient).toHaveBeenCalledWith(config);

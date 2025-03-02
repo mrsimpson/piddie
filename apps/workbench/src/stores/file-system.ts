@@ -6,18 +6,13 @@ import {
   WebContainerFileSystem,
   BrowserSyncTarget,
   WebContainerSyncTarget,
-  type FileSystem,
-  deleteIndexedDB
+  type FileSystem
 } from "@piddie/files-management";
 import type { SynchronizedFileSystem } from "../types/file-system";
 import { createSynchronizedFileSystem } from "../types/file-system";
 import { WATCHER_PRIORITIES } from "@piddie/shared-types";
 import { WebContainer } from "@webcontainer/api";
 import type { Project } from "@piddie/project-management";
-import {
-  projectEvents,
-  ProjectEventName
-} from "@piddie/project-management/src/internal/DexieProjectManager";
 import type { SyncTarget } from "@piddie/shared-types";
 
 let webContainer: WebContainer | null = null;
@@ -40,27 +35,6 @@ export const useFileSystemStore = defineStore("file-system", () => {
 
   // Monitor sync status
   let monitorInterval: number | undefined = undefined;
-
-  // Listen for project deletion events
-  projectEvents.on(
-    ProjectEventName.PROJECT_DELETED,
-    async (projectId: string) => {
-      try {
-        console.log(`Project deleted event received for project: ${projectId}`);
-        await deleteProjectFileSystem(projectId);
-      } catch (error) {
-        console.error(
-          `Error deleting project file system for project ${projectId}:`,
-          error
-        );
-      }
-    }
-  );
-
-  // Clean up event listener on unmount
-  onUnmounted(() => {
-    projectEvents.removeAllListeners(ProjectEventName.PROJECT_DELETED);
-  });
 
   function stopMonitoring() {
     if (monitorInterval !== undefined) {
@@ -287,6 +261,18 @@ export const useFileSystemStore = defineStore("file-system", () => {
         })
       );
 
+      // Dispose of all file systems
+      await Promise.all(
+        systems.value.map(async (system) => {
+          try {
+            // Cast to any to access the dispose method until TypeScript definitions are updated
+            await (system.fileSystem as any).dispose();
+          } catch (err) {
+            console.warn("Error disposing file system:", err);
+          }
+        })
+      );
+
       // Dispose sync manager and wait for completion
       if (syncManager) {
         await syncManager.dispose();
@@ -329,22 +315,33 @@ export const useFileSystemStore = defineStore("file-system", () => {
   }
 
   /**
-   * Deletes the IndexedDB database for a project
-   * @param projectId The ID of the project to delete the file system for
+   * Cleans up a specific project's file system
+   * This should be called when a project is deleted and it's not the current project
+   * @param projectId The ID of the project to clean up
    */
-  async function deleteProjectFileSystem(projectId: string): Promise<void> {
+  async function cleanupProjectFileSystem(projectId: string): Promise<void> {
     try {
-      console.log(`Deleting IndexedDB database for project: ${projectId}`);
-      await deleteIndexedDB(projectId);
+      console.log(`Cleaning up file system for project: ${projectId}`);
+
+      // Create a temporary BrowserFileSystem instance for the project
+      const fileSystem = new BrowserFileSystem({
+        name: projectId,
+        rootDir: "/"
+      });
+
+      // Call dispose to delete the IndexedDB database
+      // Cast to any to access the dispose method until TypeScript definitions are updated
+      await (fileSystem as any).dispose();
+
       console.log(
-        `Successfully deleted IndexedDB database for project: ${projectId}`
+        `Successfully cleaned up file system for project: ${projectId}`
       );
     } catch (error) {
       console.error(
-        `Failed to delete IndexedDB database for project ${projectId}:`,
+        `Failed to clean up file system for project ${projectId}:`,
         error
       );
-      throw error;
+      // Don't rethrow the error, as we want to continue with project deletion even if cleanup fails
     }
   }
 
@@ -357,6 +354,6 @@ export const useFileSystemStore = defineStore("file-system", () => {
     cleanup,
     initialized,
     getBrowserFileSystem,
-    deleteProjectFileSystem
+    cleanupProjectFileSystem
   };
 });

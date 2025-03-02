@@ -24,7 +24,8 @@ const mockChatManager: Mocked<ChatManager> = {
   getChat: vi.fn(),
   listChats: vi.fn(),
   updateMessageStatus: vi.fn(),
-  deleteChat: vi.fn()
+  deleteChat: vi.fn(),
+  updateMessageContent: vi.fn()
 };
 
 // Create a mock table that satisfies the Table interface
