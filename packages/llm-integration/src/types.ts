@@ -1,6 +1,6 @@
 import type { ChatCompletionRole } from "openai/resources/chat";
 import type { MessageStatus } from "@piddie/chat-management";
-import type { EventEmitter } from "./EventEmitter";
+import type { EventEmitter } from "@piddie/shared-types";
 
 /**
  * Interface for LLM messages

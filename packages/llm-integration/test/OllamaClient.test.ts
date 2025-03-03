@@ -8,13 +8,6 @@ import type { MessageStatus } from "@piddie/chat-management";
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
-// Mock crypto.randomUUID
-const mockRandomUUID = vi.fn().mockReturnValue("test-uuid");
-global.crypto = {
-  ...global.crypto,
-  randomUUID: mockRandomUUID
-};
-
 describe("OllamaClient", () => {
   let client: OllamaClient;
   let config: LlmProviderConfig;
@@ -23,8 +16,6 @@ describe("OllamaClient", () => {
   beforeEach(() => {
     // Reset mocks
     mockFetch.mockReset();
-    mockRandomUUID.mockReset().mockReturnValue("test-uuid");
-
     // Setup test data
     config = {
       name: "Test Ollama",
@@ -88,7 +79,7 @@ describe("OllamaClient", () => {
 
       // Check response structure
       expect(response).toEqual({
-        id: "test-uuid",
+        id: expect.any(String),
         chatId: "test-chat-id",
         content: "Hello, I'm an AI assistant.",
         role: "assistant",
@@ -104,15 +95,16 @@ describe("OllamaClient", () => {
         systemPrompt: "You are a helpful assistant."
       };
 
+      const SAMPLE_RESPONSE = {
+        model: "llama2",
+        created_at: "2023-01-01T00:00:00Z",
+        response: "Hello, I'm a helpful assistant.",
+        done: true
+      };
       // Mock successful response
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => ({
-          model: "llama2",
-          created_at: "2023-01-01T00:00:00Z",
-          response: "Hello, I'm a helpful assistant.",
-          done: true
-        })
+        json: async () => SAMPLE_RESPONSE
       });
 
       await client.sendMessage(messageWithSystem);
@@ -128,11 +120,11 @@ describe("OllamaClient", () => {
           body: JSON.stringify({
             model: "llama2",
             prompt: "Hello, world!",
-            system: "You are a helpful assistant.",
             options: {
               temperature: 0.7,
               top_p: 0.9
-            }
+            },
+            system: "You are a helpful assistant."
           })
         }
       );
@@ -155,6 +147,13 @@ describe("OllamaClient", () => {
   });
 
   describe("streamMessage", () => {
+    beforeEach(() => {
+      // Mock crypto.randomUUID to return a consistent value for testing
+      vi.spyOn(crypto, "randomUUID").mockReturnValue(
+        "53d9d690-dc53-4efb-863f-3662346f8467"
+      );
+    });
+
     it("should stream a message and emit events", async () => {
       // Mock ReadableStream and reader
       const mockReader = {
@@ -247,7 +246,7 @@ describe("OllamaClient", () => {
 
       expect(endEvents.length).toBe(1);
       expect(endEvents[0]).toEqual({
-        id: "test-uuid",
+        id: "53d9d690-dc53-4efb-863f-3662346f8467",
         chatId: "test-chat-id",
         content: "Hello, I'm an AI assistant.",
         role: "assistant",

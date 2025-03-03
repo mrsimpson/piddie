@@ -33,12 +33,12 @@ export class MockAdapter extends BaseLlmProviderAdapter {
     return [{ id: "mock-model", name: "Mock Model (Development)" }];
   }
 
-  async fetchModels(baseUrl: string, apiKey: string): Promise<ModelInfo[]> {
+  async fetchModels(_baseUrl: string, _apiKey: string): Promise<ModelInfo[]> {
     // Mock provider always returns the default models
     return this.getDefaultModels();
   }
 
-  async verifyConnection(baseUrl: string, apiKey: string): Promise<boolean> {
+  async verifyConnection(_baseUrl: string, _apiKey: string): Promise<boolean> {
     // Mock provider is always available
     return true;
   }

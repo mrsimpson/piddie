@@ -96,7 +96,7 @@ export abstract class BaseLlmProviderAdapter implements LlmProviderAdapter {
     try {
       await this.fetchModels(baseUrl, apiKey);
       return true;
-    } catch (error) {
+    } catch {
       return false;
     }
   }

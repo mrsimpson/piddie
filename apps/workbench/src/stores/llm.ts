@@ -95,7 +95,10 @@ export const useLlmStore = defineStore("llm", () => {
   };
 
   // LLM adapter instance
-  let llmAdapter = createLlmAdapter(getLlmProviderConfig());
+  let llmAdapter = createLlmAdapter(
+    getLlmProviderConfig(),
+    chatStore.chatManager
+  );
 
   // Watch for file system initialization and register the MCP server
   watch(
@@ -107,7 +110,10 @@ export const useLlmStore = defineStore("llm", () => {
           fileSystemStore
         );
         // Get the MCP server instance from the FileManagementMcpServer
-        llmAdapter.registerMcpServer(fileManagementMcpServer.value.mcpServer);
+        llmAdapter.registerMcpServer(
+          fileManagementMcpServer.value.mcpServer,
+          "file-management"
+        );
         console.log("File management MCP server registered with LLM adapter");
       }
     }
@@ -138,7 +144,10 @@ export const useLlmStore = defineStore("llm", () => {
       }
 
       // Recreate the adapter with the loaded configuration
-      llmAdapter = createLlmAdapter(getLlmProviderConfig());
+      llmAdapter = createLlmAdapter(
+        getLlmProviderConfig(),
+        chatStore.chatManager
+      );
 
       // Register the file management MCP server if file system is already initialized
       if (fileSystemStoreInstance.initialized) {
@@ -146,7 +155,10 @@ export const useLlmStore = defineStore("llm", () => {
           fileSystemStore
         );
         // Get the MCP server instance from the FileManagementMcpServer
-        llmAdapter.registerMcpServer(fileManagementMcpServer.value.mcpServer);
+        llmAdapter.registerMcpServer(
+          fileManagementMcpServer.value.mcpServer,
+          "file-management"
+        );
         console.log("File management MCP server registered with LLM adapter");
       }
     } catch (err) {
@@ -245,11 +257,17 @@ export const useLlmStore = defineStore("llm", () => {
       });
 
       // Recreate the adapter with the new configuration
-      llmAdapter = createLlmAdapter(getLlmProviderConfig());
+      llmAdapter = createLlmAdapter(
+        getLlmProviderConfig(),
+        chatStore.chatManager
+      );
 
       // Re-register the file management MCP server if it exists
       if (fileManagementMcpServer.value) {
-        llmAdapter.registerMcpServer(fileManagementMcpServer.value.mcpServer);
+        llmAdapter.registerMcpServer(
+          fileManagementMcpServer.value.mcpServer,
+          "file-management"
+        );
       }
 
       return true;
@@ -275,11 +293,17 @@ export const useLlmStore = defineStore("llm", () => {
       Object.assign(workbenchConfig, defaultConfig, { provider: "litellm" });
 
       // Recreate the adapter with the default configuration
-      llmAdapter = createLlmAdapter(getLlmProviderConfig());
+      llmAdapter = createLlmAdapter(
+        getLlmProviderConfig(),
+        chatStore.chatManager
+      );
 
       // Re-register the file management MCP server if it exists
       if (fileManagementMcpServer.value) {
-        llmAdapter.registerMcpServer(fileManagementMcpServer.value.mcpServer);
+        llmAdapter.registerMcpServer(
+          fileManagementMcpServer.value.mcpServer,
+          "file-management"
+        );
       }
 
       return true;
@@ -374,18 +398,22 @@ export const useLlmStore = defineStore("llm", () => {
 
         try {
           // Process the message with streaming
-          const response = await llmAdapter.processMessageStream(
+          const emitter = await llmAdapter.processMessageStream(
             llmMessage,
             handleChunk
           );
 
-          // Update the assistant message with the final response
-          // This is already done by the handleChunk function, but we'll do it again
-          // to ensure the final content is set correctly
-          chatStore.updateMessageContent(assistantMessage.id, response.content);
+          // Listen for the END event to finalize processing
+          emitter.once(LlmStreamEvent.END, () => {
+            // Finalize processing when streaming is complete
+            finalizeProcessing();
+          });
 
-          // Finalize processing
-          finalizeProcessing();
+          // Listen for ERROR events
+          emitter.once(LlmStreamEvent.ERROR, (err: unknown) => {
+            error.value = err instanceof Error ? err : new Error(String(err));
+            finalizeProcessing();
+          });
         } catch (err) {
           // Set error value
           error.value = err instanceof Error ? err : new Error(String(err));

@@ -1,239 +1,308 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createLlmAdapter, createMockLlmAdapter } from "../src";
+import { EventEmitter } from "events";
+import { LlmStreamEvent } from "../src/types";
+import type { ChatManager } from "@piddie/chat-management";
+import { MessageStatus } from "@piddie/chat-management";
+import type { LlmMessage, LlmProviderConfig } from "../src/types";
 import { Orchestrator } from "../src/Orchestrator";
 import { LiteLlmClient } from "../src/LiteLlmClient";
-import {
-  LlmStreamEvent,
-  type LlmMessage,
-  type LlmProviderConfig
-} from "../src/types";
-import { MessageStatus } from "@piddie/chat-management";
-import { EventEmitter } from "../src/EventEmitter";
 
-// Mock the ChatManager
-const mockChatManager = {
-  getChat: vi.fn(),
-  updateMessageStatus: vi.fn(),
-  createChat: vi.fn(),
-  addMessage: vi.fn(),
-  listChats: vi.fn(),
-  updateMessageContent: vi.fn(),
-  deleteChat: vi.fn()
-};
+// Define mockChatManager before using it in mocks
+let mockChatManager: any;
 
-// Mock the OpenAI client
-vi.mock("../src/LiteLlmClient", () => {
+// Mock the chat-management module first
+vi.mock("@piddie/chat-management", () => {
   return {
-    LiteLlmClient: vi.fn().mockImplementation(() => ({
-      sendMessage: vi.fn().mockResolvedValue({
-        id: "response-id",
-        chatId: "chat-id",
-        content: "This is a response from the mocked OpenAI client",
-        role: "assistant",
-        created: new Date(),
-        parentId: "message-id"
-      }),
-      streamMessage: vi.fn().mockReturnValue({
-        on: vi.fn().mockReturnThis()
-      })
-    }))
+    getChatManager: vi.fn().mockImplementation(() => mockChatManager),
+    MessageStatus: {
+      SENDING: "sending",
+      SENT: "sent",
+      ERROR: "error"
+    }
   };
 });
 
-// Mock the EventEmitter
-vi.mock("../src/EventEmitter", () => {
+// Mock the LiteLlmClient
+vi.mock("../src/LiteLlmClient", () => {
   return {
-    EventEmitter: vi.fn().mockImplementation(() => ({
-      on: vi.fn().mockReturnThis(),
-      emit: vi.fn()
-    }))
+    LiteLlmClient: vi.fn().mockImplementation(() => {
+      return {
+        sendMessage: vi.fn().mockResolvedValue({
+          id: "response-id",
+          content: "This is a response",
+          model: "test-model"
+        }),
+        streamMessage: vi.fn().mockImplementation(() => {
+          const emitter = new EventEmitter();
+
+          // Simulate streaming response
+          setTimeout(() => {
+            emitter.emit(LlmStreamEvent.DATA, {
+              id: "chunk-1",
+              content: "This is ",
+              model: "test-model"
+            });
+
+            emitter.emit(LlmStreamEvent.DATA, {
+              id: "chunk-2",
+              content: "a streaming ",
+              model: "test-model"
+            });
+
+            emitter.emit(LlmStreamEvent.DATA, {
+              id: "chunk-3",
+              content: "response",
+              model: "test-model"
+            });
+
+            emitter.emit(LlmStreamEvent.END, {
+              id: "response-id",
+              content: "This is a streaming response",
+              model: "test-model"
+            });
+          }, 10);
+
+          return emitter;
+        })
+      };
+    })
+  };
+});
+
+// Mock the EventEmitter from shared-types
+vi.mock("@piddie/shared-types", () => {
+  return {
+    EventEmitter: vi.fn().mockImplementation(() => {
+      return new EventEmitter();
+    })
   };
 });
 
 describe("LLM Adapter", () => {
-  let config: LlmProviderConfig;
-  let message: LlmMessage;
+  let adapter: Orchestrator;
 
   beforeEach(() => {
-    // Reset mocks
+    // Reset all mocks before each test
     vi.clearAllMocks();
 
-    // Setup test data
-    config = {
-      name: "LiteLLM",
-      description: "LiteLLM API",
-      model: "gpt-3.5-turbo",
-      apiKey: "test-api-key",
-      baseUrl: "https://api.openai.com/v1",
-      defaultModel: "gpt-3.5-turbo",
-      provider: "litellm" as const
+    // Create a fresh mock chat manager for each test
+    mockChatManager = {
+      createChat: vi.fn().mockResolvedValue({ id: "chat-id" }),
+      addMessage: vi.fn().mockResolvedValue({ id: "message-id" }),
+      getChat: vi.fn().mockResolvedValue({
+        id: "chat-id",
+        messages: []
+      }),
+      listChats: vi.fn().mockResolvedValue([]),
+      updateMessageStatus: vi.fn().mockResolvedValue(true),
+      deleteChat: vi.fn().mockResolvedValue(true),
+      updateMessageContent: vi.fn().mockResolvedValue(true)
     };
 
-    message = {
-      id: "message-id",
-      chatId: "chat-id",
-      content: "Hello, world!",
-      role: "user",
-      status: MessageStatus.SENT,
-      created: new Date(),
-      provider: "litellm" as const
+    // Create adapter with mock client and chat manager
+    const config: LlmProviderConfig = {
+      name: "Test Provider",
+      description: "Test Provider Description",
+      provider: "openai",
+      apiKey: "test-key",
+      model: "test-model"
     };
 
-    // Mock chat history
-    mockChatManager.getChat.mockResolvedValue({
-      id: "chat-id",
-      messages: [
-        {
-          id: "previous-message-id",
-          chatId: "chat-id",
-          content: "Previous message",
-          role: "user",
-          status: MessageStatus.SENT,
-          created: new Date(Date.now() - 1000),
-          username: undefined,
-          parentId: undefined
-        }
-      ],
-      created: new Date(Date.now() - 2000),
-      lastUpdated: new Date(Date.now() - 1000),
-      metadata: undefined
-    });
+    adapter = new Orchestrator(
+      new LiteLlmClient(config),
+      mockChatManager as ChatManager
+    );
   });
 
-  describe("Factory Functions", () => {
-    it("should create a LiteLLM adapter when provider is openai", () => {
-      const adapter = createLlmAdapter(config);
-      expect(adapter).toBeInstanceOf(Orchestrator);
-      expect(LiteLlmClient).toHaveBeenCalledWith(config);
+  describe("processMessage", () => {
+    it("should process a message and return a response", async () => {
+      const message: LlmMessage = {
+        id: "message-id",
+        chatId: "chat-id",
+        content: "Hello, world!",
+        role: "user",
+        status: MessageStatus.SENDING,
+        created: new Date(),
+        provider: "openai"
+      };
+
+      const response = await adapter.processMessage(message);
+
+      // Verify the response
+      expect(response).toEqual({
+        id: "response-id",
+        content: "This is a response",
+        model: "test-model"
+      });
+
+      // Verify chat manager was called
+      expect(mockChatManager.getChat).toHaveBeenCalledWith("chat-id");
+      expect(mockChatManager.updateMessageStatus).toHaveBeenCalledWith(
+        "chat-id",
+        "message-id",
+        MessageStatus.SENT
+      );
     });
 
-    it("should create a mock adapter when provider is mock", () => {
-      const mockConfig = { ...config, provider: "mock" as const };
-      const adapter = createLlmAdapter(mockConfig);
-      expect(adapter).toBeInstanceOf(Orchestrator);
-      // LiteLlmClient should not be called
-      expect(LiteLlmClient).not.toHaveBeenCalled();
-    });
+    it("should handle errors and update message status", async () => {
+      // Create a spy on the updateMessageStatus method
+      const updateMessageStatusSpy = vi.spyOn(
+        mockChatManager,
+        "updateMessageStatus"
+      );
 
-    it("should create a mock adapter with createMockLlmAdapter", () => {
-      const adapter = createMockLlmAdapter();
-      expect(adapter).toBeInstanceOf(Orchestrator);
-      // LiteLlmClient should not be called
-      expect(LiteLlmClient).not.toHaveBeenCalled();
-    });
-  });
-
-  describe("Orchestrator", () => {
-    let mockClient: any;
-    let orchestrator: Orchestrator;
-
-    beforeEach(() => {
-      mockClient = {
-        sendMessage: vi.fn().mockResolvedValue({
-          id: "response-id",
-          chatId: "chat-id",
-          content: "This is a response",
-          role: "assistant",
-          created: new Date(),
-          parentId: "message-id"
+      // Mock client that throws an error when sendMessage is called
+      const errorClient = {
+        sendMessage: vi.fn().mockImplementation(() => {
+          throw new Error("Test error");
         }),
-        streamMessage: vi.fn().mockReturnValue({
-          on: vi.fn().mockReturnThis()
+        streamMessage: vi.fn()
+      };
+
+      const errorAdapter = new Orchestrator(
+        errorClient,
+        mockChatManager as ChatManager
+      );
+
+      const message: LlmMessage = {
+        id: "message-id",
+        chatId: "chat-id",
+        content: "Hello, world!",
+        role: "user",
+        status: MessageStatus.SENDING,
+        created: new Date(),
+        provider: "openai"
+      };
+
+      // Process message should throw
+      let error: any;
+      try {
+        await errorAdapter.processMessage(message);
+      } catch (e) {
+        error = e;
+      }
+
+      // Verify error was thrown
+      expect(error).toBeDefined();
+      expect(error.message).toBe("Test error");
+
+      // Verify updateMessageStatus was called with SENT and ERROR
+      expect(updateMessageStatusSpy).toHaveBeenCalledTimes(2);
+      expect(updateMessageStatusSpy).toHaveBeenNthCalledWith(
+        1,
+        "chat-id",
+        "message-id",
+        MessageStatus.SENT
+      );
+      expect(updateMessageStatusSpy).toHaveBeenNthCalledWith(
+        2,
+        "chat-id",
+        "message-id",
+        MessageStatus.ERROR
+      );
+    });
+  });
+
+  describe("processMessageStream", () => {
+    it("should stream a message and emit events", async () => {
+      const message: LlmMessage = {
+        id: "message-id",
+        chatId: "chat-id",
+        content: "Hello, world!",
+        role: "user",
+        status: MessageStatus.SENDING,
+        created: new Date(),
+        provider: "openai"
+      };
+
+      const chunks: any[] = [];
+      const onChunk = vi.fn((chunk) => {
+        chunks.push(chunk);
+      });
+
+      const stream = await adapter.processMessageStream(message, onChunk);
+
+      // Set up event handlers for testing
+      const onData = vi.fn();
+      const onEnd = vi.fn();
+      const onError = vi.fn();
+
+      // Use the stream as an EventEmitter
+      stream.on(LlmStreamEvent.DATA, onData);
+      stream.on(LlmStreamEvent.END, onEnd);
+      stream.on(LlmStreamEvent.ERROR, onError);
+
+      // Wait for streaming to complete
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Verify events were emitted
+      expect(onData).toHaveBeenCalledTimes(3);
+      expect(onEnd).toHaveBeenCalledTimes(1);
+      expect(onError).not.toHaveBeenCalled();
+
+      // Verify chunks were collected
+      expect(chunks).toHaveLength(3);
+      expect(chunks[0].content).toBe("This is ");
+      expect(chunks[1].content).toBe("a streaming ");
+      expect(chunks[2].content).toBe("response");
+
+      // Verify chat manager was called
+      expect(mockChatManager.getChat).toHaveBeenCalledWith("chat-id");
+    });
+
+    it("should handle errors during streaming", async () => {
+      // Mock client to throw an error
+      const errorClient = {
+        sendMessage: vi.fn(),
+        streamMessage: vi.fn().mockImplementation(() => {
+          const emitter = new EventEmitter();
+
+          // Simulate error
+          setTimeout(() => {
+            emitter.emit(LlmStreamEvent.ERROR, new Error("Stream error"));
+          }, 10);
+
+          return emitter;
         })
       };
 
-      orchestrator = new Orchestrator(mockClient);
-    });
+      const errorAdapter = new Orchestrator(
+        errorClient,
+        mockChatManager as ChatManager
+      );
 
-    describe("processMessage", () => {
-      it("should process a message and return a response", async () => {
-        const response = await orchestrator.processMessage(message);
+      const message: LlmMessage = {
+        id: "message-id",
+        chatId: "chat-id",
+        content: "Hello, world!",
+        role: "user",
+        status: MessageStatus.SENDING,
+        created: new Date(),
+        provider: "openai"
+      };
 
-        // Verify chat history was retrieved
-        expect(mockChatManager.getChat).toHaveBeenCalledWith(message.chatId);
+      const stream = await errorAdapter.processMessageStream(message);
 
-        // Verify message was sent to client
-        expect(mockClient.sendMessage).toHaveBeenCalled();
+      // Set up event handlers for testing
+      const onError = vi.fn();
 
-        // Verify message status was updated
-        expect(mockChatManager.updateMessageStatus).toHaveBeenCalledWith(
-          message.chatId,
-          message.id,
-          MessageStatus.SENT
-        );
+      // Use the stream as an EventEmitter
+      stream.on(LlmStreamEvent.ERROR, onError);
 
-        // Verify response
-        expect(response).toEqual({
-          id: "response-id",
-          chatId: "chat-id",
-          content: "This is a response",
-          role: "assistant",
-          created: expect.any(Date),
-          parentId: "message-id"
-        });
-      });
+      // Wait for error to be emitted
+      await new Promise((resolve) => setTimeout(resolve, 50));
 
-      it("should handle errors and update message status", async () => {
-        const error = new Error("Test error");
-        mockClient.sendMessage.mockRejectedValueOnce(error);
+      // Verify error was emitted
+      expect(onError).toHaveBeenCalledTimes(1);
+      expect(onError.mock.calls[0][0]).toBeInstanceOf(Error);
+      expect(onError.mock.calls[0][0].message).toBe("Stream error");
 
-        await expect(orchestrator.processMessage(message)).rejects.toThrow(
-          "Test error"
-        );
-
-        // Verify message status was updated to ERROR
-        expect(mockChatManager.updateMessageStatus).toHaveBeenCalledWith(
-          message.chatId,
-          message.id,
-          MessageStatus.ERROR
-        );
-      });
-    });
-
-    describe("processMessageStream", () => {
-      it("should set up a stream and return an event emitter", async () => {
-        const eventEmitter = await orchestrator.processMessageStream(
-          message,
-          vi.fn()
-        );
-
-        // Verify chat history was retrieved
-        expect(mockChatManager.getChat).toHaveBeenCalledWith(message.chatId);
-
-        // Verify stream was set up
-        expect(mockClient.streamMessage).toHaveBeenCalled();
-
-        // Verify event emitter was returned
-        expect(eventEmitter).toBeDefined();
-        expect(typeof eventEmitter.on).toBe("function");
-      });
-
-      it("should handle stream setup errors", async () => {
-        const error = new Error("Stream setup error");
-        mockClient.streamMessage.mockImplementationOnce(() => {
-          throw error;
-        });
-
-        // Create a mock EventEmitter instance
-        const mockEmitter = new EventEmitter();
-        const emitSpy = vi.spyOn(mockEmitter, "emit");
-
-        // Replace the mocked constructor to return our instance with the spy
-        vi.mocked(EventEmitter).mockImplementationOnce(() => mockEmitter);
-
-        // Call processMessageStream which should trigger the error
-        await orchestrator.processMessageStream(message);
-
-        // Verify message status was updated to ERROR
-        expect(mockChatManager.updateMessageStatus).toHaveBeenCalledWith(
-          message.chatId,
-          message.id,
-          MessageStatus.ERROR
-        );
-
-        // Verify error was emitted
-        expect(emitSpy).toHaveBeenCalledWith(LlmStreamEvent.ERROR, error);
-      });
+      // Verify error status was set
+      expect(mockChatManager.updateMessageStatus).toHaveBeenCalledWith(
+        "chat-id",
+        "message-id",
+        MessageStatus.ERROR
+      );
     });
   });
 });

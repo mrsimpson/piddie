@@ -5,7 +5,7 @@ import type {
   LlmStreamChunk
 } from "./types";
 import { LlmStreamEvent } from "./types";
-import { EventEmitter } from "./EventEmitter";
+import { EventEmitter } from "@piddie/shared-types";
 
 /**
  * A mock implementation of the LLM client for testing and development

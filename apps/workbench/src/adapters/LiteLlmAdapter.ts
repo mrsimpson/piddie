@@ -64,7 +64,7 @@ export class LiteLlmAdapter extends BaseLlmProviderAdapter {
 
     // Extract model information
     const models: ModelInfo[] = data.data
-      .map((model: any) => ({
+      .map((model: ModelInfo) => ({
         id: model.id,
         name: model.id.replace(/^gpt-/, "GPT ").replace(/-/g, " "),
         created: model.created

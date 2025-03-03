@@ -6,7 +6,7 @@ import type {
   LlmStreamChunk
 } from "./types";
 import { LlmStreamEvent } from "./types";
-import { EventEmitter } from "./EventEmitter";
+import { EventEmitter } from "@piddie/shared-types";
 // Remove direct OpenAI import
 // import OpenAI from "openai";
 // Keep the type imports for compatibility

@@ -8,6 +8,9 @@ import type {
   LlmClient
 } from "./types";
 import { LlmStreamEvent } from "./types";
+import type { ChatManager } from "@piddie/chat-management";
+import { MessageStatus } from "@piddie/chat-management";
+import { EventEmitter } from "@piddie/shared-types";
 
 /**
  * Orchestrator for LLM interactions
@@ -17,13 +20,16 @@ export class Orchestrator implements LlmAdapter {
   private llmProviders: Map<string, LlmProviderConfig> = new Map();
   private mcpServers: Map<string, McpServer> = new Map();
   private client: LlmClient;
+  private chatManager: ChatManager;
 
   /**
    * Creates a new Orchestrator
    * @param client The LLM client to use
+   * @param chatManager Optional chat manager to use, defaults to the global instance
    */
-  constructor(client: LlmClient) {
+  constructor(client: LlmClient, chatManager: ChatManager) {
     this.client = client;
+    this.chatManager = chatManager;
   }
 
   /**
@@ -57,13 +63,8 @@ export class Orchestrator implements LlmAdapter {
    * Register an MCP server
    * @param server The MCP server to register
    */
-  registerMcpServer(server: any): void {
-    const serverName =
-      server.server && typeof server.server === "object"
-        ? (server.server as any).name || "unknown"
-        : "unknown";
-
-    this.mcpServers.set(serverName, server);
+  registerMcpServer(server: McpServer, name: string): void {
+    this.mcpServers.set(name, server);
   }
 
   /**
@@ -90,44 +91,89 @@ export class Orchestrator implements LlmAdapter {
    * @returns The LLM response
    */
   async processMessage(message: LlmMessage): Promise<LlmResponse> {
-    // Enhance the message with system prompt if needed
-    const enhancedMessage = this.enhanceMessage(message);
+    try {
+      // Get chat history for context
+      await this.chatManager.getChat(message.chatId);
 
-    // Process the message with the client
-    return this.client.sendMessage(enhancedMessage);
+      // Update message status to SENDING
+      await this.chatManager.updateMessageStatus(
+        message.chatId,
+        message.id,
+        MessageStatus.SENT
+      );
+
+      // Enhance the message with system prompt if needed
+      const enhancedMessage = this.enhanceMessage(message);
+
+      // Process the message with the client
+      return this.client.sendMessage(enhancedMessage);
+    } catch (error) {
+      // Update message status to ERROR and wait for it to complete
+      await this.chatManager.updateMessageStatus(
+        message.chatId,
+        message.id,
+        MessageStatus.ERROR
+      );
+
+      // Re-throw the error after status update is complete
+      throw error;
+    }
   }
 
   /**
    * Processes a message by enhancing it with context and tools before streaming the response from the LLM
    * @param message The message to process
-   * @param onChunk Callback for each chunk of the response
-   * @returns The complete response from the LLM
+   * @param onChunk Optional callback for each chunk of the response
+   * @returns The event emitter for the stream
    */
   async processMessageStream(
     message: LlmMessage,
-    onChunk: (chunk: LlmStreamChunk) => void
-  ): Promise<LlmResponse> {
-    // Enhance the message with system prompt if needed
-    const enhancedMessage = this.enhanceMessage(message);
+    onChunk?: (chunk: LlmStreamChunk) => void
+  ): Promise<EventEmitter> {
+    // Create an event emitter for the stream
+    const stream = new EventEmitter();
 
-    // Process the message with the client
-    const stream = this.client.streamMessage(enhancedMessage);
+    try {
+      // Get chat history for context
+      await this.chatManager.getChat(message.chatId);
 
-    // Create a promise that resolves when the stream ends
-    return new Promise<LlmResponse>((resolve, reject) => {
-      // Set up event handlers
-      stream.on(LlmStreamEvent.DATA, (data: unknown) => {
-        onChunk(data as LlmStreamChunk);
+      // Enhance the message with system prompt if needed
+      const enhancedMessage = this.enhanceMessage(message);
+
+      // Process the message with the client
+      const clientStream = this.client.streamMessage(enhancedMessage);
+
+      // Forward events from the client stream to our stream
+      clientStream.on(LlmStreamEvent.DATA, (data: unknown) => {
+        if (onChunk) {
+          onChunk(data as LlmStreamChunk);
+        }
+        stream.emit(LlmStreamEvent.DATA, data);
       });
 
-      stream.on(LlmStreamEvent.END, (data: unknown) => {
-        resolve(data as LlmResponse);
+      clientStream.on(LlmStreamEvent.END, (data: unknown) => {
+        stream.emit(LlmStreamEvent.END, data);
       });
 
-      stream.on(LlmStreamEvent.ERROR, (data: unknown) => {
-        reject(data as Error);
+      clientStream.on(LlmStreamEvent.ERROR, (error: unknown) => {
+        this.chatManager.updateMessageStatus(
+          message.chatId,
+          message.id,
+          MessageStatus.ERROR
+        );
+        stream.emit(LlmStreamEvent.ERROR, error);
       });
-    });
+    } catch (error) {
+      // Update message status to ERROR
+      await this.chatManager.updateMessageStatus(
+        message.chatId,
+        message.id,
+        MessageStatus.ERROR
+      );
+      stream.emit(LlmStreamEvent.ERROR, error);
+    }
+
+    return stream;
   }
 
   /**
@@ -159,107 +205,108 @@ export class Orchestrator implements LlmAdapter {
       prompt += "You have access to the following tools:\n\n";
 
       // Add each MCP server's schema
-      for (const [name, server] of this.mcpServers.entries()) {
-        const schema = this.getServerSchema(server);
-        prompt += `## ${name}\n`;
-        prompt += `${schema.description || "No description available"}\n\n`;
+      // for (const [name, server] of this.mcpServers.entries()) {
+      //   const schema = this.getServerSchema(server);
+      //   prompt += `## ${name}\n`;
+      //   prompt += `${schema.description || "No description available"}\n\n`;
 
-        // Add operations
-        if (schema.operations) {
-          prompt += "### Operations\n\n";
-          for (const [opName, operation] of Object.entries(schema.operations)) {
-            prompt += `#### ${opName}\n`;
+      //   // Add operations
+      //   if (schema.operations) {
+      //     prompt += "### Operations\n\n";
+      //     for (const [opName, operation] of Object.entries(schema.operations)) {
+      //       prompt += `#### ${opName}\n`;
 
-            // Safely access properties with type checking
-            const opDescription =
-              typeof operation === "object" &&
-              operation !== null &&
-              "description" in operation
-                ? operation.description
-                : "No description available";
+      //       // Safely access properties with type checking
+      //       const opDescription =
+      //         typeof operation === "object" &&
+      //         operation !== null &&
+      //         "description" in operation
+      //           ? operation.description
+      //           : "No description available";
 
-            prompt += `${opDescription}\n\n`;
+      //       prompt += `${opDescription}\n\n`;
 
-            // Add parameters if they exist and are properly structured
-            if (
-              typeof operation === "object" &&
-              operation !== null &&
-              "parameters" in operation
-            ) {
-              const parameters = operation.parameters;
+      //       // Add parameters if they exist and are properly structured
+      //       if (
+      //         typeof operation === "object" &&
+      //         operation !== null &&
+      //         "parameters" in operation
+      //       ) {
+      //         const parameters = operation.parameters;
 
-              if (typeof parameters === "object" && parameters !== null) {
-                prompt += "Parameters:\n";
+      //         if (typeof parameters === "object" && parameters !== null) {
+      //           prompt += "Parameters:\n";
 
-                // Safely access required parameters
-                const required =
-                  "required" in parameters && Array.isArray(parameters.required)
-                    ? parameters.required
-                    : [];
+      //           // Safely access required parameters
+      //           const required =
+      //             "required" in parameters && Array.isArray(parameters.required)
+      //               ? parameters.required
+      //               : [];
 
-                // Safely access properties
-                if (
-                  "properties" in parameters &&
-                  typeof parameters.properties === "object" &&
-                  parameters.properties !== null
-                ) {
-                  for (const [paramName, param] of Object.entries(
-                    parameters.properties
-                  )) {
-                    const isRequired = required.includes(paramName);
+      //           // Safely access properties
+      //           if (
+      //             "properties" in parameters &&
+      //             typeof parameters.properties === "object" &&
+      //             parameters.properties !== null
+      //           ) {
+      //             for (const [paramName, param] of Object.entries(
+      //               parameters.properties
+      //             )) {
+      //               const isRequired = required.includes(paramName);
 
-                    // Safely access description
-                    const paramDescription =
-                      typeof param === "object" &&
-                      param !== null &&
-                      "description" in param
-                        ? param.description
-                        : "No description";
+      //               // Safely access description
+      //               const paramDescription =
+      //                 typeof param === "object" &&
+      //                 param !== null &&
+      //                 "description" in param
+      //                   ? param.description
+      //                   : "No description";
 
-                    prompt += `- ${paramName}${isRequired ? " (required)" : ""}: ${paramDescription}\n`;
-                  }
-                }
+      //               prompt += `- ${paramName}${isRequired ? " (required)" : ""}: ${paramDescription}\n`;
+      //             }
+      //           }
 
-                prompt += "\n";
-              }
-            }
-          }
-        }
-      }
+      //           prompt += "\n";
+      //         }
+      //       }
+      //     }
+      //   }
+      // }
     }
 
     return prompt;
   }
 
-  /**
-   * Gets the schema for an MCP server
-   * @param server The MCP server
-   * @returns The schema object
-   */
-  private getServerSchema(server: McpServer): any {
-    // Try to get the schema from the server
-    try {
-      // For FileManagementMcpServer that implements getSchema
-      if ("getSchema" in server && typeof server.getSchema === "function") {
-        return server.getSchema();
-      }
+  // /**
+  //  * Gets the schema for an MCP server
+  //  * @param server The MCP server
+  //  * @returns The schema object
+  //  */
+  // private getServerSchema(server: McpServer): unknown {
+  //   // Try to get the schema from the server
+  //   try {
+  //     // For FileManagementMcpServer that implements getSchema
+  //     if ("getSchema" in server && typeof server.getSchema === "function") {
+  //       return server.getSchema();
+  //     }
+  //     return undefined;
 
-      // For standard MCP servers, construct a basic schema
-      const serverObj =
-        server.server && typeof server.server === "object" ? server.server : {};
-      return {
-        name: (serverObj as any).name || "unknown",
-        description:
-          (serverObj as any).description || "No description available",
-        operations: {} // We would need to extract operations from the server
-      };
-    } catch (error) {
-      console.error("Error getting schema from server:", error);
-      return {
-        name: "unknown",
-        description: "Failed to get schema",
-        operations: {}
-      };
-    }
-  }
+  //     //   // For standard MCP servers, construct a basic schema
+  //     //   const serverObj =
+  //     //     server.server && typeof server.server === "object" ? server.server : {};
+  //     //   return {
+  //     //     name: (serverObj as any).name || "unknown",
+  //     //     description:
+  //     //       (serverObj as any).description || "No description available",
+  //     //     operations: {} // We would need to extract operations from the server
+  //     //   };
+  //   } catch (error) {
+  //     console.error("Error getting schema from server:", error);
+  //     return {
+  //       name: "unknown",
+  //       description: "Failed to get schema",
+  //       operations: {}
+  //     };
+  //   }
+  // }
 }

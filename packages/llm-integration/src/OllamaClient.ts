@@ -6,7 +6,7 @@ import type {
   LlmStreamChunk
 } from "./types";
 import { LlmStreamEvent } from "./types";
-import { EventEmitter } from "./EventEmitter";
+import { EventEmitter } from "@piddie/shared-types";
 import type { ChatCompletionRole } from "openai/resources/chat";
 
 // Define interfaces for Ollama API requests and responses

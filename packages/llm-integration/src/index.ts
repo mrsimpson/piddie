@@ -1,3 +1,4 @@
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { LiteLlmClient } from "./LiteLlmClient";
 import { MockLlmClient } from "./MockClient";
 import { OllamaClient } from "./OllamaClient";
@@ -9,6 +10,8 @@ import type {
   LlmResponse,
   LlmStreamChunk
 } from "./types";
+import type { ChatManager } from "@piddie/chat-management";
+import { EventEmitter } from "@piddie/shared-types";
 
 /**
  * Interface for LLM adapter
@@ -38,15 +41,16 @@ export interface LlmAdapter {
   /**
    * Register an MCP server
    * @param server The MCP server to register
+   * @param name The name of the server which is use to identitfy it lateron
    */
-  registerMcpServer(server: any): void;
+  registerMcpServer(server: McpServer, name: string): void;
 
   /**
    * Get an MCP server by name
    * @param name The name of the server
    * @returns The MCP server
    */
-  getMcpServer(name: string): any | undefined;
+  getMcpServer(name: string): McpServer | undefined;
 
   /**
    * Unregister an MCP server
@@ -66,12 +70,12 @@ export interface LlmAdapter {
    * Process a message and stream the response
    * @param message The message to process
    * @param onChunk Callback for each chunk of the response
-   * @returns The final response from the LLM
+   * @returns The event emitter for the stream
    */
   processMessageStream(
     message: LlmMessage,
     onChunk: (chunk: LlmStreamChunk) => void
-  ): Promise<LlmResponse>;
+  ): Promise<EventEmitter>;
 }
 
 /**
@@ -94,20 +98,25 @@ export function createLlmClient(config: LlmProviderConfig): LlmClient {
 /**
  * Creates an LLM adapter with the specified configuration
  * @param config The LLM provider configuration
+ * @param chatManager The chat manager to use
  * @returns The LLM adapter instance
  */
-export function createLlmAdapter(config: LlmProviderConfig): LlmAdapter {
+export function createLlmAdapter(
+  config: LlmProviderConfig,
+  chatManager: ChatManager
+): LlmAdapter {
   const client = createLlmClient(config);
-  return new Orchestrator(client);
+  return new Orchestrator(client, chatManager);
 }
 
 /**
  * Creates a mock LLM adapter for testing and development
+ * @param chatManager The chat manager to use
  * @returns The LLM adapter instance with a mock client
  */
-export function createMockLlmAdapter(): LlmAdapter {
+export function createMockLlmAdapter(chatManager: ChatManager): LlmAdapter {
   const client = new MockLlmClient();
-  return new Orchestrator(client);
+  return new Orchestrator(client, chatManager);
 }
 
 export * from "./types";
