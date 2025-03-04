@@ -70,7 +70,7 @@ describe("OllamaClient", () => {
             model: "llama2",
             prompt: "Hello, world!",
             options: {
-              temperature: 0.7,
+              temperature: 0,
               top_p: 0.9
             }
           })
@@ -121,7 +121,7 @@ describe("OllamaClient", () => {
             model: "llama2",
             prompt: "Hello, world!",
             options: {
-              temperature: 0.7,
+              temperature: 0,
               top_p: 0.9
             },
             system: "You are a helpful assistant."
@@ -226,7 +226,7 @@ describe("OllamaClient", () => {
             prompt: "Hello, world!",
             stream: true,
             options: {
-              temperature: 0.7,
+              temperature: 0,
               top_p: 0.9
             }
           })

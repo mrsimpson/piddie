@@ -15,4 +15,4 @@ export { BrowserFileSystem } from "./BrowserFileSystem";
 export { BrowserNativeFileSystem } from "./BrowserNativeFileSystem";
 export { WebContainerFileSystem } from "./WebContainerFileSystem";
 export { WebContainerSyncTarget } from "./WebContainerSyncTarget";
-export { FileManagementMcpServer } from "./file-management-mcp-server";
+export { FileManagementMcpServer } from "./FileManagementMcpServer";

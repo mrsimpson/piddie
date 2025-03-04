@@ -4,7 +4,7 @@ import { useChatStore } from "./chat";
 import { useFileSystemStore } from "./file-system";
 import { MessageStatus } from "@piddie/chat-management";
 import { FileManagementMcpServer } from "@piddie/files-management";
-import type { FileSystem } from "@piddie/shared-types";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import settingsManager from "./settings-db";
 import type {
   LlmProviderConfig as WorkbenchLlmConfig,
@@ -17,18 +17,10 @@ import type { ProviderType } from "../adapters/LlmProviderFactory";
 import {
   createLlmAdapter,
   LlmStreamEvent,
-  type LlmResponse,
   type LlmStreamChunk,
   type LlmProviderConfig,
   type LlmMessage
 } from "@piddie/llm-integration";
-
-/**
- * Interface for the file system store required by the MCP server
- */
-interface FileSystemStore {
-  getActiveFileSystem(): FileSystem | null;
-}
 
 export const useLlmStore = defineStore("llm", () => {
   const chatStore = useChatStore();
@@ -44,9 +36,6 @@ export const useLlmStore = defineStore("llm", () => {
   const fileManagementMcpServer = ref<FileManagementMcpServer | null>(null);
 
   // Create a wrapper for the file system store that implements the FileSystemStore interface
-  const fileSystemStore: FileSystemStore = {
-    getActiveFileSystem: () => fileSystemStoreInstance.getBrowserFileSystem()
-  };
 
   // Reactive configuration object for workbench
   const workbenchConfig = reactive<WorkbenchLlmConfig>({
@@ -95,10 +84,7 @@ export const useLlmStore = defineStore("llm", () => {
   };
 
   // LLM adapter instance
-  let llmAdapter = createLlmAdapter(
-    getLlmProviderConfig(),
-    chatStore.chatManager
-  );
+  let llmAdapter = createLlmAdapter(getLlmProviderConfig());
 
   // Watch for file system initialization and register the MCP server
   watch(
@@ -107,14 +93,25 @@ export const useLlmStore = defineStore("llm", () => {
       if (initialized) {
         // Create and register the file management MCP server
         fileManagementMcpServer.value = new FileManagementMcpServer(
-          fileSystemStore
+          fileSystemStoreInstance.getBrowserFileSystem()
         );
-        // Get the MCP server instance from the FileManagementMcpServer
-        llmAdapter.registerMcpServer(
-          fileManagementMcpServer.value.mcpServer,
-          "file-management"
-        );
-        console.log("File management MCP server registered with LLM adapter");
+        // Register the MCP server with the LLM adapter
+        if (fileManagementMcpServer.value && llmAdapter) {
+          llmAdapter.registerMcpServer(
+            fileManagementMcpServer.value as unknown as McpServer,
+            "file_management"
+          );
+        }
+      }
+    }
+  );
+
+  // Update the file system when it changes
+  watch(
+    () => fileSystemStoreInstance.getBrowserFileSystem(),
+    (newFileSystem) => {
+      if (fileManagementMcpServer.value) {
+        fileManagementMcpServer.value.updateFileSystem(newFileSystem);
       }
     }
   );
@@ -144,22 +141,14 @@ export const useLlmStore = defineStore("llm", () => {
       }
 
       // Recreate the adapter with the loaded configuration
-      llmAdapter = createLlmAdapter(
-        getLlmProviderConfig(),
-        chatStore.chatManager
-      );
+      llmAdapter = createLlmAdapter(getLlmProviderConfig());
 
-      // Register the file management MCP server if file system is already initialized
-      if (fileSystemStoreInstance.initialized) {
-        fileManagementMcpServer.value = new FileManagementMcpServer(
-          fileSystemStore
-        );
-        // Get the MCP server instance from the FileManagementMcpServer
+      // Re-register the file management MCP server if it exists
+      if (fileManagementMcpServer.value) {
         llmAdapter.registerMcpServer(
-          fileManagementMcpServer.value.mcpServer,
-          "file-management"
+          fileManagementMcpServer.value as unknown as McpServer,
+          "file_management"
         );
-        console.log("File management MCP server registered with LLM adapter");
       }
     } catch (err) {
       console.error("Error loading LLM settings:", err);
@@ -210,6 +199,15 @@ export const useLlmStore = defineStore("llm", () => {
       });
 
       connectionStatus.value = "success";
+
+      // Re-register the MCP server if it exists
+      if (fileManagementMcpServer.value) {
+        llmAdapter.registerMcpServer(
+          fileManagementMcpServer.value as unknown as McpServer,
+          "file_management"
+        );
+      }
+
       return true;
     } catch (err) {
       console.error("Error verifying connection:", err);
@@ -257,16 +255,13 @@ export const useLlmStore = defineStore("llm", () => {
       });
 
       // Recreate the adapter with the new configuration
-      llmAdapter = createLlmAdapter(
-        getLlmProviderConfig(),
-        chatStore.chatManager
-      );
+      llmAdapter = createLlmAdapter(getLlmProviderConfig());
 
       // Re-register the file management MCP server if it exists
       if (fileManagementMcpServer.value) {
         llmAdapter.registerMcpServer(
-          fileManagementMcpServer.value.mcpServer,
-          "file-management"
+          fileManagementMcpServer.value as unknown as McpServer,
+          "file_management"
         );
       }
 
@@ -293,16 +288,13 @@ export const useLlmStore = defineStore("llm", () => {
       Object.assign(workbenchConfig, defaultConfig, { provider: "litellm" });
 
       // Recreate the adapter with the default configuration
-      llmAdapter = createLlmAdapter(
-        getLlmProviderConfig(),
-        chatStore.chatManager
-      );
+      llmAdapter = createLlmAdapter(getLlmProviderConfig());
 
       // Re-register the file management MCP server if it exists
       if (fileManagementMcpServer.value) {
         llmAdapter.registerMcpServer(
-          fileManagementMcpServer.value.mcpServer,
-          "file-management"
+          fileManagementMcpServer.value as unknown as McpServer,
+          "file_management"
         );
       }
 
@@ -386,14 +378,17 @@ export const useLlmStore = defineStore("llm", () => {
         let accumulatedContent = "";
 
         const handleChunk = (chunk: LlmStreamChunk) => {
-          // Append the new content to the accumulated content
-          accumulatedContent += chunk.content;
+          // Only append content if it's not a final chunk with duplicate content
+          if (!chunk.isFinal) {
+            // Append the new content to the accumulated content
+            accumulatedContent += chunk.content;
 
-          // Update the assistant message with the accumulated content
-          chatStore.updateMessageContent(
-            assistantMessage.id,
-            accumulatedContent
-          );
+            // Update the assistant message with the accumulated content
+            chatStore.updateMessageContent(
+              assistantMessage.id,
+              accumulatedContent
+            );
+          }
         };
 
         try {

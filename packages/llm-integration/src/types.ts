@@ -132,6 +132,14 @@ export interface LlmStreamChunk {
   /** Content of the chunk */
   content: string;
 
+  /** Tool calls included in the chunk */
+  tool_calls?: Array<{
+    function: {
+      name: string;
+      arguments: string | Record<string, unknown>;
+    };
+  }>;
+
   /** Whether this is the final chunk */
   isFinal: boolean;
 }

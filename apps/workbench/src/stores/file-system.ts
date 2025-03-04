@@ -266,7 +266,7 @@ export const useFileSystemStore = defineStore("file-system", () => {
         systems.value.map(async (system) => {
           try {
             // Cast to any to access the dispose method until TypeScript definitions are updated
-            await (system.fileSystem as any).dispose();
+            await system.fileSystem.dispose();
           } catch (err) {
             console.warn("Error disposing file system:", err);
           }
@@ -331,7 +331,7 @@ export const useFileSystemStore = defineStore("file-system", () => {
 
       // Call dispose to delete the IndexedDB database
       // Cast to any to access the dispose method until TypeScript definitions are updated
-      await (fileSystem as any).dispose();
+      await fileSystem.dispose();
 
       console.log(
         `Successfully cleaned up file system for project: ${projectId}`

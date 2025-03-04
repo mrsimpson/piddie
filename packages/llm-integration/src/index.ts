@@ -10,7 +10,6 @@ import type {
   LlmResponse,
   LlmStreamChunk
 } from "./types";
-import type { ChatManager } from "@piddie/chat-management";
 import { EventEmitter } from "@piddie/shared-types";
 
 /**
@@ -98,28 +97,24 @@ export function createLlmClient(config: LlmProviderConfig): LlmClient {
 /**
  * Creates an LLM adapter with the specified configuration
  * @param config The LLM provider configuration
- * @param chatManager The chat manager to use
  * @returns The LLM adapter instance
  */
-export function createLlmAdapter(
-  config: LlmProviderConfig,
-  chatManager: ChatManager
-): LlmAdapter {
+export function createLlmAdapter(config: LlmProviderConfig): LlmAdapter {
   const client = createLlmClient(config);
-  return new Orchestrator(client, chatManager);
+  return new Orchestrator(client);
 }
 
 /**
  * Creates a mock LLM adapter for testing and development
- * @param chatManager The chat manager to use
  * @returns The LLM adapter instance with a mock client
  */
-export function createMockLlmAdapter(chatManager: ChatManager): LlmAdapter {
+export function createMockLlmAdapter(): LlmAdapter {
   const client = new MockLlmClient();
-  return new Orchestrator(client, chatManager);
+  return new Orchestrator(client);
 }
 
 export * from "./types";
 export * from "./MockClient";
 export * from "./LiteLlmClient";
 export * from "./Orchestrator";
+export * from "./mcp";

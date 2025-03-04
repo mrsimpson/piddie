@@ -60,7 +60,7 @@ export class OllamaClient implements LlmClient {
         "llama2",
       prompt: message.content,
       options: {
-        temperature: 0.7,
+        temperature: 0,
         top_p: 0.9
       }
     };
@@ -133,7 +133,7 @@ export class OllamaClient implements LlmClient {
           prompt: message.content,
           stream: true,
           options: {
-            temperature: 0.7,
+            temperature: 0,
             top_p: 0.9
           }
         };

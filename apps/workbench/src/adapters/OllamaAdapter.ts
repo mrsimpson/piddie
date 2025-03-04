@@ -42,7 +42,7 @@ export class OllamaAdapter extends BaseLlmProviderAdapter {
     return [];
   }
 
-  async fetchModels(baseUrl: string, apiKey: string): Promise<ModelInfo[]> {
+  async fetchModels(baseUrl: string): Promise<ModelInfo[]> {
     try {
       // Make a request to the Ollama tags endpoint
       const url = `${baseUrl}/api/tags`;

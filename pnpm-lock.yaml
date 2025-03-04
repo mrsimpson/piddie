@@ -156,6 +156,9 @@ importers:
 
   apps/workbench:
     dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: 1.6.1
+        version: 1.6.1
       '@piddie/chat-management':
         specifier: workspace:*
         version: link:../../packages/chat-management

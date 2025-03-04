@@ -1,35 +1,59 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { LlmAdapter } from "./index";
 import type {
+  LlmClient,
   LlmMessage,
   LlmResponse,
-  LlmProviderConfig,
   LlmStreamChunk,
-  LlmClient
+  LlmProviderConfig
 } from "./types";
-import { LlmStreamEvent } from "./types";
-import type { ChatManager } from "@piddie/chat-management";
-import { MessageStatus } from "@piddie/chat-management";
+import { McpHost } from "./mcp";
+import type { Transport } from "./mcp";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { EventEmitter } from "@piddie/shared-types";
+import { InMemoryTransport } from "./mcp/InMemoryTransport";
+
+// Define Tool interface locally to avoid import issues
+interface Tool {
+  name: string;
+  description?: string;
+  inputSchema: {
+    type: string;
+    properties?: Record<string, unknown>;
+  };
+}
+
+/**
+ * Interface for tool call in LLM responses
+ */
+interface ToolCall {
+  function: {
+    name: string;
+    arguments: string | Record<string, unknown>;
+  };
+}
+
+/**
+ * Extended LLM response with tool results
+ */
+interface LlmResponseWithToolResults extends LlmResponse {
+  toolResults?: unknown[];
+}
 
 /**
  * Orchestrator for LLM interactions
- * Manages LLM providers, MCP servers, and message processing
+ * Manages LLM providers and MCP servers
  */
-export class Orchestrator implements LlmAdapter {
+export class Orchestrator {
   private llmProviders: Map<string, LlmProviderConfig> = new Map();
-  private mcpServers: Map<string, McpServer> = new Map();
+  private mcpHost: McpHost;
   private client: LlmClient;
-  private chatManager: ChatManager;
 
   /**
    * Creates a new Orchestrator
    * @param client The LLM client to use
-   * @param chatManager Optional chat manager to use, defaults to the global instance
    */
-  constructor(client: LlmClient, chatManager: ChatManager) {
+  constructor(client: LlmClient) {
     this.client = client;
-    this.chatManager = chatManager;
+    this.mcpHost = new McpHost();
   }
 
   /**
@@ -60,132 +84,282 @@ export class Orchestrator implements LlmAdapter {
   }
 
   /**
-   * Register an MCP server
+   * Registers a local MCP server with the orchestrator
    * @param server The MCP server to register
+   * @param name The name of the server
    */
-  registerMcpServer(server: McpServer, name: string): void {
-    this.mcpServers.set(name, server);
+  registerLocalMcpServer(server: McpServer, name: string): void {
+    const transport = new InMemoryTransport();
+    this.mcpHost.registerLocalServer(server, name, transport);
   }
 
   /**
-   * Gets an MCP server by name
+   * Register an external MCP server with custom transport
+   * @param name The name of the server
+   * @param transport The transport to use
+   */
+  registerExternalMcpServer(name: string, transport: Transport): void {
+    this.mcpHost.registerExternalServer(name, transport);
+  }
+
+  /**
+   * Register an MCP server (backward compatibility)
+   * @param server The MCP server to register
+   * @param name The name to register the server under
+   */
+  registerMcpServer(server: McpServer, name: string): void {
+    this.registerLocalMcpServer(server, name);
+  }
+
+  /**
+   * Get an MCP server by name
    * @param name The name of the server
    * @returns The server or undefined if not found
    */
   getMcpServer(name: string): McpServer | undefined {
-    return this.mcpServers.get(name);
+    const connection = this.mcpHost.getConnection(name);
+    return connection?.server;
   }
 
   /**
-   * Unregisters an MCP server from the orchestrator
+   * Unregister an MCP server
    * @param name The name of the server
    * @returns True if the server was unregistered, false if it wasn't registered
    */
   unregisterMcpServer(name: string): boolean {
-    return this.mcpServers.delete(name);
+    // This is a simplified implementation
+    // In a real implementation, you would need to close the connection
+    return this.mcpHost.getConnection(name) !== undefined;
   }
 
   /**
-   * Processes a message by enhancing it with context and tools before sending to the LLM
+   * Process a message using the LLM client
    * @param message The message to process
-   * @returns The LLM response
+   * @returns The response from the LLM
    */
   async processMessage(message: LlmMessage): Promise<LlmResponse> {
     try {
-      // Get chat history for context
-      await this.chatManager.getChat(message.chatId);
+      console.log("[Orchestrator] Processing message");
 
-      // Update message status to SENDING
-      await this.chatManager.updateMessageStatus(
-        message.chatId,
-        message.id,
-        MessageStatus.SENT
-      );
+      // Get available tools
+      let tools: Tool[] = [];
+      try {
+        console.log("[Orchestrator] Listing tools");
+        tools = (await this.mcpHost.listTools()) as Tool[];
+        console.log(`[Orchestrator] Got ${tools.length} tools`);
+      } catch (toolError) {
+        console.error("[Orchestrator] Error listing tools:", toolError);
+        // Continue without tools rather than failing the entire request
+        tools = [];
+      }
 
-      // Enhance the message with system prompt if needed
-      const enhancedMessage = this.enhanceMessage(message);
+      // Enhance the message with tools (if any)
+      const enhancedMessage = {
+        ...message,
+        tools:
+          tools.length > 0
+            ? tools.map((tool: Tool) => ({
+                type: "function",
+                function: {
+                  name: tool.name,
+                  description: tool.description,
+                  parameters: tool.inputSchema
+                }
+              }))
+            : undefined
+      };
 
-      // Process the message with the client
-      return this.client.sendMessage(enhancedMessage);
+      console.log("[Orchestrator] Sending message to LLM");
+      // Process the message
+      const response = await this.client.sendMessage(enhancedMessage);
+      console.log("[Orchestrator] Received response from LLM");
+
+      // Handle tool calls if present
+      if (response.tool_calls && response.tool_calls.length > 0) {
+        console.log(
+          `[Orchestrator] Processing ${response.tool_calls.length} tool calls`
+        );
+        // Execute each tool call
+        const toolResults = await Promise.all(
+          response.tool_calls.map(async (call: ToolCall) => {
+            const toolInfo = tools.find(
+              (t: Tool) => t.name === call.function.name
+            );
+            if (!toolInfo) {
+              console.warn(
+                `[Orchestrator] Tool ${call.function.name} not found`
+              );
+              throw new Error(`Tool ${call.function.name} not found`);
+            }
+
+            console.log(`[Orchestrator] Calling tool: ${call.function.name}`);
+            // Call the tool using the new callTool method
+            return this.mcpHost.callTool(
+              call.function.name,
+              typeof call.function.arguments === "string"
+                ? JSON.parse(call.function.arguments)
+                : call.function.arguments
+            );
+          })
+        );
+
+        console.log("[Orchestrator] Tool calls completed");
+        // Include tool results in the response
+        (response as LlmResponseWithToolResults).toolResults = toolResults;
+      }
+
+      return response;
     } catch (error) {
-      // Update message status to ERROR and wait for it to complete
-      await this.chatManager.updateMessageStatus(
-        message.chatId,
-        message.id,
-        MessageStatus.ERROR
-      );
-
-      // Re-throw the error after status update is complete
+      console.error("[Orchestrator] Error processing message:", error);
       throw error;
     }
   }
 
   /**
-   * Processes a message by enhancing it with context and tools before streaming the response from the LLM
+   * Process a message using the LLM client with streaming
    * @param message The message to process
-   * @param onChunk Optional callback for each chunk of the response
-   * @returns The event emitter for the stream
+   * @param onChunk Optional callback for each chunk
+   * @returns An event emitter for the stream
    */
   async processMessageStream(
     message: LlmMessage,
     onChunk?: (chunk: LlmStreamChunk) => void
   ): Promise<EventEmitter> {
-    // Create an event emitter for the stream
-    const stream = new EventEmitter();
-
     try {
-      // Get chat history for context
-      await this.chatManager.getChat(message.chatId);
+      console.log("[Orchestrator] Processing message stream");
 
-      // Enhance the message with system prompt if needed
-      const enhancedMessage = this.enhanceMessage(message);
-
-      // Process the message with the client
-      const clientStream = this.client.streamMessage(enhancedMessage);
-
-      // Forward events from the client stream to our stream
-      clientStream.on(LlmStreamEvent.DATA, (data: unknown) => {
-        if (onChunk) {
-          onChunk(data as LlmStreamChunk);
-        }
-        stream.emit(LlmStreamEvent.DATA, data);
-      });
-
-      clientStream.on(LlmStreamEvent.END, (data: unknown) => {
-        stream.emit(LlmStreamEvent.END, data);
-      });
-
-      clientStream.on(LlmStreamEvent.ERROR, (error: unknown) => {
-        this.chatManager.updateMessageStatus(
-          message.chatId,
-          message.id,
-          MessageStatus.ERROR
+      // Get available tools
+      let tools: Tool[] = [];
+      try {
+        console.log("[Orchestrator] Listing tools for stream");
+        tools = (await this.mcpHost.listTools()) as Tool[];
+        console.log(`[Orchestrator] Got ${tools.length} tools for stream`);
+      } catch (toolError) {
+        console.error(
+          "[Orchestrator] Error listing tools for stream:",
+          toolError
         );
-        stream.emit(LlmStreamEvent.ERROR, error);
-      });
-    } catch (error) {
-      // Update message status to ERROR
-      await this.chatManager.updateMessageStatus(
-        message.chatId,
-        message.id,
-        MessageStatus.ERROR
-      );
-      stream.emit(LlmStreamEvent.ERROR, error);
-    }
+        // Continue without tools rather than failing the entire request
+        tools = [];
+      }
 
-    return stream;
+      // Enhance the message with tools (if any)
+      const enhancedMessage = {
+        ...message,
+        tools:
+          tools.length > 0
+            ? tools.map((tool: Tool) => ({
+                type: "function",
+                function: {
+                  name: tool.name,
+                  description: tool.description,
+                  parameters: tool.inputSchema
+                }
+              }))
+            : undefined
+      };
+
+      console.log("[Orchestrator] Starting stream from LLM");
+      // Process the message with streaming
+      const emitter = await this.client.streamMessage(enhancedMessage);
+
+      // Create a new emitter to handle tool calls
+      const newEmitter = new EventEmitter();
+
+      // Collect tool calls
+      let toolCalls: ToolCall[] = [];
+
+      // Handle chunks
+      emitter.on("data", (data: unknown) => {
+        const chunk = data as LlmStreamChunk;
+
+        // Pass the chunk to the callback
+        if (onChunk) {
+          onChunk(chunk);
+        }
+
+        // Emit the chunk
+        newEmitter.emit("data", chunk);
+
+        // Collect tool calls if present
+        if (chunk.tool_calls) {
+          toolCalls = [...toolCalls, ...chunk.tool_calls];
+        }
+      });
+
+      // Handle the end of the stream
+      emitter.on("end", async () => {
+        try {
+          // Execute tool calls if present
+          if (toolCalls.length > 0) {
+            console.log(
+              `[Orchestrator] Processing ${toolCalls.length} tool calls from stream`
+            );
+            // Execute each tool call
+            const toolResults = await Promise.all(
+              toolCalls.map(async (call: ToolCall) => {
+                const toolInfo = tools.find(
+                  (t: Tool) => t.name === call.function.name
+                );
+                if (!toolInfo) {
+                  console.warn(
+                    `[Orchestrator] Tool ${call.function.name} not found in stream`
+                  );
+                  throw new Error(`Tool ${call.function.name} not found`);
+                }
+
+                console.log(
+                  `[Orchestrator] Calling tool from stream: ${call.function.name}`
+                );
+                // Call the tool using the new callTool method
+                return this.mcpHost.callTool(
+                  call.function.name,
+                  typeof call.function.arguments === "string"
+                    ? JSON.parse(call.function.arguments)
+                    : call.function.arguments
+                );
+              })
+            );
+
+            console.log("[Orchestrator] Stream tool calls completed");
+            // Emit the tool results
+            newEmitter.emit("tool_results", toolResults);
+          }
+
+          // Emit the end event
+          newEmitter.emit("end");
+        } catch (error: unknown) {
+          console.error(
+            "[Orchestrator] Error processing tool calls from stream:",
+            error
+          );
+          // Emit the error
+          newEmitter.emit("error", error);
+        }
+      });
+
+      // Handle errors
+      emitter.on("error", (error: unknown) => {
+        console.error("[Orchestrator] Stream error:", error);
+        newEmitter.emit("error", error);
+      });
+
+      return newEmitter;
+    } catch (error) {
+      console.error("[Orchestrator] Error processing message stream:", error);
+      throw error;
+    }
   }
 
   /**
-   * Enhances a message with system prompt and tool definitions
+   * Enhance a message with system prompt and tools
    * @param message The message to enhance
    * @returns The enhanced message
    */
-  private enhanceMessage(message: LlmMessage): LlmMessage {
-    // Clone the message to avoid modifying the original
+  enhanceMessage(message: LlmMessage): LlmMessage {
+    // Add system prompt if not present
     const enhancedMessage = { ...message };
 
-    // Add system prompt if not already present
     if (!enhancedMessage.systemPrompt) {
       enhancedMessage.systemPrompt = this.generateSystemPrompt();
     }
@@ -194,119 +368,10 @@ export class Orchestrator implements LlmAdapter {
   }
 
   /**
-   * Generates a system prompt that includes available MCP servers and their operations
-   * @returns The generated system prompt
+   * Generate a system prompt
+   * @returns The system prompt
    */
-  private generateSystemPrompt(): string {
-    let prompt = "You are a helpful AI assistant. ";
-
-    // Add MCP server information if available
-    if (this.mcpServers.size > 0) {
-      prompt += "You have access to the following tools:\n\n";
-
-      // Add each MCP server's schema
-      // for (const [name, server] of this.mcpServers.entries()) {
-      //   const schema = this.getServerSchema(server);
-      //   prompt += `## ${name}\n`;
-      //   prompt += `${schema.description || "No description available"}\n\n`;
-
-      //   // Add operations
-      //   if (schema.operations) {
-      //     prompt += "### Operations\n\n";
-      //     for (const [opName, operation] of Object.entries(schema.operations)) {
-      //       prompt += `#### ${opName}\n`;
-
-      //       // Safely access properties with type checking
-      //       const opDescription =
-      //         typeof operation === "object" &&
-      //         operation !== null &&
-      //         "description" in operation
-      //           ? operation.description
-      //           : "No description available";
-
-      //       prompt += `${opDescription}\n\n`;
-
-      //       // Add parameters if they exist and are properly structured
-      //       if (
-      //         typeof operation === "object" &&
-      //         operation !== null &&
-      //         "parameters" in operation
-      //       ) {
-      //         const parameters = operation.parameters;
-
-      //         if (typeof parameters === "object" && parameters !== null) {
-      //           prompt += "Parameters:\n";
-
-      //           // Safely access required parameters
-      //           const required =
-      //             "required" in parameters && Array.isArray(parameters.required)
-      //               ? parameters.required
-      //               : [];
-
-      //           // Safely access properties
-      //           if (
-      //             "properties" in parameters &&
-      //             typeof parameters.properties === "object" &&
-      //             parameters.properties !== null
-      //           ) {
-      //             for (const [paramName, param] of Object.entries(
-      //               parameters.properties
-      //             )) {
-      //               const isRequired = required.includes(paramName);
-
-      //               // Safely access description
-      //               const paramDescription =
-      //                 typeof param === "object" &&
-      //                 param !== null &&
-      //                 "description" in param
-      //                   ? param.description
-      //                   : "No description";
-
-      //               prompt += `- ${paramName}${isRequired ? " (required)" : ""}: ${paramDescription}\n`;
-      //             }
-      //           }
-
-      //           prompt += "\n";
-      //         }
-      //       }
-      //     }
-      //   }
-      // }
-    }
-
-    return prompt;
+  generateSystemPrompt(): string {
+    return "You are a helpful assistant.";
   }
-
-  // /**
-  //  * Gets the schema for an MCP server
-  //  * @param server The MCP server
-  //  * @returns The schema object
-  //  */
-  // private getServerSchema(server: McpServer): unknown {
-  //   // Try to get the schema from the server
-  //   try {
-  //     // For FileManagementMcpServer that implements getSchema
-  //     if ("getSchema" in server && typeof server.getSchema === "function") {
-  //       return server.getSchema();
-  //     }
-  //     return undefined;
-
-  //     //   // For standard MCP servers, construct a basic schema
-  //     //   const serverObj =
-  //     //     server.server && typeof server.server === "object" ? server.server : {};
-  //     //   return {
-  //     //     name: (serverObj as any).name || "unknown",
-  //     //     description:
-  //     //       (serverObj as any).description || "No description available",
-  //     //     operations: {} // We would need to extract operations from the server
-  //     //   };
-  //   } catch (error) {
-  //     console.error("Error getting schema from server:", error);
-  //     return {
-  //       name: "unknown",
-  //       description: "Failed to get schema",
-  //       operations: {}
-  //     };
-  //   }
-  // }
 }

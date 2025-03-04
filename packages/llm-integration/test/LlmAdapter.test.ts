@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { EventEmitter } from "events";
 import { LlmStreamEvent } from "../src/types";
-import type { ChatManager } from "@piddie/chat-management";
 import { MessageStatus } from "@piddie/chat-management";
 import type { LlmMessage, LlmProviderConfig } from "../src/types";
 import { Orchestrator } from "../src/Orchestrator";
@@ -99,7 +98,7 @@ describe("LLM Adapter", () => {
       updateMessageContent: vi.fn().mockResolvedValue(true)
     };
 
-    // Create adapter with mock client and chat manager
+    // Create adapter with mock client only (no chat manager)
     const config: LlmProviderConfig = {
       name: "Test Provider",
       description: "Test Provider Description",
@@ -108,10 +107,7 @@ describe("LLM Adapter", () => {
       model: "test-model"
     };
 
-    adapter = new Orchestrator(
-      new LiteLlmClient(config),
-      mockChatManager as ChatManager
-    );
+    adapter = new Orchestrator(new LiteLlmClient(config));
   });
 
   describe("processMessage", () => {
@@ -135,22 +131,10 @@ describe("LLM Adapter", () => {
         model: "test-model"
       });
 
-      // Verify chat manager was called
-      expect(mockChatManager.getChat).toHaveBeenCalledWith("chat-id");
-      expect(mockChatManager.updateMessageStatus).toHaveBeenCalledWith(
-        "chat-id",
-        "message-id",
-        MessageStatus.SENT
-      );
+      // No longer verify chat manager was called since Orchestrator doesn't handle message status
     });
 
-    it("should handle errors and update message status", async () => {
-      // Create a spy on the updateMessageStatus method
-      const updateMessageStatusSpy = vi.spyOn(
-        mockChatManager,
-        "updateMessageStatus"
-      );
-
+    it("should handle errors during message processing", async () => {
       // Mock client that throws an error when sendMessage is called
       const errorClient = {
         sendMessage: vi.fn().mockImplementation(() => {
@@ -159,10 +143,7 @@ describe("LLM Adapter", () => {
         streamMessage: vi.fn()
       };
 
-      const errorAdapter = new Orchestrator(
-        errorClient,
-        mockChatManager as ChatManager
-      );
+      const errorAdapter = new Orchestrator(errorClient);
 
       const message: LlmMessage = {
         id: "message-id",
@@ -186,20 +167,7 @@ describe("LLM Adapter", () => {
       expect(error).toBeDefined();
       expect(error.message).toBe("Test error");
 
-      // Verify updateMessageStatus was called with SENT and ERROR
-      expect(updateMessageStatusSpy).toHaveBeenCalledTimes(2);
-      expect(updateMessageStatusSpy).toHaveBeenNthCalledWith(
-        1,
-        "chat-id",
-        "message-id",
-        MessageStatus.SENT
-      );
-      expect(updateMessageStatusSpy).toHaveBeenNthCalledWith(
-        2,
-        "chat-id",
-        "message-id",
-        MessageStatus.ERROR
-      );
+      // No longer verify updateMessageStatus was called
     });
   });
 
@@ -246,8 +214,7 @@ describe("LLM Adapter", () => {
       expect(chunks[1].content).toBe("a streaming ");
       expect(chunks[2].content).toBe("response");
 
-      // Verify chat manager was called
-      expect(mockChatManager.getChat).toHaveBeenCalledWith("chat-id");
+      // No longer verify chat manager was called
     });
 
     it("should handle errors during streaming", async () => {
@@ -266,10 +233,7 @@ describe("LLM Adapter", () => {
         })
       };
 
-      const errorAdapter = new Orchestrator(
-        errorClient,
-        mockChatManager as ChatManager
-      );
+      const errorAdapter = new Orchestrator(errorClient);
 
       const message: LlmMessage = {
         id: "message-id",
@@ -297,12 +261,7 @@ describe("LLM Adapter", () => {
       expect(onError.mock.calls[0][0]).toBeInstanceOf(Error);
       expect(onError.mock.calls[0][0].message).toBe("Stream error");
 
-      // Verify error status was set
-      expect(mockChatManager.updateMessageStatus).toHaveBeenCalledWith(
-        "chat-id",
-        "message-id",
-        MessageStatus.ERROR
-      );
+      // No longer verify error status was set
     });
   });
 });

@@ -33,11 +33,13 @@ export class MockAdapter extends BaseLlmProviderAdapter {
     return [{ id: "mock-model", name: "Mock Model (Development)" }];
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async fetchModels(_baseUrl: string, _apiKey: string): Promise<ModelInfo[]> {
     // Mock provider always returns the default models
     return this.getDefaultModels();
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async verifyConnection(_baseUrl: string, _apiKey: string): Promise<boolean> {
     // Mock provider is always available
     return true;
