@@ -65,8 +65,8 @@ export class LiteLlmClient implements LlmClient {
    * @returns A promise that resolves to the LLM response
    */
   async sendMessage(message: LlmMessage): Promise<LlmResponse> {
-    // Convert LlmMessage to the appropriate OpenAI message type
-    const openaiMessage = this.convertToOpenAIMessage(message);
+    // Use the messages array if provided, otherwise convert the single message
+    const messages = message.messages || [this.convertToOpenAIMessage(message)];
 
     // Use fetch API instead of OpenAI client
     const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
@@ -80,7 +80,8 @@ export class LiteLlmClient implements LlmClient {
           this.config.selectedModel ||
           this.config.model ||
           this.config.defaultModel,
-        messages: [openaiMessage]
+        messages: messages,
+        tools: message.tools
       })
     });
 
@@ -140,8 +141,10 @@ export class LiteLlmClient implements LlmClient {
     // Start the streaming request
     const streamRequest = async () => {
       try {
-        // Convert LlmMessage to the appropriate OpenAI message type
-        const openaiMessage = this.convertToOpenAIMessage(message);
+        // Use the messages array if provided, otherwise convert the single message
+        const messages = message.messages || [
+          this.convertToOpenAIMessage(message)
+        ];
 
         // Use fetch API with streaming
         const fetchResponse = await fetch(
@@ -157,7 +160,8 @@ export class LiteLlmClient implements LlmClient {
                 this.config.selectedModel ||
                 this.config.model ||
                 this.config.defaultModel,
-              messages: [openaiMessage],
+              messages: messages,
+              tools: message.tools,
               stream: true
             })
           }

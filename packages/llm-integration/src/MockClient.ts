@@ -24,7 +24,7 @@ export class MockLlmClient implements LlmClient {
     return {
       id: crypto.randomUUID(),
       chatId: message.chatId,
-      content: `This is a mock response to: "${message.content}"`,
+      content: this.getMessageContent(message),
       role: "assistant",
       created: new Date(),
       parentId: message.id
@@ -44,7 +44,7 @@ export class MockLlmClient implements LlmClient {
     const fullResponse: LlmResponse = {
       id: crypto.randomUUID(),
       chatId: message.chatId,
-      content: `This is a mock response to: "${message.content}"`,
+      content: this.getMessageContent(message),
       role: "assistant",
       created: new Date(),
       parentId: message.id
@@ -66,5 +66,15 @@ export class MockLlmClient implements LlmClient {
     }, 1000);
 
     return eventEmitter;
+  }
+
+  /**
+   * Creates a messages that pictures what's been sent to the llm
+   * @param message The message to get the content from
+   * @returns The content of the message
+   */
+  private getMessageContent(message: LlmMessage): string {
+    const messageBody = `This is a mock response to: "${message.content}"`;
+    return messageBody;
   }
 }

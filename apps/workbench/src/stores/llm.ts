@@ -84,7 +84,10 @@ export const useLlmStore = defineStore("llm", () => {
   };
 
   // LLM adapter instance
-  let llmAdapter = createLlmAdapter(getLlmProviderConfig());
+  let llmAdapter = createLlmAdapter(
+    getLlmProviderConfig(),
+    chatStore.chatManager
+  );
 
   // Watch for file system initialization and register the MCP server
   watch(
@@ -141,7 +144,10 @@ export const useLlmStore = defineStore("llm", () => {
       }
 
       // Recreate the adapter with the loaded configuration
-      llmAdapter = createLlmAdapter(getLlmProviderConfig());
+      llmAdapter = createLlmAdapter(
+        getLlmProviderConfig(),
+        chatStore.chatManager
+      );
 
       // Re-register the file management MCP server if it exists
       if (fileManagementMcpServer.value) {
@@ -255,7 +261,10 @@ export const useLlmStore = defineStore("llm", () => {
       });
 
       // Recreate the adapter with the new configuration
-      llmAdapter = createLlmAdapter(getLlmProviderConfig());
+      llmAdapter = createLlmAdapter(
+        getLlmProviderConfig(),
+        chatStore.chatManager
+      );
 
       // Re-register the file management MCP server if it exists
       if (fileManagementMcpServer.value) {
@@ -288,7 +297,10 @@ export const useLlmStore = defineStore("llm", () => {
       Object.assign(workbenchConfig, defaultConfig, { provider: "litellm" });
 
       // Recreate the adapter with the default configuration
-      llmAdapter = createLlmAdapter(getLlmProviderConfig());
+      llmAdapter = createLlmAdapter(
+        getLlmProviderConfig(),
+        chatStore.chatManager
+      );
 
       // Re-register the file management MCP server if it exists
       if (fileManagementMcpServer.value) {
@@ -349,6 +361,7 @@ export const useLlmStore = defineStore("llm", () => {
         "",
         "assistant",
         modelName, // Pass the model name as the username
+        userMessage.id,
         MessageStatus.SENDING // Set initial status to SENDING
       );
 
@@ -361,7 +374,8 @@ export const useLlmStore = defineStore("llm", () => {
         status: userMessage.status,
         created: userMessage.created,
         parentId: userMessage.parentId,
-        provider: workbenchConfig.provider || "litellm" // Ensure provider is never undefined
+        provider: workbenchConfig.provider || "litellm", // Ensure provider is never undefined
+        assistantMessageId: assistantMessage.id // Include the assistant message ID for updating
       };
 
       // Reset streaming message ID

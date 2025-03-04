@@ -32,6 +32,25 @@ export interface LlmMessage {
 
   /** Provider to use for this message */
   provider: string;
+
+  /** ID of the assistant message placeholder (for updating existing messages) */
+  assistantMessageId?: string;
+
+  /** Array of messages for the conversation history */
+  messages?: Array<{
+    role: string;
+    content: string;
+  }>;
+
+  /** Tools to be used by the LLM */
+  tools?: Array<{
+    type: string;
+    function: {
+      name: string;
+      description?: string;
+      parameters: Record<string, unknown>;
+    };
+  }>;
 }
 
 /**

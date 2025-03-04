@@ -10,6 +10,10 @@ import type { Transport } from "./mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { EventEmitter } from "@piddie/shared-types";
 import { InMemoryTransport } from "./mcp/InMemoryTransport";
+import type { ChatManager } from "@piddie/chat-management";
+import { v4 as uuidv4 } from "uuid";
+import { MessageStatus } from "@piddie/chat-management";
+import type { LlmAdapter } from "./index";
 
 // Define Tool interface locally to avoid import issues
 interface Tool {
@@ -42,17 +46,20 @@ interface LlmResponseWithToolResults extends LlmResponse {
  * Orchestrator for LLM interactions
  * Manages LLM providers and MCP servers
  */
-export class Orchestrator {
+export class Orchestrator implements LlmAdapter {
   private llmProviders: Map<string, LlmProviderConfig> = new Map();
   private mcpHost: McpHost;
   private client: LlmClient;
+  private chatManager: ChatManager | undefined;
 
   /**
-   * Creates a new Orchestrator
+   * Creates a new Orchestrator instance
    * @param client The LLM client to use
+   * @param chatManager Optional chat manager for persistence
    */
-  constructor(client: LlmClient) {
+  constructor(client: LlmClient, chatManager: ChatManager) {
     this.client = client;
+    this.chatManager = chatManager;
     this.mcpHost = new McpHost();
   }
 
@@ -133,86 +140,248 @@ export class Orchestrator {
   }
 
   /**
-   * Process a message using the LLM client
+   * Retrieves available tools from the MCP host
+   * @returns Array of available tools
+   */
+  private async getAvailableTools(): Promise<Tool[]> {
+    try {
+      const tools = await this.mcpHost.listTools();
+      console.log(`Retrieved ${tools.length} tools`);
+      return tools;
+    } catch (error) {
+      console.error("Error retrieving tools:", error);
+      // Continue without tools rather than failing the entire request
+      return [];
+    }
+  }
+
+  /**
+   * Retrieves chat history for a message
+   * @param chatId The ID of the chat to retrieve history for
+   * @param assistantMessageId Optional ID of the assistant message to exclude from history
+   * @returns Array of messages in the format expected by the LLM
+   */
+  private async getChatHistory(
+    chatId: string,
+    assistantMessageId?: string
+  ): Promise<Array<{ role: string; content: string }>> {
+    if (!this.chatManager) {
+      return [];
+    }
+
+    try {
+      const chat = await this.chatManager.getChat(chatId);
+      const history = chat.messages;
+
+      // Filter out the placeholder assistant message if it exists
+      const filteredHistory = assistantMessageId
+        ? history.filter(
+            (msg) => msg.id !== assistantMessageId || msg.content.trim() !== ""
+          )
+        : history;
+
+      // Map to the format expected by the LLM
+      const chatHistory = filteredHistory.map((msg) => ({
+        role: msg.role,
+        content: msg.content
+      }));
+
+      console.log(`Retrieved ${chatHistory.length} messages from chat history`);
+      return chatHistory;
+    } catch (error) {
+      console.error("Error retrieving chat history:", error);
+      // Continue without history rather than failing
+      return [];
+    }
+  }
+
+  /**
+   * Updates message status in the chat manager
+   * @param chatId The ID of the chat containing the message
+   * @param messageId The ID of the message to update
+   * @param status The new status
+   */
+  private async updateMessageStatus(
+    chatId: string,
+    messageId: string,
+    status: MessageStatus
+  ): Promise<void> {
+    if (!this.chatManager) {
+      return;
+    }
+
+    try {
+      await this.chatManager.updateMessageStatus(chatId, messageId, status);
+    } catch (error) {
+      console.error(`Error updating message status for ${messageId}:`, error);
+      // Continue processing even if status update fails
+    }
+  }
+
+  /**
+   * Handles the response from the LLM by either updating an existing assistant message or creating a new one
+   * @param message The original user message
+   * @param response The response from the LLM
+   */
+  private async handleLlmResponse(
+    message: LlmMessage,
+    response: LlmResponse
+  ): Promise<void> {
+    if (!this.chatManager) {
+      return;
+    }
+
+    try {
+      // Update the user message status to sent
+      await this.updateMessageStatus(
+        message.chatId,
+        message.id,
+        MessageStatus.SENT
+      );
+
+      if (message.assistantMessageId) {
+        // Update the existing assistant message
+        await this.chatManager.updateMessageContent(
+          message.chatId,
+          message.assistantMessageId,
+          response.content
+        );
+      } else {
+        // Add a new assistant response to the chat
+        await this.chatManager.addMessage(
+          message.chatId,
+          response.content,
+          response.role,
+          "assistant",
+          message.id
+        );
+      }
+    } catch (error) {
+      console.error("Error handling LLM response:", error);
+      // Continue even if chat update fails
+    }
+  }
+
+  /**
+   * Enhances a message with chat history and tools
+   * @param message The message to enhance
+   * @returns The enhanced message
+   */
+  private async enhanceMessageWithHistoryAndTools(
+    message: LlmMessage
+  ): Promise<LlmMessage> {
+    const enhancedMessage: LlmMessage = { ...message };
+
+    // Get available tools
+    const tools = await this.getAvailableTools();
+
+    // Get chat history
+    const chatHistory = await this.getChatHistory(
+      message.chatId,
+      message.assistantMessageId
+    );
+
+    // Add chat history to the message
+    if (chatHistory.length > 0) {
+      enhancedMessage.messages = chatHistory;
+    }
+
+    // Add tools to the message if any were retrieved
+    if (tools.length > 0) {
+      enhancedMessage.tools = tools.map((tool) => ({
+        type: "function",
+        function: {
+          name: tool.name,
+          description: tool.description || "",
+          parameters: tool.inputSchema
+        }
+      }));
+    } else {
+      enhancedMessage.tools = [];
+    }
+
+    return enhancedMessage;
+  }
+
+  /**
+   * Process tool calls from an LLM response
+   * @param response The LLM response containing tool calls
+   * @param tools Available tools
+   * @returns The tool results
+   */
+  private async processToolCalls(
+    response: LlmResponse,
+    tools: Tool[]
+  ): Promise<unknown[]> {
+    if (!response.tool_calls || response.tool_calls.length === 0) {
+      return [];
+    }
+
+    console.log(`Processing ${response.tool_calls.length} tool calls`);
+
+    // Execute each tool call
+    const toolResults = await Promise.all(
+      response.tool_calls.map(async (call) => {
+        const toolInfo = tools.find((t) => t.name === call.function.name);
+        if (!toolInfo) {
+          console.warn(`Tool ${call.function.name} not found`);
+          throw new Error(`Tool ${call.function.name} not found`);
+        }
+
+        console.log(`Calling tool: ${call.function.name}`);
+        // Call the tool using the callTool method
+        return this.mcpHost.callTool(
+          call.function.name,
+          typeof call.function.arguments === "string"
+            ? JSON.parse(call.function.arguments)
+            : call.function.arguments
+        );
+      })
+    );
+
+    console.log("Tool calls completed");
+    return toolResults;
+  }
+
+  /**
+   * Processes a message using the LLM client
    * @param message The message to process
-   * @returns The response from the LLM
+   * @returns A promise that resolves to the LLM response
    */
   async processMessage(message: LlmMessage): Promise<LlmResponse> {
-    try {
-      console.log("[Orchestrator] Processing message");
+    console.log(`Processing message: ${message.id}`);
 
-      // Get available tools
-      let tools: Tool[] = [];
-      try {
-        console.log("[Orchestrator] Listing tools");
-        tools = (await this.mcpHost.listTools()) as Tool[];
-        console.log(`[Orchestrator] Got ${tools.length} tools`);
-      } catch (toolError) {
-        console.error("[Orchestrator] Error listing tools:", toolError);
-        // Continue without tools rather than failing the entire request
-        tools = [];
-      }
+    // Update message status to processing
+    await this.updateMessageStatus(
+      message.chatId,
+      message.id,
+      MessageStatus.SENT
+    );
 
-      // Enhance the message with tools (if any)
-      const enhancedMessage = {
-        ...message,
-        tools:
-          tools.length > 0
-            ? tools.map((tool: Tool) => ({
-                type: "function",
-                function: {
-                  name: tool.name,
-                  description: tool.description,
-                  parameters: tool.inputSchema
-                }
-              }))
-            : undefined
-      };
+    // Enhance the message with chat history and tools
+    const enhancedMessage =
+      await this.enhanceMessageWithHistoryAndTools(message);
 
-      console.log("[Orchestrator] Sending message to LLM");
-      // Process the message
-      const response = await this.client.sendMessage(enhancedMessage);
-      console.log("[Orchestrator] Received response from LLM");
+    // Send the enhanced message to the LLM
+    console.log("Sending message to LLM");
+    const response = await this.client.sendMessage(enhancedMessage);
+    console.log("Received response from LLM");
 
-      // Handle tool calls if present
-      if (response.tool_calls && response.tool_calls.length > 0) {
-        console.log(
-          `[Orchestrator] Processing ${response.tool_calls.length} tool calls`
-        );
-        // Execute each tool call
-        const toolResults = await Promise.all(
-          response.tool_calls.map(async (call: ToolCall) => {
-            const toolInfo = tools.find(
-              (t: Tool) => t.name === call.function.name
-            );
-            if (!toolInfo) {
-              console.warn(
-                `[Orchestrator] Tool ${call.function.name} not found`
-              );
-              throw new Error(`Tool ${call.function.name} not found`);
-            }
+    // Get available tools for processing tool calls
+    const tools = await this.getAvailableTools();
 
-            console.log(`[Orchestrator] Calling tool: ${call.function.name}`);
-            // Call the tool using the new callTool method
-            return this.mcpHost.callTool(
-              call.function.name,
-              typeof call.function.arguments === "string"
-                ? JSON.parse(call.function.arguments)
-                : call.function.arguments
-            );
-          })
-        );
+    // Process tool calls if present
+    if (response.tool_calls && response.tool_calls.length > 0) {
+      const toolResults = await this.processToolCalls(response, tools);
 
-        console.log("[Orchestrator] Tool calls completed");
-        // Include tool results in the response
-        (response as LlmResponseWithToolResults).toolResults = toolResults;
-      }
-
-      return response;
-    } catch (error) {
-      console.error("[Orchestrator] Error processing message:", error);
-      throw error;
+      // Include tool results in the response
+      (response as LlmResponseWithToolResults).toolResults = toolResults;
     }
+
+    // Handle the LLM response (update or create assistant message)
+    await this.handleLlmResponse(message, response);
+
+    return response;
   }
 
   /**
@@ -228,36 +397,16 @@ export class Orchestrator {
     try {
       console.log("[Orchestrator] Processing message stream");
 
-      // Get available tools
-      let tools: Tool[] = [];
-      try {
-        console.log("[Orchestrator] Listing tools for stream");
-        tools = (await this.mcpHost.listTools()) as Tool[];
-        console.log(`[Orchestrator] Got ${tools.length} tools for stream`);
-      } catch (toolError) {
-        console.error(
-          "[Orchestrator] Error listing tools for stream:",
-          toolError
-        );
-        // Continue without tools rather than failing the entire request
-        tools = [];
-      }
+      // Update message status to processing
+      await this.updateMessageStatus(
+        message.chatId,
+        message.id,
+        MessageStatus.SENT
+      );
 
-      // Enhance the message with tools (if any)
-      const enhancedMessage = {
-        ...message,
-        tools:
-          tools.length > 0
-            ? tools.map((tool: Tool) => ({
-                type: "function",
-                function: {
-                  name: tool.name,
-                  description: tool.description,
-                  parameters: tool.inputSchema
-                }
-              }))
-            : undefined
-      };
+      // Enhance the message with chat history and tools
+      const enhancedMessage =
+        await this.enhanceMessageWithHistoryAndTools(message);
 
       console.log("[Orchestrator] Starting stream from LLM");
       // Process the message with streaming
@@ -268,10 +417,16 @@ export class Orchestrator {
 
       // Collect tool calls
       let toolCalls: ToolCall[] = [];
+      let accumulatedContent = "";
 
       // Handle chunks
       emitter.on("data", (data: unknown) => {
         const chunk = data as LlmStreamChunk;
+
+        // Accumulate content for the final response
+        if (chunk.content) {
+          accumulatedContent += chunk.content;
+        }
 
         // Pass the chunk to the callback
         if (onChunk) {
@@ -290,42 +445,42 @@ export class Orchestrator {
       // Handle the end of the stream
       emitter.on("end", async () => {
         try {
+          // Get available tools for processing tool calls
+          const tools = await this.getAvailableTools();
+
+          // Create a response object for the ChatManager
+          const response = {
+            id: uuidv4(),
+            chatId: message.chatId,
+            content: accumulatedContent,
+            role: "assistant" as const,
+            created: new Date(),
+            parentId: message.id,
+            tool_calls: toolCalls.length > 0 ? toolCalls : []
+          } as LlmResponse;
+
           // Execute tool calls if present
           if (toolCalls.length > 0) {
             console.log(
               `[Orchestrator] Processing ${toolCalls.length} tool calls from stream`
             );
-            // Execute each tool call
-            const toolResults = await Promise.all(
-              toolCalls.map(async (call: ToolCall) => {
-                const toolInfo = tools.find(
-                  (t: Tool) => t.name === call.function.name
-                );
-                if (!toolInfo) {
-                  console.warn(
-                    `[Orchestrator] Tool ${call.function.name} not found in stream`
-                  );
-                  throw new Error(`Tool ${call.function.name} not found`);
-                }
 
-                console.log(
-                  `[Orchestrator] Calling tool from stream: ${call.function.name}`
-                );
-                // Call the tool using the new callTool method
-                return this.mcpHost.callTool(
-                  call.function.name,
-                  typeof call.function.arguments === "string"
-                    ? JSON.parse(call.function.arguments)
-                    : call.function.arguments
-                );
-              })
-            );
+            const toolResults = await this.processToolCalls(response, tools);
 
             console.log("[Orchestrator] Stream tool calls completed");
             // Emit the tool results
             newEmitter.emit("tool_results", toolResults);
+
+            // Include tool results in the response
+            (response as LlmResponseWithToolResults).toolResults = toolResults;
           }
 
+          // Handle the LLM response (update or create assistant message)
+          await this.handleLlmResponse(message, response);
+
+          console.log(
+            "[Orchestrator] Stream processing complete, emitting end event"
+          );
           // Emit the end event
           newEmitter.emit("end");
         } catch (error: unknown) {
@@ -333,6 +488,14 @@ export class Orchestrator {
             "[Orchestrator] Error processing tool calls from stream:",
             error
           );
+
+          // Update message status to error
+          await this.updateMessageStatus(
+            message.chatId,
+            message.id,
+            MessageStatus.ERROR
+          );
+
           // Emit the error
           newEmitter.emit("error", error);
         }
@@ -341,12 +504,33 @@ export class Orchestrator {
       // Handle errors
       emitter.on("error", (error: unknown) => {
         console.error("[Orchestrator] Stream error:", error);
+
+        // Update message status to error
+        this.updateMessageStatus(
+          message.chatId,
+          message.id,
+          MessageStatus.ERROR
+        ).catch((updateError) => {
+          console.error(
+            "[Orchestrator] Error updating message status:",
+            updateError
+          );
+        });
+
         newEmitter.emit("error", error);
       });
 
       return newEmitter;
     } catch (error) {
       console.error("[Orchestrator] Error processing message stream:", error);
+
+      // Update message status to error
+      await this.updateMessageStatus(
+        message.chatId,
+        message.id,
+        MessageStatus.ERROR
+      );
+
       throw error;
     }
   }

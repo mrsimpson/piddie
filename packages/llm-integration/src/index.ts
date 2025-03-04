@@ -11,6 +11,7 @@ import type {
   LlmStreamChunk
 } from "./types";
 import { EventEmitter } from "@piddie/shared-types";
+import type { ChatManager } from "@piddie/chat-management";
 
 /**
  * Interface for LLM adapter
@@ -97,20 +98,28 @@ export function createLlmClient(config: LlmProviderConfig): LlmClient {
 /**
  * Creates an LLM adapter with the specified configuration
  * @param config The LLM provider configuration
+ * @param chatManager Optional chat manager for persistence
  * @returns The LLM adapter instance
  */
-export function createLlmAdapter(config: LlmProviderConfig): LlmAdapter {
+export function createLlmAdapter(
+  config: LlmProviderConfig,
+  chatManager: ChatManager
+): LlmAdapter {
   const client = createLlmClient(config);
-  return new Orchestrator(client);
+  if (!chatManager) {
+    throw new Error("Chat manager is required");
+  }
+  return new Orchestrator(client, chatManager);
 }
 
 /**
  * Creates a mock LLM adapter for testing and development
+ * @param chatManager Optional chat manager for persistence
  * @returns The LLM adapter instance with a mock client
  */
-export function createMockLlmAdapter(): LlmAdapter {
+export function createMockLlmAdapter(chatManager: ChatManager): LlmAdapter {
   const client = new MockLlmClient();
-  return new Orchestrator(client);
+  return new Orchestrator(client, chatManager);
 }
 
 export * from "./types";

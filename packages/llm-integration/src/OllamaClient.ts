@@ -58,16 +58,37 @@ export class OllamaClient implements LlmClient {
         this.config.model ||
         this.config.defaultModel ||
         "llama2",
-      prompt: message.content,
+      prompt: "", // Initialize with empty string, will be set below
       options: {
         temperature: 0,
         top_p: 0.9
       }
     };
 
-    // Add system prompt if present
-    if (message.systemPrompt) {
-      payload.system = message.systemPrompt;
+    // Handle message history if available
+    if (message.messages && message.messages.length > 0) {
+      // Extract system message if present
+      const systemMessage = message.messages.find((m) => m.role === "system");
+      if (systemMessage) {
+        payload.system = systemMessage.content;
+      }
+
+      // Concatenate the conversation history into a single prompt
+      // Format: User: {content}\nAssistant: {content}\nUser: {content}...
+      const nonSystemMessages = message.messages.filter(
+        (m) => m.role !== "system"
+      );
+      payload.prompt = nonSystemMessages
+        .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
+        .join("\n");
+    } else {
+      // Use single message if no history is provided
+      payload.prompt = message.content;
+
+      // Add system prompt if present
+      if (message.systemPrompt) {
+        payload.system = message.systemPrompt;
+      }
     }
 
     // Use fetch API to send the request
@@ -130,7 +151,7 @@ export class OllamaClient implements LlmClient {
             this.config.model ||
             this.config.defaultModel ||
             "llama2",
-          prompt: message.content,
+          prompt: "", // Initialize with empty string, will be set below
           stream: true,
           options: {
             temperature: 0,
@@ -138,9 +159,36 @@ export class OllamaClient implements LlmClient {
           }
         };
 
-        // Add system prompt if present
-        if (message.systemPrompt) {
-          payload.system = message.systemPrompt;
+        // Handle message history if available
+        if (message.messages && message.messages.length > 0) {
+          // Extract system message if present
+          const systemMessage = message.messages.find(
+            (m) => m.role === "system"
+          );
+          if (systemMessage) {
+            payload.system = systemMessage.content;
+          }
+
+          // Concatenate non-system messages into a conversation format
+          const nonSystemMessages = message.messages.filter(
+            (m) => m.role !== "system"
+          );
+          if (nonSystemMessages.length > 0) {
+            payload.prompt = nonSystemMessages
+              .map(
+                (m) =>
+                  `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`
+              )
+              .join("\n");
+          }
+        } else {
+          // Use single message content if no history is provided
+          payload.prompt = message.content;
+
+          // Add system prompt if present
+          if (message.systemPrompt) {
+            payload.system = message.systemPrompt;
+          }
         }
 
         // Use fetch API with streaming
