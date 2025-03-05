@@ -5,55 +5,47 @@ import type {
 } from "./types";
 import { LlmStreamEvent } from "./types";
 import { EventEmitter } from "@piddie/shared-types";
-// Keep the type imports for compatibility
 import type {
+  ChatCompletionRole,
   ChatCompletionUserMessageParam,
   ChatCompletionAssistantMessageParam,
   ChatCompletionSystemMessageParam
-} from "openai/resources/chat/completions";
-import type { ChatCompletionRole } from "openai/resources/chat";
+} from "openai/resources/chat";
 import { BaseLlmClient } from "./BaseLlmClient";
+import OpenAI from "openai";
+import { MessageStatus } from "@piddie/chat-management";
 
-// Define interfaces for OpenAI API responses
-interface OpenAICompletionChoice {
-  message: {
-    role: ChatCompletionRole;
-    content: string | null;
-  };
-  index: number;
-  finish_reason: string;
-}
-
-interface OpenAICompletionResponse {
-  id: string;
-  object: string;
-  created: number;
-  model: string;
-  choices: OpenAICompletionChoice[];
-}
-
-interface OpenAIStreamChoice {
-  delta: {
-    content?: string;
-    role?: ChatCompletionRole;
-  };
-  index: number;
-  finish_reason: string | null;
-}
-
-interface OpenAIStreamResponse {
-  id: string;
-  object: string;
-  created: number;
-  model: string;
-  choices: OpenAIStreamChoice[];
-}
-
+/**
+ * Client implementation for the LiteLLM API
+ */
 export class LiteLlmClient extends BaseLlmClient {
+  private openai: OpenAI;
+
+  constructor(config: any) {
+    super(config);
+
+    // Check if the baseUrl is a localhost URL
+    const isLocalhost = !!(this.config.baseUrl && (
+      this.config.baseUrl.includes('localhost') ||
+      this.config.baseUrl.includes('127.0.0.1') ||
+      this.config.baseUrl.includes('::1')
+    ));
+
+    // Initialize OpenAI client with dangerouslyAllowBrowser option for localhost
+    this.openai = new OpenAI({
+      apiKey: this.config.apiKey,
+      baseURL: this.config.baseUrl,
+      // Allow browser usage when connecting to localhost
+      // This is safe because we're only connecting to a local server
+      // and not exposing API keys to potential attackers
+      dangerouslyAllowBrowser: isLocalhost
+    });
+  }
+
   /**
-   * Sends a message to the LLM and receives a response
+   * Sends a message to the LLM and returns a response
    * @param message The message to send
-   * @returns A promise that resolves to the LLM response
+   * @returns The response from the LLM
    */
   async sendMessage(message: LlmMessage): Promise<LlmResponse> {
     // Enhance message with tool instructions if needed
@@ -65,50 +57,58 @@ export class LiteLlmClient extends BaseLlmClient {
     // Determine if we should include tools in the request
     const includeTools = this.shouldIncludeToolsInRequest(enhancedMessage);
 
-    // Use fetch API instead of OpenAI client
-    const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.config.apiKey}`
-      },
-      body: JSON.stringify({
+    try {
+      // Use OpenAI SDK to send the request
+      const completion = await this.openai.chat.completions.create({
         model: this.getSelectedModel(),
-        messages: messages,
-        tools: includeTools ? enhancedMessage.tools : undefined
-      })
-    });
+        messages: messages as any,
+        tools: includeTools ? enhancedMessage.tools as any : undefined
+      });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(
-        `OpenAI API error: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`
-      );
+      // Extract the response data
+      const choice = completion.choices[0];
+      if (!choice || !choice.message) {
+        throw new Error("No response from OpenAI");
+      }
+      const responseMessage = choice.message;
+
+      // Process tool calls if present
+      const toolCalls = responseMessage.tool_calls || [];
+      const processedToolCalls = toolCalls.map(toolCall => {
+        try {
+          // Try to parse arguments as JSON
+          const parsedArgs = JSON.parse(toolCall.function.arguments);
+          return {
+            function: {
+              name: toolCall.function.name,
+              arguments: parsedArgs
+            }
+          };
+        } catch (e) {
+          // If parsing fails, return the original string
+          return {
+            function: {
+              name: toolCall.function.name,
+              arguments: toolCall.function.arguments
+            }
+          };
+        }
+      });
+
+      // Create and return the LLM response
+      return {
+        id: completion.id,
+        chatId: enhancedMessage.chatId,
+        content: responseMessage.content || "",
+        role: responseMessage.role as ChatCompletionRole,
+        created: new Date(completion.created * 1000), // Convert timestamp to Date
+        parentId: enhancedMessage.id,
+        tool_calls: processedToolCalls.length > 0 ? processedToolCalls : []
+      };
+    } catch (error) {
+      console.error("Error sending message to OpenAI:", error);
+      throw new Error(`OpenAI API error: ${error instanceof Error ? error.message : String(error)}`);
     }
-
-    const data = (await response.json()) as OpenAICompletionResponse;
-    const choice = data.choices[0];
-
-    if (!choice || !choice.message) {
-      throw new Error("No response from OpenAI");
-    }
-
-    const responseData = choice.message;
-
-    // Ensure content is a string, defaulting to empty string if undefined or null
-    const content =
-      responseData.content !== undefined && responseData.content !== null
-        ? responseData.content
-        : "";
-
-    return {
-      id: data.id,
-      chatId: enhancedMessage.chatId,
-      content: content,
-      role: responseData.role,
-      created: new Date(data.created * 1000), // Convert timestamp to Date
-      parentId: enhancedMessage.id
-    };
   }
 
   /**
@@ -119,18 +119,22 @@ export class LiteLlmClient extends BaseLlmClient {
   streamMessage(message: LlmMessage): EventEmitter {
     const eventEmitter = new EventEmitter();
 
-    // Create a new response object to build up as we receive chunks
+    // Create a response object to accumulate content
     const response: LlmResponse = {
       id: crypto.randomUUID(),
       chatId: message.chatId,
       content: "",
       role: "assistant",
       created: new Date(),
-      parentId: message.id
+      parentId: message.id,
+      tool_calls: []
     };
 
-    // Flag to track if we've had any successful chunks
-    let hasReceivedAnyChunks = false;
+    // Map to track tool calls by index
+    const toolCallsMap: Record<number, {
+      name: string;
+      arguments: string;
+    }> = {};
 
     // Start the streaming request
     const streamRequest = async () => {
@@ -146,110 +150,149 @@ export class LiteLlmClient extends BaseLlmClient {
         // Determine if we should include tools in the request
         const includeTools = this.shouldIncludeToolsInRequest(enhancedMessage);
 
-        // Use fetch API with streaming
-        const fetchResponse = await fetch(
-          `${this.config.baseUrl}/chat/completions`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${this.config.apiKey}`
-            },
-            body: JSON.stringify({
-              model: this.getSelectedModel(),
-              messages: messages,
-              tools: includeTools ? enhancedMessage.tools : undefined,
-              stream: true
-            })
-          }
-        );
-
-        if (!fetchResponse.ok) {
-          const errorData = await fetchResponse.json().catch(() => ({}));
-          throw new Error(
-            `OpenAI API error: ${fetchResponse.status} ${fetchResponse.statusText} - ${JSON.stringify(errorData)}`
-          );
-        }
-
-        if (!fetchResponse.body) {
-          throw new Error("Response body is null");
-        }
-
-        // Create a reader from the response body stream
-        const reader = fetchResponse.body.getReader();
-        const decoder = new TextDecoder("utf-8");
-        let buffer = "";
+        // Use OpenAI SDK with streaming
+        const stream = await this.openai.chat.completions.create({
+          model: this.getSelectedModel(),
+          messages: messages as any,
+          tools: includeTools ? enhancedMessage.tools as any : undefined,
+          stream: true
+        });
 
         // Process the stream
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+        for await (const chunk of stream) {
+          const delta = chunk.choices[0]?.delta;
 
-          // Decode the chunk and add it to the buffer
-          buffer += decoder.decode(value, { stream: true });
+          if (!delta) continue;
 
-          // Process complete lines in the buffer
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || ""; // Keep the last incomplete line in the buffer
+          // Handle content updates
+          if (delta.content) {
+            response.content += delta.content;
+            const streamChunk: LlmStreamChunk = {
+              content: delta.content,
+              isFinal: false
+            };
+            eventEmitter.emit(LlmStreamEvent.DATA, streamChunk);
+          }
 
-          for (const line of lines) {
-            if (line.trim() === "") continue;
-            if (line.trim() === "data: [DONE]") continue;
+          // Handle tool calls
+          if (delta.tool_calls && delta.tool_calls.length > 0) {
 
-            // Remove the "data: " prefix
-            const jsonLine = line.replace(/^data: /, "").trim();
-            if (!jsonLine) continue;
+            for (const toolCall of delta.tool_calls) {
+              const index = toolCall.index || 0;
 
-            try {
-              const chunk = JSON.parse(jsonLine) as OpenAIStreamResponse;
-
-              // Check if chunk and choices exist before accessing
-              if (
-                !chunk ||
-                !chunk.choices ||
-                !Array.isArray(chunk.choices) ||
-                chunk.choices.length === 0
-              ) {
-                console.warn(
-                  "Received malformed chunk from OpenAI API:",
-                  jsonLine
-                );
-                continue;
-              }
-
-              const choice = chunk.choices[0];
-
-              if (!choice || !choice.delta) continue;
-
-              const deltaContent = choice.delta.content;
-
-              if (
-                deltaContent !== undefined &&
-                deltaContent !== null &&
-                deltaContent !== ""
-              ) {
-                response.content += deltaContent;
-                const streamChunk: LlmStreamChunk = {
-                  content: deltaContent,
-                  isFinal: false
+              // Initialize tool call if it doesn't exist
+              if (!toolCallsMap[index]) {
+                toolCallsMap[index] = {
+                  name: "",
+                  arguments: ""
                 };
-                eventEmitter.emit(LlmStreamEvent.DATA, streamChunk);
-                hasReceivedAnyChunks = true;
               }
-            } catch (e) {
-              console.error("Error parsing JSON from stream:", e, jsonLine);
-              // Log the raw response for debugging
-              console.error("Raw response that caused the error:", jsonLine);
 
-              // Don't emit an error event here, just log it and continue processing
-              // This allows the stream to continue even if one chunk is malformed
+              // Update name if provided
+              if (toolCall.function?.name) {
+                toolCallsMap[index].name += toolCall.function.name;
+              }
+
+              // Update arguments if provided
+              if (toolCall.function?.arguments) {
+                toolCallsMap[index].arguments += toolCall.function.arguments;
+              }
             }
           }
+
+          // Check if this is the final chunk
+          if (chunk.choices[0]?.finish_reason) {
+            // Final processing of tool calls
+            if (Object.keys(toolCallsMap).length > 0) {
+              const finalToolCalls = Object.values(toolCallsMap)
+                .filter(tc => tc.name)
+                .map(tc => {
+                  if (tc.arguments &&
+                    tc.arguments.trim().startsWith('{') &&
+                    tc.arguments.trim().endsWith('}')) {
+                    try {
+                      return {
+                        function: {
+                          name: tc.name,
+                          arguments: JSON.parse(tc.arguments)
+                        }
+                      };
+                    } catch (e) {
+                      return {
+                        function: {
+                          name: tc.name,
+                          arguments: tc.arguments
+                        }
+                      };
+                    }
+                  } else {
+                    return {
+                      function: {
+                        name: tc.name,
+                        arguments: tc.arguments
+                      }
+                    };
+                  }
+                });
+
+              response.tool_calls = finalToolCalls;
+            }
+
+            // Send a final chunk with isFinal=true
+            const finalChunk: LlmStreamChunk = {
+              content: response.content,
+              ...(response.tool_calls && response.tool_calls.length > 0 ? { tool_calls: response.tool_calls } : {}),
+              isFinal: true
+            };
+            eventEmitter.emit(LlmStreamEvent.DATA, finalChunk);
+
+            // Emit the end event when the stream is complete
+            eventEmitter.emit(LlmStreamEvent.END, response);
+            return;
+          }
+        }
+
+        // If we get here, the stream ended without a finish_reason
+        // Final processing of tool calls
+        if (Object.keys(toolCallsMap).length > 0) {
+          const finalToolCalls = Object.values(toolCallsMap)
+            .filter(tc => tc.name)
+            .map(tc => {
+              if (tc.arguments &&
+                tc.arguments.trim().startsWith('{') &&
+                tc.arguments.trim().endsWith('}')) {
+                try {
+                  return {
+                    function: {
+                      name: tc.name,
+                      arguments: JSON.parse(tc.arguments)
+                    }
+                  };
+                } catch (e) {
+                  return {
+                    function: {
+                      name: tc.name,
+                      arguments: tc.arguments
+                    }
+                  };
+                }
+              } else {
+                return {
+                  function: {
+                    name: tc.name,
+                    arguments: tc.arguments
+                  }
+                };
+              }
+            });
+
+          response.tool_calls = finalToolCalls;
         }
 
         // Send a final chunk with isFinal=true
         const finalChunk: LlmStreamChunk = {
           content: response.content,
+          ...(response.tool_calls && response.tool_calls.length > 0 ? { tool_calls: response.tool_calls } : {}),
           isFinal: true
         };
         eventEmitter.emit(LlmStreamEvent.DATA, finalChunk);
@@ -259,60 +302,22 @@ export class LiteLlmClient extends BaseLlmClient {
       } catch (error) {
         console.error("Error streaming response:", error);
 
-        // Check if the error is related to the LiteLLM proxy serialization issue
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
-        if (
-          errorMessage.includes("MockValSer") &&
-          errorMessage.includes("SchemaSerializer")
-        ) {
-          console.warn(
-            "Detected LiteLLM proxy serialization issue. This is likely a server-side configuration problem."
-          );
-
-          // If we haven't received any chunks, try the non-streaming API
-          if (!hasReceivedAnyChunks) {
-            console.warn(
-              "No chunks received from streaming API, falling back to non-streaming API"
-            );
-            try {
-              // Try to use the non-streaming API as a fallback
-              const fallbackResponse = await this.sendMessage(message);
-              eventEmitter.emit(LlmStreamEvent.DATA, fallbackResponse);
-              eventEmitter.emit(LlmStreamEvent.END, fallbackResponse);
-              return;
-            } catch (fallbackError) {
-              console.error(
-                "Fallback to non-streaming API also failed:",
-                fallbackError
-              );
-            }
-          }
-
-          // Create a more user-friendly error
-          const friendlyError = new Error(
-            "The LLM service encountered a serialization error. This is likely a server-side configuration issue. " +
-            "Please check your LLM provider settings or try again later."
-          );
-
-          eventEmitter.emit(LlmStreamEvent.ERROR, friendlyError);
-        } else {
-          // For other errors, just pass them through
-          eventEmitter.emit(LlmStreamEvent.ERROR, error);
-        }
+        // Emit the error
+        eventEmitter.emit(LlmStreamEvent.ERROR, error);
       }
     };
 
     // Start the streaming process
     streamRequest();
 
+    // Return the event emitter
     return eventEmitter;
   }
 
   /**
-   * Converts an LlmMessage to an OpenAI message format
-   * @param message The LlmMessage to convert
-   * @returns The OpenAI message format
+   * Converts an LlmMessage to an OpenAI message
+   * @param message The message to convert
+   * @returns The OpenAI message
    */
   private convertToOpenAIMessage(
     message: LlmMessage
@@ -320,96 +325,102 @@ export class LiteLlmClient extends BaseLlmClient {
     | ChatCompletionUserMessageParam
     | ChatCompletionAssistantMessageParam
     | ChatCompletionSystemMessageParam {
-    // Handle system prompt if present
-    if (message.systemPrompt) {
-      return {
-        role: "system",
-        content: message.systemPrompt
-      };
+    switch (message.role) {
+      case "user":
+        return {
+          role: "user",
+          content: message.content
+        };
+      case "assistant":
+        return {
+          role: "assistant",
+          content: message.content
+        };
+      case "system":
+        return {
+          role: "system",
+          content: message.content
+        };
+      default:
+        return {
+          role: "user",
+          content: message.content
+        };
     }
-
-    // Handle regular message based on role
-    if (message.role === "user") {
-      return {
-        role: "user",
-        content: message.content
-      };
-    } else if (message.role === "assistant") {
-      return {
-        role: "assistant",
-        content: message.content
-      };
-    } else if (message.role === "system") {
-      return {
-        role: "system",
-        content: message.content
-      };
-    }
-
-    // Default to user if role is not recognized
-    return {
-      role: "user",
-      content: message.content
-    };
   }
 
   /**
-   * Checks if the LLM supports function calling/tools by making a direct API call
+   * Checks if the LLM supports function calling/tools directly
    * @returns A promise that resolves to true if tools are supported, false otherwise
    */
   protected override async checkToolSupportDirectly(): Promise<boolean> {
     try {
-      // Create a simple test message with a basic tool
-      const testMessage = {
+      // Create a simple test message
+      const testMessage: LlmMessage = {
+        id: "test",
+        chatId: "test",
+        content: "Hello",
         role: "user",
-        content: "Do you support function calling? Respond with the current date using the getCurrentDate function."
-      };
-
-      // Define a simple test tool
-      const testTool = {
-        type: "function",
-        function: {
-          name: "getCurrentDate",
-          description: "Get the current date",
-          parameters: {
-            type: "object",
-            properties: {},
-            required: []
+        status: MessageStatus.SENT,
+        created: new Date(),
+        provider: "litellm",
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "test_function",
+              description: "A test function",
+              parameters: {
+                type: "object",
+                properties: {
+                  test: {
+                    type: "string"
+                  }
+                }
+              }
+            }
           }
-        }
+        ]
       };
 
-      // Make a direct API call to check tool support
-      const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.config.apiKey}`
-        },
-        body: JSON.stringify({
-          model: this.getSelectedModel(),
-          messages: [testMessage],
-          tools: [testTool]
-        })
+      // Try to send a message with a tool
+      const response = await this.openai.chat.completions.create({
+        model: this.getSelectedModel(),
+        messages: [{ role: "user", content: "Hello" }],
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "test_function",
+              description: "A test function",
+              parameters: {
+                type: "object",
+                properties: {
+                  test: {
+                    type: "string"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        stream: false
       });
 
-      if (!response.ok) {
+      // If we get here, tools are supported
+      return true;
+    } catch (error) {
+      // Check if the error is related to tools not being supported
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (
+        errorMessage.includes("tools") &&
+        errorMessage.includes("not supported")
+      ) {
         return false;
       }
 
-      const data = await response.json() as {
-        choices?: Array<{
-          message?: {
-            tool_calls?: Array<unknown>;
-          };
-        }>;
-      };
-
-      // Check if the response contains tool calls
-      return !!(data.choices?.[0]?.message?.tool_calls &&
-        data.choices[0].message.tool_calls.length > 0);
-    } catch (error) {
-      console.error("Error checking tool support directly:", error);
+      // If it's some other error, assume tools are not supported
+      console.error("Error checking tool support:", error);
       return false;
     }
   }

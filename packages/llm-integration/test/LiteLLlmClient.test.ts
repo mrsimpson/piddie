@@ -3,39 +3,53 @@ import { LiteLlmClient } from "../src/LiteLlmClient";
 import { LlmMessage, LlmProviderConfig } from "../src/types";
 import { MessageStatus } from "@piddie/chat-management";
 
+// Mock the OpenAI module
+vi.mock("openai", () => {
+  return {
+    default: function () {
+      return {
+        chat: {
+          completions: {
+            create: vi.fn().mockResolvedValue({
+              id: "mock-response-id",
+              object: "chat.completion",
+              created: Math.floor(Date.now() / 1000),
+              model: "text-davinci-003",
+              choices: [
+                {
+                  message: {
+                    role: "assistant",
+                    content: "This is a mock response"
+                  },
+                  index: 0,
+                  finish_reason: "stop"
+                }
+              ]
+            })
+          }
+        }
+      };
+    }
+  };
+});
+
 describe("LiteLlmClient", () => {
   const config: LlmProviderConfig = {
+    name: "OpenAI",
+    description: "OpenAI API for testing",
     apiKey: "test-api-key",
     baseUrl: "https://api.openai.com/v1",
-    defaultModel: "text-davinci-003"
-  };
-
-  const client = new LiteLlmClient(config);
-
-  // Mock response data
-  const mockResponseData = {
-    id: "mock-response-id",
-    object: "chat.completion",
-    created: Math.floor(Date.now() / 1000),
+    defaultModel: "text-davinci-003",
     model: "text-davinci-003",
-    choices: [
-      {
-        message: {
-          role: "assistant",
-          content: "This is a mock response"
-        },
-        index: 0,
-        finish_reason: "stop"
-      }
-    ]
+    provider: "openai"
   };
 
-  // Setup fetch mock
+  let client: LiteLlmClient;
+
+  // Setup
   beforeEach(() => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve(mockResponseData)
-    });
+    vi.clearAllMocks();
+    client = new LiteLlmClient(config);
   });
 
   // Clean up after tests
@@ -50,25 +64,14 @@ describe("LiteLlmClient", () => {
       content: "Hello, world!",
       role: "user",
       status: MessageStatus.SENT,
-      created: new Date()
+      created: new Date(),
+      provider: "litellm"
     };
 
     const response = await client.sendMessage(message);
 
-    // Verify fetch was called with correct parameters
-    expect(fetch).toHaveBeenCalledWith(
-      `${config.baseUrl}/chat/completions`,
-      expect.objectContaining({
-        method: "POST",
-        headers: expect.objectContaining({
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${config.apiKey}`
-        })
-      })
-    );
-
     // Verify response properties
-    expect(response).toHaveProperty("id", mockResponseData.id);
+    expect(response).toHaveProperty("id", "mock-response-id");
     expect(response).toHaveProperty("chatId", "chat1");
     expect(response).toHaveProperty("content", "This is a mock response");
     expect(response).toHaveProperty("role", "assistant");

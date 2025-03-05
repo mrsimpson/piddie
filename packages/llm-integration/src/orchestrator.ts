@@ -261,7 +261,11 @@ export class Orchestrator implements LlmAdapter {
         function: {
           name: tool.name,
           description: tool.description || "",
-          parameters: tool.inputSchema
+          parameters: {
+            type: "object",
+            properties: tool.inputSchema.properties || {},
+            ...(tool.inputSchema.type !== "object" ? { type: tool.inputSchema.type } : {})
+          }
         }
       }));
     } else {
@@ -289,7 +293,7 @@ export class Orchestrator implements LlmAdapter {
     for (const toolCall of response.tool_calls) {
       try {
         const toolName = toolCall.function.name;
-        const toolArgs = typeof toolCall.function.arguments === "string"
+        const toolArgs = typeof toolCall.function.arguments === "string" && toolCall.function.arguments.trim() !== ""
           ? JSON.parse(toolCall.function.arguments)
           : toolCall.function.arguments;
 
