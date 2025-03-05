@@ -154,7 +154,7 @@ export class Orchestrator implements LlmAdapter {
    */
   private async getAvailableTools(): Promise<Tool[]> {
     if (this.toolsBuffer === null) {
-      this.toolsBuffer = await this.mcpHost.listTools() as unknown as Tool[];
+      this.toolsBuffer = (await this.mcpHost.listTools()) as unknown as Tool[];
     }
     return this.toolsBuffer || [];
   }
@@ -180,8 +180,8 @@ export class Orchestrator implements LlmAdapter {
       // Filter out the placeholder assistant message if it exists
       const filteredHistory = assistantMessageId
         ? history.filter(
-          (msg) => msg.id !== assistantMessageId || msg.content.trim() !== ""
-        )
+            (msg) => msg.id !== assistantMessageId || msg.content.trim() !== ""
+          )
         : history;
 
       // Map to the format expected by the LLM
@@ -264,7 +264,9 @@ export class Orchestrator implements LlmAdapter {
           parameters: {
             type: "object",
             properties: tool.inputSchema.properties || {},
-            ...(tool.inputSchema.type !== "object" ? { type: tool.inputSchema.type } : {})
+            ...(tool.inputSchema.type !== "object"
+              ? { type: tool.inputSchema.type }
+              : {})
           }
         }
       }));
@@ -281,9 +283,7 @@ export class Orchestrator implements LlmAdapter {
    * @param tools The available tools
    * @returns A promise that resolves to an array of tool results
    */
-  private async processToolCalls(
-    response: LlmResponse,
-  ): Promise<unknown[]> {
+  private async processToolCalls(response: LlmResponse): Promise<unknown[]> {
     if (!response.tool_calls || response.tool_calls.length === 0) {
       return [];
     }
@@ -293,9 +293,11 @@ export class Orchestrator implements LlmAdapter {
     for (const toolCall of response.tool_calls) {
       try {
         const toolName = toolCall.function.name;
-        const toolArgs = typeof toolCall.function.arguments === "string" && toolCall.function.arguments.trim() !== ""
-          ? JSON.parse(toolCall.function.arguments)
-          : toolCall.function.arguments;
+        const toolArgs =
+          typeof toolCall.function.arguments === "string" &&
+          toolCall.function.arguments.trim() !== ""
+            ? JSON.parse(toolCall.function.arguments)
+            : toolCall.function.arguments;
 
         // Call the tool through the McpHost
         const result = await this.mcpHost.callTool(toolName, toolArgs);
@@ -400,7 +402,6 @@ export class Orchestrator implements LlmAdapter {
       // Handle the end of the stream
       emitter.on("end", async () => {
         try {
-
           // Create a response object for the ChatManager
           const response = {
             id: uuidv4(),

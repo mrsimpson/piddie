@@ -7,6 +7,7 @@ import type {
 import { LlmStreamEvent } from "./types";
 import { EventEmitter } from "@piddie/shared-types";
 import { BaseLlmClient, ToolSupportStatus } from "./BaseLlmClient";
+import { v4 as uuidv4 } from "uuid";
 
 /**
  * A mock implementation of the LLM client for testing and development
@@ -28,19 +29,19 @@ export class MockLlmClient extends BaseLlmClient {
    */
   override async sendMessage(message: LlmMessage): Promise<LlmResponse> {
     // Enhance message with tool instructions if needed
-    const enhancedMessage = await this.addProvidedTools(message);
+    // const { message: enhancedMessage } = await this.addProvidedTools(message);
 
     // Simulate a delay
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
     // Return a mock response
     return {
-      id: crypto.randomUUID(),
-      chatId: enhancedMessage.chatId,
-      content: this.getMessageContent(enhancedMessage),
+      id: uuidv4(),
+      chatId: message.chatId,
+      content: this.getMessageContent(message),
       role: "assistant",
       created: new Date(),
-      parentId: enhancedMessage.id
+      parentId: message.id
     };
   }
 
@@ -56,16 +57,16 @@ export class MockLlmClient extends BaseLlmClient {
     // Process the message asynchronously
     (async () => {
       // Enhance message with tool instructions if needed
-      const enhancedMessage = await this.addProvidedTools(message);
+      // const enhancedMessage = await this.addProvidedTools(message);
 
       // Create a full response object that will be emitted with the END event
       const fullResponse: LlmResponse = {
-        id: crypto.randomUUID(),
-        chatId: enhancedMessage.chatId,
-        content: this.getMessageContent(enhancedMessage),
+        id: uuidv4(),
+        chatId: message.chatId,
+        content: this.getMessageContent(message),
         role: "assistant",
         created: new Date(),
-        parentId: enhancedMessage.id
+        parentId: message.id
       };
 
       // Simulate streaming with a delay
@@ -82,7 +83,7 @@ export class MockLlmClient extends BaseLlmClient {
           eventEmitter.emit(LlmStreamEvent.END, fullResponse);
         }, 500);
       }, 1000);
-    })().catch(error => {
+    })().catch((error) => {
       eventEmitter.emit(LlmStreamEvent.ERROR, error);
     });
 

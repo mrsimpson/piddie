@@ -1,5 +1,5 @@
 import { ref } from "vue";
-
+import { v4 } from "uuid";
 export interface UIError {
   id: string;
   message: string;
@@ -13,7 +13,7 @@ const errors = ref<UIError[]>([]);
 export function useErrorStore() {
   function addError(message: string, details?: unknown, componentId?: string) {
     const error: UIError = {
-      id: crypto.randomUUID(),
+      id: v4(),
       message,
       timestamp: Date.now(),
       componentId,

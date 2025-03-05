@@ -4,6 +4,11 @@ import type { LlmMessage, LlmProviderConfig } from "../src/types";
 import { LlmStreamEvent } from "../src/types";
 import type { MessageStatus } from "@piddie/chat-management";
 
+// Mock uuid module
+vi.mock("uuid", () => ({
+  v4: () => "53d9d690-dc53-4efb-863f-3662346f8467"
+}));
+
 // Mock fetch
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
@@ -166,13 +171,6 @@ describe("OllamaClient", () => {
   });
 
   describe("streamMessage", () => {
-    beforeEach(() => {
-      // Mock crypto.randomUUID to return a consistent value for testing
-      vi.spyOn(crypto, "randomUUID").mockReturnValue(
-        "53d9d690-dc53-4efb-863f-3662346f8467"
-      );
-    });
-
     it("should stream a message and emit events", async () => {
       // Mock ReadableStream and reader
       const mockReader = {
