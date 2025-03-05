@@ -92,7 +92,7 @@ export const useLlmStore = defineStore("llm", () => {
   // Watch for file system initialization and register the MCP server
   watch(
     () => fileSystemStoreInstance.initialized,
-    (initialized) => {
+    async (initialized) => {
       if (initialized) {
         // Create and register the file management MCP server
         fileManagementMcpServer.value = new FileManagementMcpServer(
@@ -100,10 +100,18 @@ export const useLlmStore = defineStore("llm", () => {
         );
         // Register the MCP server with the LLM adapter
         if (fileManagementMcpServer.value && llmAdapter) {
-          llmAdapter.registerMcpServer(
-            fileManagementMcpServer.value as unknown as McpServer,
-            "file_management"
-          );
+          try {
+            await llmAdapter.registerMcpServer(
+              fileManagementMcpServer.value as unknown as McpServer,
+              "file_management"
+            );
+            console.log("File management MCP server registered successfully");
+          } catch (error) {
+            console.error(
+              "Failed to register file management MCP server:",
+              error
+            );
+          }
         }
       }
     }

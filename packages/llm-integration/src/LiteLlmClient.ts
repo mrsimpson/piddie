@@ -1,14 +1,10 @@
 import type {
-  LlmClient,
   LlmMessage,
   LlmResponse,
-  LlmProviderConfig,
   LlmStreamChunk
 } from "./types";
 import { LlmStreamEvent } from "./types";
 import { EventEmitter } from "@piddie/shared-types";
-// Remove direct OpenAI import
-// import OpenAI from "openai";
 // Keep the type imports for compatibility
 import type {
   ChatCompletionUserMessageParam,
@@ -16,6 +12,7 @@ import type {
   ChatCompletionSystemMessageParam
 } from "openai/resources/chat/completions";
 import type { ChatCompletionRole } from "openai/resources/chat";
+import { BaseLlmClient } from "./BaseLlmClient";
 
 // Define interfaces for OpenAI API responses
 interface OpenAICompletionChoice {
@@ -52,21 +49,21 @@ interface OpenAIStreamResponse {
   choices: OpenAIStreamChoice[];
 }
 
-export class LiteLlmClient implements LlmClient {
-  private config: LlmProviderConfig;
-
-  constructor(config: LlmProviderConfig) {
-    this.config = config;
-  }
-
+export class LiteLlmClient extends BaseLlmClient {
   /**
    * Sends a message to the LLM and receives a response
    * @param message The message to send
    * @returns A promise that resolves to the LLM response
    */
   async sendMessage(message: LlmMessage): Promise<LlmResponse> {
+    // Enhance message with tool instructions if needed
+    const enhancedMessage = await this.addProvidedTools(message);
+
     // Use the messages array if provided, otherwise convert the single message
-    const messages = message.messages || [this.convertToOpenAIMessage(message)];
+    const messages = enhancedMessage.messages || [this.convertToOpenAIMessage(enhancedMessage)];
+
+    // Determine if we should include tools in the request
+    const includeTools = this.shouldIncludeToolsInRequest(enhancedMessage);
 
     // Use fetch API instead of OpenAI client
     const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
@@ -76,12 +73,9 @@ export class LiteLlmClient implements LlmClient {
         Authorization: `Bearer ${this.config.apiKey}`
       },
       body: JSON.stringify({
-        model:
-          this.config.selectedModel ||
-          this.config.model ||
-          this.config.defaultModel,
+        model: this.getSelectedModel(),
         messages: messages,
-        tools: message.tools
+        tools: includeTools ? enhancedMessage.tools : undefined
       })
     });
 
@@ -109,11 +103,11 @@ export class LiteLlmClient implements LlmClient {
 
     return {
       id: data.id,
-      chatId: message.chatId,
+      chatId: enhancedMessage.chatId,
       content: content,
       role: responseData.role,
       created: new Date(data.created * 1000), // Convert timestamp to Date
-      parentId: message.id
+      parentId: enhancedMessage.id
     };
   }
 
@@ -141,10 +135,16 @@ export class LiteLlmClient implements LlmClient {
     // Start the streaming request
     const streamRequest = async () => {
       try {
+        // Enhance message with tool instructions if needed
+        const enhancedMessage = await this.addProvidedTools(message);
+
         // Use the messages array if provided, otherwise convert the single message
-        const messages = message.messages || [
-          this.convertToOpenAIMessage(message)
+        const messages = enhancedMessage.messages || [
+          this.convertToOpenAIMessage(enhancedMessage)
         ];
+
+        // Determine if we should include tools in the request
+        const includeTools = this.shouldIncludeToolsInRequest(enhancedMessage);
 
         // Use fetch API with streaming
         const fetchResponse = await fetch(
@@ -156,12 +156,9 @@ export class LiteLlmClient implements LlmClient {
               Authorization: `Bearer ${this.config.apiKey}`
             },
             body: JSON.stringify({
-              model:
-                this.config.selectedModel ||
-                this.config.model ||
-                this.config.defaultModel,
+              model: this.getSelectedModel(),
               messages: messages,
-              tools: message.tools,
+              tools: includeTools ? enhancedMessage.tools : undefined,
               stream: true
             })
           }
@@ -273,9 +270,11 @@ export class LiteLlmClient implements LlmClient {
             "Detected LiteLLM proxy serialization issue. This is likely a server-side configuration problem."
           );
 
-          // If we haven't received any chunks yet, try falling back to non-streaming API
+          // If we haven't received any chunks, try the non-streaming API
           if (!hasReceivedAnyChunks) {
-            console.log("Attempting to fall back to non-streaming API...");
+            console.warn(
+              "No chunks received from streaming API, falling back to non-streaming API"
+            );
             try {
               // Try to use the non-streaming API as a fallback
               const fallbackResponse = await this.sendMessage(message);
@@ -293,7 +292,7 @@ export class LiteLlmClient implements LlmClient {
           // Create a more user-friendly error
           const friendlyError = new Error(
             "The LLM service encountered a serialization error. This is likely a server-side configuration issue. " +
-              "Please check your LLM provider settings or try again later."
+            "Please check your LLM provider settings or try again later."
           );
 
           eventEmitter.emit(LlmStreamEvent.ERROR, friendlyError);
@@ -352,5 +351,66 @@ export class LiteLlmClient implements LlmClient {
       role: "user",
       content: message.content
     };
+  }
+
+  /**
+   * Checks if the LLM supports function calling/tools by making a direct API call
+   * @returns A promise that resolves to true if tools are supported, false otherwise
+   */
+  protected override async checkToolSupportDirectly(): Promise<boolean> {
+    try {
+      // Create a simple test message with a basic tool
+      const testMessage = {
+        role: "user",
+        content: "Do you support function calling? Respond with the current date using the getCurrentDate function."
+      };
+
+      // Define a simple test tool
+      const testTool = {
+        type: "function",
+        function: {
+          name: "getCurrentDate",
+          description: "Get the current date",
+          parameters: {
+            type: "object",
+            properties: {},
+            required: []
+          }
+        }
+      };
+
+      // Make a direct API call to check tool support
+      const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.config.apiKey}`
+        },
+        body: JSON.stringify({
+          model: this.getSelectedModel(),
+          messages: [testMessage],
+          tools: [testTool]
+        })
+      });
+
+      if (!response.ok) {
+        return false;
+      }
+
+      const data = await response.json() as {
+        choices?: Array<{
+          message?: {
+            tool_calls?: Array<unknown>;
+          };
+        }>;
+      };
+
+      // Check if the response contains tool calls
+      return !!(data.choices?.[0]?.message?.tool_calls &&
+        data.choices[0].message.tool_calls.length > 0);
+    } catch (error) {
+      console.error("Error checking tool support directly:", error);
+      return false;
+    }
   }
 }

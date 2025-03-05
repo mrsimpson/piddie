@@ -1,19 +1,20 @@
 import type {
-  LlmClient,
   LlmMessage,
   LlmResponse,
-  LlmProviderConfig,
   LlmStreamChunk
 } from "./types";
 import { LlmStreamEvent } from "./types";
 import { EventEmitter } from "@piddie/shared-types";
 import type { ChatCompletionRole } from "openai/resources/chat";
+import { BaseLlmClient } from "./BaseLlmClient";
 
 // Define interfaces for Ollama API requests and responses
 interface OllamaCompletionRequest {
   model: string;
-  prompt: string;
-  system?: string;
+  messages: Array<{
+    role: string;
+    content: string;
+  }>;
   stream?: boolean;
   options?: {
     temperature?: number;
@@ -22,27 +23,81 @@ interface OllamaCompletionRequest {
     num_predict?: number;
     stop?: string[];
   };
+  tools?: Array<{
+    type: string;
+    function: {
+      name: string;
+      description?: string;
+      parameters: Record<string, unknown>;
+    };
+  }> | undefined;
 }
 
 interface OllamaCompletionResponse {
   model: string;
   created_at: string;
-  response: string;
+  message: {
+    role: string;
+    content: string;
+    tool_calls?: Array<{
+      function: {
+        name: string;
+        arguments: string | Record<string, unknown>;
+      };
+    }>;
+  };
   done: boolean;
 }
 
 /**
  * Client implementation for the Ollama API
  */
-export class OllamaClient implements LlmClient {
-  private config: LlmProviderConfig;
-
+export class OllamaClient extends BaseLlmClient {
   /**
-   * Creates a new Ollama client
-   * @param config The LLM provider configuration
+   * Processes tool calls from the Ollama API response
+   * @param toolCalls The tool calls from the Ollama API response
+   * @returns Processed tool calls with properly formatted arguments
    */
-  constructor(config: LlmProviderConfig) {
-    this.config = config;
+  private processToolCalls(toolCalls: Array<{
+    function: {
+      name: string;
+      arguments: string | Record<string, unknown>;
+    };
+  }> = []): Array<{
+    function: {
+      name: string;
+      arguments: Record<string, unknown>;
+    };
+  }> {
+    if (toolCalls.length === 0) {
+      return [];
+    }
+
+    return toolCalls.map((toolCall: {
+      function: {
+        name: string;
+        arguments: string | Record<string, unknown>;
+      }
+    }) => {
+      // If arguments is a string, try to parse it as JSON
+      if (typeof toolCall.function.arguments === 'string') {
+        try {
+          const parsedArgs = JSON.parse(toolCall.function.arguments);
+          return {
+            ...toolCall,
+            function: {
+              ...toolCall.function,
+              arguments: parsedArgs
+            }
+          };
+        } catch (e) {
+          console.error('Error parsing tool call arguments:', e);
+          // Return the original tool call if parsing fails
+          return toolCall;
+        }
+      }
+      return toolCall;
+    });
   }
 
   /**
@@ -50,50 +105,52 @@ export class OllamaClient implements LlmClient {
    * @param message The message to send
    * @returns A promise that resolves to the LLM response
    */
-  async sendMessage(message: LlmMessage): Promise<LlmResponse> {
+  override async sendMessage(message: LlmMessage): Promise<LlmResponse> {
+    // Enhance message with tool instructions if needed
+    const enhancedMessage = await this.addProvidedTools(message);
+
+    // Determine if we should include tools in the request
+
     // Prepare the request payload
     const payload: OllamaCompletionRequest = {
-      model:
-        this.config.selectedModel ||
-        this.config.model ||
-        this.config.defaultModel ||
-        "llama2",
-      prompt: "", // Initialize with empty string, will be set below
+      model: this.getSelectedModel() || "llama2",
+      messages: [],
       options: {
         temperature: 0,
         top_p: 0.9
       }
     };
 
-    // Handle message history if available
-    if (message.messages && message.messages.length > 0) {
-      // Extract system message if present
-      const systemMessage = message.messages.find((m) => m.role === "system");
-      if (systemMessage) {
-        payload.system = systemMessage.content;
-      }
+    // Add tools if supported and available
+    if (this.shouldIncludeToolsInRequest(enhancedMessage)) {
+      payload.tools = enhancedMessage.tools;
+    }
 
-      // Concatenate the conversation history into a single prompt
-      // Format: User: {content}\nAssistant: {content}\nUser: {content}...
-      const nonSystemMessages = message.messages.filter(
-        (m) => m.role !== "system"
-      );
-      payload.prompt = nonSystemMessages
-        .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
-        .join("\n");
+    // Handle message history if available
+    if (enhancedMessage.messages && enhancedMessage.messages.length > 0) {
+      payload.messages = enhancedMessage.messages.map(m => ({
+        role: m.role,
+        content: m.content
+      }));
     } else {
-      // Use single message if no history is provided
-      payload.prompt = message.content;
+      // Add the single message
+      payload.messages = [{
+        role: enhancedMessage.role,
+        content: enhancedMessage.content
+      }];
 
       // Add system prompt if present
-      if (message.systemPrompt) {
-        payload.system = message.systemPrompt;
+      if (enhancedMessage.systemPrompt) {
+        payload.messages.unshift({
+          role: "system",
+          content: enhancedMessage.systemPrompt
+        });
       }
     }
 
     // Use fetch API to send the request
     const response = await fetch(
-      `${this.config.baseUrl || "http://localhost:11434"}/api/generate`,
+      `${this.config.baseUrl || "http://localhost:11434"}/api/chat`,
       {
         method: "POST",
         headers: {
@@ -112,46 +169,44 @@ export class OllamaClient implements LlmClient {
 
     const data = (await response.json()) as OllamaCompletionResponse;
 
+    // Process tool calls if present
+    let toolCalls = data.message?.tool_calls || [];
+
+    // Ensure tool calls have properly formatted arguments
+    if (toolCalls.length > 0) {
+      toolCalls = this.processToolCalls(toolCalls);
+    }
+
     // Create and return the LLM response
     return {
       id: crypto.randomUUID(), // Ollama doesn't provide an ID, so we generate one
-      chatId: message.chatId,
-      content: data.response,
-      role: "assistant" as ChatCompletionRole,
+      chatId: enhancedMessage.chatId,
+      content: data.message?.content || "",
+      role: (data.message?.role as ChatCompletionRole) || "assistant",
       created: new Date(), // Ollama provides created_at but it's a string, so we use current time
-      parentId: message.id
+      parentId: enhancedMessage.id,
+      tool_calls: toolCalls.length > 0 ? [...toolCalls] : []
     };
   }
 
   /**
-   * Sends a message to the Ollama API and streams the response
+   * Stream a message to the LLM and get responses in chunks
    * @param message The message to send
    * @returns An event emitter that emits 'data', 'end', and 'error' events
    */
-  streamMessage(message: LlmMessage): EventEmitter {
+  override streamMessage(message: LlmMessage): EventEmitter {
     const eventEmitter = new EventEmitter();
 
-    // Create a new response object to build up as we receive chunks
-    const response: LlmResponse = {
-      id: crypto.randomUUID(),
-      chatId: message.chatId,
-      content: "",
-      role: "assistant",
-      created: new Date(),
-      parentId: message.id
-    };
-
-    // Start the streaming request
+    // Process the message asynchronously
     const streamRequest = async () => {
       try {
+        // Enhance message with tool instructions if needed
+        const enhancedMessage = await this.addProvidedTools(message);
+
         // Prepare the request payload
         const payload: OllamaCompletionRequest = {
-          model:
-            this.config.selectedModel ||
-            this.config.model ||
-            this.config.defaultModel ||
-            "llama2",
-          prompt: "", // Initialize with empty string, will be set below
+          model: this.getSelectedModel() || "llama2",
+          messages: [],
           stream: true,
           options: {
             temperature: 0,
@@ -159,41 +214,36 @@ export class OllamaClient implements LlmClient {
           }
         };
 
-        // Handle message history if available
-        if (message.messages && message.messages.length > 0) {
-          // Extract system message if present
-          const systemMessage = message.messages.find(
-            (m) => m.role === "system"
-          );
-          if (systemMessage) {
-            payload.system = systemMessage.content;
-          }
+        // Add tools if supported and available
+        if (this.shouldIncludeToolsInRequest(enhancedMessage)) {
+          payload.tools = enhancedMessage.tools;
+        }
 
-          // Concatenate non-system messages into a conversation format
-          const nonSystemMessages = message.messages.filter(
-            (m) => m.role !== "system"
-          );
-          if (nonSystemMessages.length > 0) {
-            payload.prompt = nonSystemMessages
-              .map(
-                (m) =>
-                  `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`
-              )
-              .join("\n");
-          }
+        // Handle message history if available
+        if (enhancedMessage.messages && enhancedMessage.messages.length > 0) {
+          payload.messages = enhancedMessage.messages.map(m => ({
+            role: m.role,
+            content: m.content
+          }));
         } else {
-          // Use single message content if no history is provided
-          payload.prompt = message.content;
+          // Add the single message
+          payload.messages = [{
+            role: enhancedMessage.role,
+            content: enhancedMessage.content
+          }];
 
           // Add system prompt if present
-          if (message.systemPrompt) {
-            payload.system = message.systemPrompt;
+          if (enhancedMessage.systemPrompt) {
+            payload.messages.unshift({
+              role: "system",
+              content: enhancedMessage.systemPrompt
+            });
           }
         }
 
         // Use fetch API with streaming
-        const fetchResponse = await fetch(
-          `${this.config.baseUrl || "http://localhost:11434"}/api/generate`,
+        const response = await fetch(
+          `${this.config.baseUrl || "http://localhost:11434"}/api/chat`,
           {
             method: "POST",
             headers: {
@@ -203,79 +253,179 @@ export class OllamaClient implements LlmClient {
           }
         );
 
-        if (!fetchResponse.ok) {
-          const errorData = await fetchResponse.json().catch(() => ({}));
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
           throw new Error(
-            `Ollama API error: ${fetchResponse.status} ${fetchResponse.statusText} - ${JSON.stringify(errorData)}`
+            `Ollama API error: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`
           );
         }
 
-        if (!fetchResponse.body) {
-          throw new Error("Response body is null");
+        // Create a reader for the response body
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error("Failed to get response reader");
         }
 
-        // Create a reader from the response body stream
-        const reader = fetchResponse.body.getReader();
-        const decoder = new TextDecoder("utf-8");
+        // Create a decoder for the response
+        const decoder = new TextDecoder();
+        let fullContent = "";
+        let responseId = crypto.randomUUID();
 
-        // Process the stream
+        // Read the response in chunks
         while (true) {
           const { done, value } = await reader.read();
-          if (done) break;
+          if (done) {
+            break;
+          }
 
           // Decode the chunk
-          const chunk = decoder.decode(value);
+          const chunk = decoder.decode(value, { stream: true });
 
-          // Ollama returns each chunk as a JSON object
-          // Split by newlines in case multiple chunks are received
-          const lines = chunk.split("\n").filter((line) => line.trim() !== "");
+          // Split the chunk into lines
+          const lines = chunk.split("\n").filter(line => line.trim());
 
           for (const line of lines) {
             try {
-              const data = JSON.parse(line) as OllamaCompletionResponse;
+              // Parse the JSON response
+              const data = JSON.parse(line);
 
-              // Add the response text to our accumulated response
-              if (data.response) {
-                response.content += data.response;
+              // Check if this is the final chunk
+              const isFinal = data.done === true;
 
-                // Emit a data event with the chunk
-                const streamChunk: LlmStreamChunk = {
-                  content: data.response,
-                  isFinal: data.done
+              // Extract the content
+              const content = data.message?.content || "";
+
+              // Extract tool calls if present
+              let toolCalls = data.message?.tool_calls || [];
+
+              // Process tool calls if present
+              if (toolCalls.length > 0) {
+                toolCalls = this.processToolCalls(toolCalls);
+              }
+
+              // Add the content to the full content
+              fullContent += content;
+
+              // Create a stream chunk
+              const streamChunk: LlmStreamChunk = {
+                content,
+                ...(toolCalls.length > 0 ? { tool_calls: [...toolCalls] } : {}),
+                isFinal
+              };
+
+              // Emit the data event
+              eventEmitter.emit(LlmStreamEvent.DATA, streamChunk);
+
+              // If this is the final chunk, emit the end event
+              if (isFinal) {
+                const response: LlmResponse = {
+                  id: responseId,
+                  chatId: enhancedMessage.chatId,
+                  content: fullContent,
+                  role: "assistant",
+                  created: new Date(),
+                  parentId: enhancedMessage.id,
+                  tool_calls: toolCalls.length > 0 ? [...toolCalls] : []
                 };
 
-                eventEmitter.emit(LlmStreamEvent.DATA, streamChunk);
-
-                // If this is the final chunk, emit the end event
-                if (data.done) {
-                  eventEmitter.emit(LlmStreamEvent.END, response);
-                  return;
-                }
+                eventEmitter.emit(LlmStreamEvent.END, response);
+                break;
               }
-            } catch (e) {
-              console.error("Error parsing JSON from stream:", e, line);
-              // Continue processing other chunks
+            } catch (error) {
+              console.error("Error parsing JSON:", error);
             }
           }
         }
-
-        // If we get here, the stream ended without a done: true message
-        // Emit a final chunk and end event
-        const finalChunk: LlmStreamChunk = {
-          content: response.content,
-          isFinal: true
-        };
-        eventEmitter.emit(LlmStreamEvent.DATA, finalChunk);
-        eventEmitter.emit(LlmStreamEvent.END, response);
       } catch (error) {
-        console.error("Error streaming response from Ollama:", error);
+        console.error("Error in stream request:", error);
         eventEmitter.emit(LlmStreamEvent.ERROR, error);
       }
     };
 
-    // Start the streaming process
-    streamRequest();
+    // Start the stream request
+    streamRequest().catch(error => {
+      console.error("Error in stream request:", error);
+      eventEmitter.emit(LlmStreamEvent.ERROR, error);
+    });
 
     return eventEmitter;
+  }
+
+  /**
+   * Checks if the LLM supports function calling/tools by making a direct API call
+   * @returns A promise that resolves to true if tools are supported, false otherwise
+   */
+  protected override async checkToolSupportDirectly(): Promise<boolean> {
+    try {
+      // Create a simple test message with a basic tool
+      const testMessage = {
+        role: "user",
+        content: "Do you support function calling? Respond with the current date using the getCurrentDate function."
+      };
+
+      // Define a simple test tool
+      const testTool = {
+        type: "function",
+        function: {
+          name: "getCurrentDate",
+          description: "Get the current date",
+          parameters: {
+            type: "object",
+            properties: {},
+            required: []
+          }
+        }
+      };
+
+      // Make a direct API call to check tool support
+      const response = await fetch(
+        `${this.config.baseUrl || "http://localhost:11434"}/api/chat`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            model: this.getSelectedModel() || "llama2",
+            messages: [testMessage],
+            tools: [testTool],
+            stream: false // Important: don't stream for this check
+          })
+        }
+      );
+
+      if (!response.ok) {
+        return false;
+      }
+
+      // According to Ollama API docs, the response format for non-streaming chat is:
+      // {
+      //   "model": "...",
+      //   "created_at": "...",
+      //   "message": {
+      //     "role": "assistant",
+      //     "content": "..."
+      //   },
+      //   "done": true,
+      //   ...
+      // }
+      const data = await response.json() as {
+        model?: string;
+        created_at?: string;
+        message?: {
+          role?: string;
+          content?: string;
+          tool_calls?: Array<unknown>;
+        };
+        done?: boolean;
+      };
+
+      // Check if the response contains tool calls
+      // Ollama might include tool_calls in the message object
+      return !!(data.message?.tool_calls && data.message.tool_calls.length > 0);
+    } catch (error) {
+      console.error("Error checking tool support directly:", error);
+      return false;
+    }
   }
 }

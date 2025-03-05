@@ -43,7 +43,7 @@ export interface LlmAdapter {
    * @param server The MCP server to register
    * @param name The name of the server which is use to identitfy it lateron
    */
-  registerMcpServer(server: McpServer, name: string): void;
+  registerMcpServer(server: McpServer, name: string): Promise<void>;
 
   /**
    * Get an MCP server by name
@@ -76,6 +76,13 @@ export interface LlmAdapter {
     message: LlmMessage,
     onChunk: (chunk: LlmStreamChunk) => void
   ): Promise<EventEmitter>;
+
+  /**
+   * Checks if the current LLM provider supports function calling/tools
+   * @param providerName The name of the provider to check
+   * @returns A promise that resolves to true if tools are supported, false otherwise
+   */
+  checkToolSupport(providerName: string): Promise<boolean>;
 }
 
 /**
@@ -106,10 +113,18 @@ export function createLlmAdapter(
   chatManager: ChatManager
 ): LlmAdapter {
   const client = createLlmClient(config);
+  config.client = client;
+
   if (!chatManager) {
     throw new Error("Chat manager is required");
   }
-  return new Orchestrator(client, chatManager);
+
+  const adapter = new Orchestrator(client, chatManager);
+
+  // Register the provider with the adapter
+  adapter.registerLlmProvider(config.name, config);
+
+  return adapter;
 }
 
 /**
@@ -119,11 +134,31 @@ export function createLlmAdapter(
  */
 export function createMockLlmAdapter(chatManager: ChatManager): LlmAdapter {
   const client = new MockLlmClient();
-  return new Orchestrator(client, chatManager);
+
+  if (!chatManager) {
+    throw new Error("Chat manager is required");
+  }
+
+  const adapter = new Orchestrator(client, chatManager);
+
+  // Register a mock provider with the adapter
+  const mockConfig: LlmProviderConfig = {
+    name: "mock",
+    description: "Mock LLM provider for testing",
+    apiKey: "mock-api-key",
+    model: "mock-model",
+    provider: "mock",
+    client: client
+  };
+
+  adapter.registerLlmProvider(mockConfig.name, mockConfig);
+
+  return adapter;
 }
 
 export * from "./types";
-export * from "./MockClient";
-export * from "./LiteLlmClient";
+export { LiteLlmClient } from "./LiteLlmClient";
+export { MockLlmClient } from "./MockClient";
+export { OllamaClient } from "./OllamaClient";
+export { BaseLlmClient, ToolSupportStatus } from "./BaseLlmClient";
 export * from "./Orchestrator";
-export * from "./mcp";

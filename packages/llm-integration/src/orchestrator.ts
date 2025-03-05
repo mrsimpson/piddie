@@ -5,23 +5,21 @@ import type {
   LlmStreamChunk,
   LlmProviderConfig
 } from "./types";
-import { McpHost } from "./mcp";
-import type { Transport } from "./mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { EventEmitter } from "@piddie/shared-types";
-import { InMemoryTransport } from "./mcp/InMemoryTransport";
 import type { ChatManager } from "@piddie/chat-management";
 import { v4 as uuidv4 } from "uuid";
 import { MessageStatus } from "@piddie/chat-management";
 import type { LlmAdapter } from "./index";
+import { McpHost } from "./mcp/McpHost";
 
 // Define Tool interface locally to avoid import issues
 interface Tool {
   name: string;
-  description?: string;
+  description?: string | undefined;
   inputSchema: {
     type: string;
-    properties?: Record<string, unknown>;
+    properties?: Record<string, unknown> | undefined;
   };
 }
 
@@ -51,6 +49,7 @@ export class Orchestrator implements LlmAdapter {
   private mcpHost: McpHost;
   private client: LlmClient;
   private chatManager: ChatManager | undefined;
+  private toolsBuffer: Tool[] | null = null;
 
   /**
    * Creates a new Orchestrator instance
@@ -95,18 +94,10 @@ export class Orchestrator implements LlmAdapter {
    * @param server The MCP server to register
    * @param name The name of the server
    */
-  registerLocalMcpServer(server: McpServer, name: string): void {
-    const transport = new InMemoryTransport();
-    this.mcpHost.registerLocalServer(server, name, transport);
-  }
-
-  /**
-   * Register an external MCP server with custom transport
-   * @param name The name of the server
-   * @param transport The transport to use
-   */
-  registerExternalMcpServer(name: string, transport: Transport): void {
-    this.mcpHost.registerExternalServer(name, transport);
+  async registerLocalMcpServer(server: McpServer, name: string): Promise<void> {
+    await this.mcpHost.registerLocalServer(server, name);
+    // Invalidate the tools buffer when registering a new server
+    this.toolsBuffer = null;
   }
 
   /**
@@ -114,8 +105,8 @@ export class Orchestrator implements LlmAdapter {
    * @param server The MCP server to register
    * @param name The name to register the server under
    */
-  registerMcpServer(server: McpServer, name: string): void {
-    this.registerLocalMcpServer(server, name);
+  async registerMcpServer(server: McpServer, name: string): Promise<void> {
+    await this.registerLocalMcpServer(server, name);
   }
 
   /**
@@ -134,25 +125,38 @@ export class Orchestrator implements LlmAdapter {
    * @returns True if the server was unregistered, false if it wasn't registered
    */
   unregisterMcpServer(name: string): boolean {
-    // This is a simplified implementation
-    // In a real implementation, you would need to close the connection
-    return this.mcpHost.getConnection(name) !== undefined;
+    const connection = this.mcpHost.getConnection(name);
+    const result = connection !== undefined;
+    if (result) {
+      // Invalidate the tools buffer
+      this.toolsBuffer = null;
+    }
+    return result;
   }
 
   /**
-   * Retrieves available tools from the MCP host
-   * @returns Array of available tools
+   * Checks if the current LLM provider supports function calling/tools
+   * @param providerName The name of the provider to check
+   * @returns A promise that resolves to true if tools are supported, false otherwise
+   */
+  async checkToolSupport(providerName: string): Promise<boolean> {
+    const provider = this.getLlmProvider(providerName);
+    if (!provider || !provider.client) {
+      return false;
+    }
+
+    return provider.client.checkToolSupport();
+  }
+
+  /**
+   * Get all available tools from registered MCP servers
+   * @returns A promise that resolves to an array of tools
    */
   private async getAvailableTools(): Promise<Tool[]> {
-    try {
-      const tools = await this.mcpHost.listTools();
-      console.log(`Retrieved ${tools.length} tools`);
-      return tools;
-    } catch (error) {
-      console.error("Error retrieving tools:", error);
-      // Continue without tools rather than failing the entire request
-      return [];
+    if (this.toolsBuffer === null) {
+      this.toolsBuffer = await this.mcpHost.listTools() as unknown as Tool[];
     }
+    return this.toolsBuffer || [];
   }
 
   /**
@@ -176,8 +180,8 @@ export class Orchestrator implements LlmAdapter {
       // Filter out the placeholder assistant message if it exists
       const filteredHistory = assistantMessageId
         ? history.filter(
-            (msg) => msg.id !== assistantMessageId || msg.content.trim() !== ""
-          )
+          (msg) => msg.id !== assistantMessageId || msg.content.trim() !== ""
+        )
         : history;
 
       // Map to the format expected by the LLM
@@ -213,52 +217,16 @@ export class Orchestrator implements LlmAdapter {
     try {
       await this.chatManager.updateMessageStatus(chatId, messageId, status);
     } catch (error) {
-      console.error(`Error updating message status for ${messageId}:`, error);
+      //TODO: we keep on getting errors like this:
+      //   {
+      //     "name": "InvalidStateError",
+      //     "message": "Failed to execute 'objectStore' on 'IDBTransaction': The transaction has finished.\n InvalidStateError: Failed to execute 'objectStore' on 'IDBTransaction': The transaction has finished.",
+      //     "inner": {}
+      // }
+      // This is for sure not desirable, but it doesn't kill the whole processing. So let's look at this later
+
+      console.warn(`Error updating message status for ${messageId}:`, error);
       // Continue processing even if status update fails
-    }
-  }
-
-  /**
-   * Handles the response from the LLM by either updating an existing assistant message or creating a new one
-   * @param message The original user message
-   * @param response The response from the LLM
-   */
-  private async handleLlmResponse(
-    message: LlmMessage,
-    response: LlmResponse
-  ): Promise<void> {
-    if (!this.chatManager) {
-      return;
-    }
-
-    try {
-      // Update the user message status to sent
-      await this.updateMessageStatus(
-        message.chatId,
-        message.id,
-        MessageStatus.SENT
-      );
-
-      if (message.assistantMessageId) {
-        // Update the existing assistant message
-        await this.chatManager.updateMessageContent(
-          message.chatId,
-          message.assistantMessageId,
-          response.content
-        );
-      } else {
-        // Add a new assistant response to the chat
-        await this.chatManager.addMessage(
-          message.chatId,
-          response.content,
-          response.role,
-          "assistant",
-          message.id
-        );
-      }
-    } catch (error) {
-      console.error("Error handling LLM response:", error);
-      // Continue even if chat update fails
     }
   }
 
@@ -304,43 +272,39 @@ export class Orchestrator implements LlmAdapter {
   }
 
   /**
-   * Process tool calls from an LLM response
-   * @param response The LLM response containing tool calls
-   * @param tools Available tools
-   * @returns The tool results
+   * Process tool calls in an LLM response
+   * @param response The LLM response
+   * @param tools The available tools
+   * @returns A promise that resolves to an array of tool results
    */
   private async processToolCalls(
     response: LlmResponse,
-    tools: Tool[]
   ): Promise<unknown[]> {
     if (!response.tool_calls || response.tool_calls.length === 0) {
       return [];
     }
 
-    console.log(`Processing ${response.tool_calls.length} tool calls`);
+    const results: unknown[] = [];
 
-    // Execute each tool call
-    const toolResults = await Promise.all(
-      response.tool_calls.map(async (call) => {
-        const toolInfo = tools.find((t) => t.name === call.function.name);
-        if (!toolInfo) {
-          console.warn(`Tool ${call.function.name} not found`);
-          throw new Error(`Tool ${call.function.name} not found`);
-        }
+    for (const toolCall of response.tool_calls) {
+      try {
+        const toolName = toolCall.function.name;
+        const toolArgs = typeof toolCall.function.arguments === "string"
+          ? JSON.parse(toolCall.function.arguments)
+          : toolCall.function.arguments;
 
-        console.log(`Calling tool: ${call.function.name}`);
-        // Call the tool using the callTool method
-        return this.mcpHost.callTool(
-          call.function.name,
-          typeof call.function.arguments === "string"
-            ? JSON.parse(call.function.arguments)
-            : call.function.arguments
-        );
-      })
-    );
+        // Call the tool through the McpHost
+        const result = await this.mcpHost.callTool(toolName, toolArgs);
+        results.push(result);
+      } catch (error) {
+        console.error("Error processing tool call:", error);
+        results.push({
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    }
 
-    console.log("Tool calls completed");
-    return toolResults;
+    return results;
   }
 
   /**
@@ -367,19 +331,13 @@ export class Orchestrator implements LlmAdapter {
     const response = await this.client.sendMessage(enhancedMessage);
     console.log("Received response from LLM");
 
-    // Get available tools for processing tool calls
-    const tools = await this.getAvailableTools();
-
     // Process tool calls if present
     if (response.tool_calls && response.tool_calls.length > 0) {
-      const toolResults = await this.processToolCalls(response, tools);
+      const toolResults = await this.processToolCalls(response);
 
       // Include tool results in the response
       (response as LlmResponseWithToolResults).toolResults = toolResults;
     }
-
-    // Handle the LLM response (update or create assistant message)
-    await this.handleLlmResponse(message, response);
 
     return response;
   }
@@ -396,13 +354,6 @@ export class Orchestrator implements LlmAdapter {
   ): Promise<EventEmitter> {
     try {
       console.log("[Orchestrator] Processing message stream");
-
-      // Update message status to processing
-      await this.updateMessageStatus(
-        message.chatId,
-        message.id,
-        MessageStatus.SENT
-      );
 
       // Enhance the message with chat history and tools
       const enhancedMessage =
@@ -445,8 +396,6 @@ export class Orchestrator implements LlmAdapter {
       // Handle the end of the stream
       emitter.on("end", async () => {
         try {
-          // Get available tools for processing tool calls
-          const tools = await this.getAvailableTools();
 
           // Create a response object for the ChatManager
           const response = {
@@ -465,7 +414,7 @@ export class Orchestrator implements LlmAdapter {
               `[Orchestrator] Processing ${toolCalls.length} tool calls from stream`
             );
 
-            const toolResults = await this.processToolCalls(response, tools);
+            const toolResults = await this.processToolCalls(response);
 
             console.log("[Orchestrator] Stream tool calls completed");
             // Emit the tool results
@@ -474,9 +423,6 @@ export class Orchestrator implements LlmAdapter {
             // Include tool results in the response
             (response as LlmResponseWithToolResults).toolResults = toolResults;
           }
-
-          // Handle the LLM response (update or create assistant message)
-          await this.handleLlmResponse(message, response);
 
           console.log(
             "[Orchestrator] Stream processing complete, emitting end event"

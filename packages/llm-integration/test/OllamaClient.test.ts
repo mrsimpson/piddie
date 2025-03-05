@@ -51,7 +51,10 @@ describe("OllamaClient", () => {
         json: async () => ({
           model: "llama2",
           created_at: "2023-01-01T00:00:00Z",
-          response: "Hello, I'm an AI assistant.",
+          message: {
+            role: "assistant",
+            content: "Hello, I'm an AI assistant."
+          },
           done: true
         })
       });
@@ -60,7 +63,7 @@ describe("OllamaClient", () => {
 
       // Check that fetch was called with the correct arguments
       expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:11434/api/generate",
+        "http://localhost:11434/api/chat",
         {
           method: "POST",
           headers: {
@@ -68,7 +71,12 @@ describe("OllamaClient", () => {
           },
           body: JSON.stringify({
             model: "llama2",
-            prompt: "Hello, world!",
+            messages: [
+              {
+                role: "user",
+                content: "Hello, world!"
+              }
+            ],
             options: {
               temperature: 0,
               top_p: 0.9
@@ -84,7 +92,8 @@ describe("OllamaClient", () => {
         content: "Hello, I'm an AI assistant.",
         role: "assistant",
         created: expect.any(Date),
-        parentId: "test-message-id"
+        parentId: "test-message-id",
+        tool_calls: []
       });
     });
 
@@ -95,23 +104,25 @@ describe("OllamaClient", () => {
         systemPrompt: "You are a helpful assistant."
       };
 
-      const SAMPLE_RESPONSE = {
-        model: "llama2",
-        created_at: "2023-01-01T00:00:00Z",
-        response: "Hello, I'm a helpful assistant.",
-        done: true
-      };
       // Mock successful response
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => SAMPLE_RESPONSE
+        json: async () => ({
+          model: "llama2",
+          created_at: "2023-01-01T00:00:00Z",
+          message: {
+            role: "assistant",
+            content: "Hello, I'm a helpful assistant."
+          },
+          done: true
+        })
       });
 
       await client.sendMessage(messageWithSystem);
 
       // Check that fetch was called with system prompt
       expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:11434/api/generate",
+        "http://localhost:11434/api/chat",
         {
           method: "POST",
           headers: {
@@ -119,12 +130,20 @@ describe("OllamaClient", () => {
           },
           body: JSON.stringify({
             model: "llama2",
-            prompt: "Hello, world!",
+            messages: [
+              {
+                role: "system",
+                content: "You are a helpful assistant."
+              },
+              {
+                role: "user",
+                content: "Hello, world!"
+              }
+            ],
             options: {
               temperature: 0,
               top_p: 0.9
-            },
-            system: "You are a helpful assistant."
+            }
           })
         }
       );
@@ -168,7 +187,10 @@ describe("OllamaClient", () => {
             JSON.stringify({
               model: "llama2",
               created_at: "2023-01-01T00:00:00Z",
-              response: "Hello, ",
+              message: {
+                role: "assistant",
+                content: "Hello, "
+              },
               done: false
             }) + "\n"
           )
@@ -179,7 +201,10 @@ describe("OllamaClient", () => {
             JSON.stringify({
               model: "llama2",
               created_at: "2023-01-01T00:00:00Z",
-              response: "I'm an AI assistant.",
+              message: {
+                role: "assistant",
+                content: "I'm an AI assistant."
+              },
               done: true
             }) + "\n"
           )
@@ -215,7 +240,7 @@ describe("OllamaClient", () => {
 
       // Check that fetch was called with the correct arguments
       expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:11434/api/generate",
+        "http://localhost:11434/api/chat",
         {
           method: "POST",
           headers: {
@@ -223,7 +248,12 @@ describe("OllamaClient", () => {
           },
           body: JSON.stringify({
             model: "llama2",
-            prompt: "Hello, world!",
+            messages: [
+              {
+                role: "user",
+                content: "Hello, world!"
+              }
+            ],
             stream: true,
             options: {
               temperature: 0,
@@ -251,7 +281,8 @@ describe("OllamaClient", () => {
         content: "Hello, I'm an AI assistant.",
         role: "assistant",
         created: expect.any(Date),
-        parentId: "test-message-id"
+        parentId: "test-message-id",
+        tool_calls: []
       });
 
       expect(errorEvents.length).toBe(0);

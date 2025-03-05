@@ -101,6 +101,12 @@ export interface LlmClient {
    * @returns An event emitter that emits 'data', 'end', and 'error' events
    */
   streamMessage(message: LlmMessage): EventEmitter;
+
+  /**
+   * Checks if the LLM supports function calling/tools
+   * @returns A promise that resolves to true if tools are supported, false otherwise
+   */
+  checkToolSupport(): Promise<boolean>;
 }
 
 /**
