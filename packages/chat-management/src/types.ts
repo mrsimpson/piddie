@@ -10,6 +10,16 @@ export enum MessageStatus {
 }
 
 /**
+ * Represents a tool call from an LLM
+ */
+export interface ToolCall {
+  function: {
+    name: string;
+    arguments: Record<string, unknown>;
+  };
+}
+
+/**
  * Represents a chat message, composing with OpenAI's message format
  */
 export interface Message {
@@ -21,6 +31,7 @@ export interface Message {
   created: Date;
   username: string | undefined;
   parentId: string | undefined; // For threading/replies
+  tool_calls?: ToolCall[]; // Tool calls extracted from the LLM response
 }
 
 /**
@@ -112,6 +123,18 @@ export interface ChatManager {
     chatId: string,
     messageId: string,
     content: string
+  ): Promise<void>;
+
+  /**
+   * Updates a message's tool calls
+   * @param chatId The ID of the chat containing the message
+   * @param messageId The ID of the message to update
+   * @param toolCalls The tool calls to add
+   */
+  updateMessageToolCalls(
+    chatId: string,
+    messageId: string,
+    toolCalls: ToolCall[]
   ): Promise<void>;
 
   /**

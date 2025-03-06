@@ -28,13 +28,14 @@ export class LiteLlmClient extends BaseLlmClient {
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(config: LlmProviderConfig) {
-    super(config);
-    this.openai = new OpenAI({
-      apiKey: config.apiKey,
-      baseURL: config.baseUrl,
-      dangerouslyAllowBrowser: this.isLocalhostCommunication(config)
-    });
-  }
+    constructor(config: LlmProviderConfig) {
+      super(config);
+      this.openai = new OpenAI({
+        apiKey: config.apiKey,
+        baseURL: config.baseUrl,
+        dangerouslyAllowBrowser: this.isLocalhostCommunication(config)
+      });
+    }
 
   private isLocalhostCommunication(config: LlmProviderConfig) {
     return (
@@ -67,7 +68,7 @@ export class LiteLlmClient extends BaseLlmClient {
         messages: messages as any,
         tools: hasNativeToolsSupport
           ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (enhancedMessage.tools as any)
+          (enhancedMessage.tools as any)
           : undefined
       });
 
@@ -348,7 +349,7 @@ export class LiteLlmClient extends BaseLlmClient {
             const finalChunk: LlmStreamChunk = {
               content: processedResponse.content,
               ...(processedResponse.tool_calls &&
-              processedResponse.tool_calls.length > 0
+                processedResponse.tool_calls.length > 0
                 ? { tool_calls: processedResponse.tool_calls }
                 : {}),
               isFinal: true
@@ -414,7 +415,7 @@ export class LiteLlmClient extends BaseLlmClient {
         const finalChunk: LlmStreamChunk = {
           content: processedResponse.content,
           ...(processedResponse.tool_calls &&
-          processedResponse.tool_calls.length > 0
+            processedResponse.tool_calls.length > 0
             ? { tool_calls: processedResponse.tool_calls }
             : {}),
           isFinal: true

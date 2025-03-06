@@ -1,5 +1,5 @@
 import Dexie, { Table } from "dexie";
-import type { Chat, Message, ChatManager } from "../types";
+import type { Chat, Message, ChatManager, ToolCall } from "../types";
 import { MessageStatus } from "../types";
 import type { ChatCompletionRole } from "openai/resources/chat";
 
@@ -21,6 +21,12 @@ export class ChatDatabase extends Dexie {
 
     // Add a new version with the projectId index
     this.version(2).stores({
+      chats: "id, created, lastUpdated, projectId",
+      messages: "id, chatId, created, status, [chatId+created]"
+    });
+
+    // Add a new version with tool_calls support
+    this.version(3).stores({
       chats: "id, created, lastUpdated, projectId",
       messages: "id, chatId, created, status, [chatId+created]"
     });
@@ -213,5 +219,39 @@ export class DexieChatManager implements ChatManager {
 
     await this.db.messages.where("chatId").equals(id).delete();
     await this.db.chats.delete(id);
+  }
+
+  /**
+   * Updates a message's tool calls
+   * @param chatId The ID of the chat containing the message
+   * @param messageId The ID of the message to update
+   * @param toolCalls The tool calls to add
+   */
+  async updateMessageToolCalls(
+    chatId: string,
+    messageId: string,
+    toolCalls: ToolCall[]
+  ): Promise<void> {
+    try {
+      await this.db.transaction("rw", this.db.messages, async () => {
+        const message = await this.db.messages.get(messageId);
+        if (!message) {
+          throw new Error(`Message ${messageId} not found`);
+        }
+
+        if (message.chatId !== chatId) {
+          throw new Error(
+            `Message ${messageId} does not belong to chat ${chatId}`
+          );
+        }
+
+        await this.db.messages.update(messageId, {
+          tool_calls: toolCalls
+        });
+      });
+    } catch (error) {
+      console.error("Error updating message tool calls:", error);
+      throw error;
+    }
   }
 }

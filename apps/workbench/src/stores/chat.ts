@@ -1,6 +1,6 @@
 import { ref } from "vue";
 import { defineStore } from "pinia";
-import type { Chat, Message } from "@piddie/chat-management";
+import type { Chat, Message, ToolCall } from "@piddie/chat-management";
 import { createChatManager, MessageStatus } from "@piddie/chat-management";
 
 export const useChatStore = defineStore("chat", () => {
@@ -55,6 +55,35 @@ export const useChatStore = defineStore("chat", () => {
       messages.value = [...messages.value, message];
     }
     return message;
+  }
+
+  async function updateMessageToolCalls(
+    messageId: string,
+    toolCalls: ToolCall[]
+  ) {
+    if (!currentChat.value) {
+      throw new Error("No active chat");
+    }
+
+    await chatManager.updateMessageToolCalls(
+      currentChat.value.id,
+      messageId,
+      toolCalls
+    );
+
+    // Update the message in the local state
+    const messageIndex = messages.value.findIndex((m) => m.id === messageId);
+    if (messageIndex !== -1) {
+      const updatedMessage = {
+        ...messages.value[messageIndex],
+        tool_calls: toolCalls
+      };
+      messages.value = [
+        ...messages.value.slice(0, messageIndex),
+        updatedMessage,
+        ...messages.value.slice(messageIndex + 1)
+      ];
+    }
   }
 
   async function updateMessageContent(messageId: string, content: string) {
@@ -141,6 +170,7 @@ export const useChatStore = defineStore("chat", () => {
     chatManager,
     createChat,
     addMessage,
+    updateMessageToolCalls,
     updateMessageContent,
     updateMessageStatus,
     loadChat,
