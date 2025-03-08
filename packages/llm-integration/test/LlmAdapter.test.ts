@@ -107,7 +107,7 @@ describe("LLM Adapter", () => {
       model: "test-model"
     };
 
-    adapter = new Orchestrator(new LiteLlmClient(config));
+    adapter = new Orchestrator(new LiteLlmClient(config), mockChatManager);
   });
 
   describe("processMessage", () => {
@@ -140,10 +140,11 @@ describe("LLM Adapter", () => {
         sendMessage: vi.fn().mockImplementation(() => {
           throw new Error("Test error");
         }),
-        streamMessage: vi.fn()
+        streamMessage: vi.fn(),
+        checkToolSupport: vi.fn().mockResolvedValue(false)
       };
 
-      const errorAdapter = new Orchestrator(errorClient);
+      const errorAdapter = new Orchestrator(errorClient, mockChatManager);
 
       const message: LlmMessage = {
         id: "message-id",

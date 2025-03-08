@@ -254,4 +254,44 @@ export class DexieChatManager implements ChatManager {
       throw error;
     }
   }
+
+  /**
+   * Updates multiple aspects of a message in a single transaction
+   * @param chatId The ID of the chat containing the message
+   * @param messageId The ID of the message to update
+   * @param updates Object containing the updates to apply
+   */
+  async updateMessage(
+    chatId: string,
+    messageId: string,
+    updates: {
+      content?: string;
+      status?: MessageStatus;
+      tool_calls?: ToolCall[];
+    }
+  ): Promise<void> {
+    try {
+      await this.db.transaction("rw", this.db.messages, async () => {
+        const message = await this.db.messages.get(messageId);
+        if (!message) {
+          throw new Error(`Message ${messageId} not found`);
+        }
+
+        if (message.chatId !== chatId) {
+          throw new Error(
+            `Message ${messageId} does not belong to chat ${chatId}`
+          );
+        }
+
+        // Apply all updates in a single transaction
+        await this.db.messages.update(messageId, updates);
+      });
+
+      // Update the chat's lastUpdated timestamp
+      await this.db.chats.update(chatId, { lastUpdated: new Date() });
+    } catch (error) {
+      console.error("Error updating message:", error);
+      throw error;
+    }
+  }
 }

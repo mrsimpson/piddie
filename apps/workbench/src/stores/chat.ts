@@ -1,12 +1,42 @@
-import { ref } from "vue";
+import { ref, computed } from "vue";
 import { defineStore } from "pinia";
 import type { Chat, Message, ToolCall } from "@piddie/chat-management";
 import { createChatManager, MessageStatus } from "@piddie/chat-management";
+import { v4 as uuidv4 } from "uuid";
 
 export const useChatStore = defineStore("chat", () => {
   const chatManager = createChatManager();
   const currentChat = ref<Chat | null>(null);
-  const messages = ref<Message[]>([]);
+  const temporaryMessages = ref<Map<string, Message>>(new Map());
+
+  /**
+   * Get all messages for the current chat, including temporary ones
+   */
+  const messages = computed(() => {
+    if (!currentChat.value) return [];
+
+    // Get persisted messages from current chat
+    const chatMessages = currentChat.value.messages || [];
+
+    // Get temporary messages for this chat
+    const tempMessages = Array.from(temporaryMessages.value.values()).filter(
+      (msg) => msg.chatId === currentChat.value?.id
+    );
+
+    // Combine and sort messages by creation time
+    return [...chatMessages, ...tempMessages].sort((a, b) => {
+      // Convert created to timestamps for comparison
+      const timeA =
+        a.created instanceof Date
+          ? a.created.getTime()
+          : new Date(a.created).getTime();
+      const timeB =
+        b.created instanceof Date
+          ? b.created.getTime()
+          : new Date(b.created).getTime();
+      return timeA - timeB;
+    });
+  });
 
   async function createChat(
     projectId: string,
@@ -14,8 +44,72 @@ export const useChatStore = defineStore("chat", () => {
   ) {
     const chat = await chatManager.createChat(projectId, metadata);
     currentChat.value = chat;
-    messages.value = chat.messages;
     return chat;
+  }
+
+  /**
+   * Creates a temporary message that exists only in memory
+   */
+  function createTemporaryMessage(
+    chatId: string,
+    content: string,
+    role: "user" | "assistant" | "system",
+    username: string,
+    parentId?: string,
+    status: MessageStatus = MessageStatus.SENDING
+  ): Message {
+    const message: Message = {
+      id: `temp_${uuidv4()}`,
+      chatId,
+      content,
+      role,
+      status,
+      created: new Date(),
+      username,
+      parentId,
+      tool_calls: []
+    };
+
+    temporaryMessages.value.set(message.id, message);
+    return message;
+  }
+
+  /**
+   * Persists a temporary message to the database
+   */
+  async function persistMessage(
+    messageId: string,
+    updates?: {
+      content?: string;
+      status?: MessageStatus;
+      tool_calls?: ToolCall[];
+    }
+  ): Promise<Message> {
+    const tempMessage = temporaryMessages.value.get(messageId);
+    if (!tempMessage) {
+      throw new Error(`Temporary message ${messageId} not found`);
+    }
+
+    // Create the message in the database
+    const message = await chatManager.addMessage(
+      tempMessage.chatId,
+      updates?.content || tempMessage.content,
+      tempMessage.role,
+      tempMessage.username || tempMessage.role,
+      tempMessage.parentId
+    );
+
+    // Apply updates if any
+    if (updates) {
+      await chatManager.updateMessage(message.chatId, message.id, {
+        status: updates.status,
+        tool_calls: updates.tool_calls
+      });
+    }
+
+    // Remove from temporary messages
+    temporaryMessages.value.delete(messageId);
+    return message;
   }
 
   async function addMessage(
@@ -28,7 +122,6 @@ export const useChatStore = defineStore("chat", () => {
   ) {
     if (!chatId) throw new Error("No chat ID provided");
 
-    // Create the message according to the interface (without username)
     const message = await chatManager.addMessage(
       chatId,
       content,
@@ -37,23 +130,10 @@ export const useChatStore = defineStore("chat", () => {
       parentId
     );
 
-    // If username is provided, we'll need to store it separately
-    // This is a workaround since the interface doesn't include username
-    // but the implementation does
-    if (username && message) {
-      // In a real implementation, we would update the message with the username
-      // For now, we'll just add it to our local copy
-      message.username = username;
-    }
-
-    // Update the status if it's different from the default
     if (status !== MessageStatus.SENT) {
-      await updateMessageStatus(message.id, status);
+      await chatManager.updateMessageStatus(chatId, message.id, status);
     }
 
-    if (chatId === currentChat.value?.id) {
-      messages.value = [...messages.value, message];
-    }
     return message;
   }
 
@@ -61,6 +141,13 @@ export const useChatStore = defineStore("chat", () => {
     messageId: string,
     toolCalls: ToolCall[]
   ) {
+    const tempMessage = temporaryMessages.value.get(messageId);
+    if (tempMessage) {
+      tempMessage.tool_calls = toolCalls;
+      temporaryMessages.value.set(messageId, { ...tempMessage });
+      return;
+    }
+
     if (!currentChat.value) {
       throw new Error("No active chat");
     }
@@ -70,73 +157,33 @@ export const useChatStore = defineStore("chat", () => {
       messageId,
       toolCalls
     );
+  }
 
-    // Update the message in the local state
-    const messageIndex = messages.value.findIndex((m) => m.id === messageId);
-    if (messageIndex !== -1) {
-      const updatedMessage = {
-        ...messages.value[messageIndex],
-        tool_calls: toolCalls
-      };
-      messages.value = [
-        ...messages.value.slice(0, messageIndex),
-        updatedMessage,
-        ...messages.value.slice(messageIndex + 1)
-      ];
+  /**
+   * Update a temporary message's content
+   */
+  function updateMessageContent(messageId: string, content: string) {
+    const message = temporaryMessages.value.get(messageId);
+    if (message) {
+      message.content = content;
+      temporaryMessages.value.set(messageId, { ...message });
     }
   }
 
-  async function updateMessageContent(messageId: string, content: string) {
-    if (!currentChat.value) return;
-
-    // Find the message in the current chat
-    const messageIndex = messages.value.findIndex((m) => m.id === messageId);
-    if (messageIndex === -1) return;
-
-    // Update the message content
-    const updatedMessage = { ...messages.value[messageIndex], content };
-    messages.value = [
-      ...messages.value.slice(0, messageIndex),
-      updatedMessage,
-      ...messages.value.slice(messageIndex + 1)
-    ];
-
-    // Update the message content in the chat manager
-    await chatManager.updateMessageContent(
-      currentChat.value.id,
-      messageId,
-      content
-    );
-  }
-
-  async function updateMessageStatus(messageId: string, status: MessageStatus) {
-    if (!currentChat.value) return;
-
-    // Find the message in the current chat
-    const messageIndex = messages.value.findIndex((m) => m.id === messageId);
-    if (messageIndex === -1) return;
-
-    // Update the message status
-    const updatedMessage = { ...messages.value[messageIndex], status };
-    messages.value = [
-      ...messages.value.slice(0, messageIndex),
-      updatedMessage,
-      ...messages.value.slice(messageIndex + 1)
-    ];
-
-    // In a real implementation, we would also update the message in the chat manager
-    // For now, we're just updating the local state
-    await chatManager.updateMessageStatus(
-      currentChat.value.id,
-      messageId,
-      status
-    );
+  /**
+   * Update a temporary message's status
+   */
+  function updateMessageStatus(messageId: string, status: MessageStatus) {
+    const message = temporaryMessages.value.get(messageId);
+    if (message) {
+      message.status = status;
+      temporaryMessages.value.set(messageId, { ...message });
+    }
   }
 
   async function loadChat(chatId: string) {
     const chat = await chatManager.getChat(chatId);
     currentChat.value = chat;
-    messages.value = chat.messages;
     return chat;
   }
 
@@ -156,12 +203,12 @@ export const useChatStore = defineStore("chat", () => {
     await chatManager.deleteChat(chatId);
     if (currentChat.value?.id === chatId) {
       currentChat.value = null;
-      messages.value = [];
     }
   }
 
   async function cleanup() {
     currentChat.value = null;
+    temporaryMessages.value.clear();
   }
 
   return {
@@ -170,6 +217,8 @@ export const useChatStore = defineStore("chat", () => {
     chatManager,
     createChat,
     addMessage,
+    createTemporaryMessage,
+    persistMessage,
     updateMessageToolCalls,
     updateMessageContent,
     updateMessageStatus,

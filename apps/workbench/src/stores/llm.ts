@@ -2,7 +2,7 @@ import { ref, reactive, onMounted, watch } from "vue";
 import { defineStore } from "pinia";
 import { useChatStore } from "./chat";
 import { useFileSystemStore } from "./file-system";
-import { MessageStatus } from "@piddie/chat-management";
+import { MessageStatus, type ToolCall } from "@piddie/chat-management";
 import { FileManagementMcpServer } from "@piddie/files-management";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import settingsManager from "./settings-db";
@@ -340,16 +340,15 @@ export const useLlmStore = defineStore("llm", () => {
     try {
       // Check if API key is set
       if (!workbenchConfig.apiKey && workbenchConfig.provider !== "mock") {
-        throw new Error(
-          "API key is not set. Please configure your LLM settings."
-        );
+        error.value = new Error("API key is not set");
+        return;
       }
 
       error.value = null;
       isProcessing.value = true;
       isStreaming.value = useStreaming;
 
-      // Add the user message to the chat
+      // Create the user message directly in the database
       const userMessage = await chatStore.addMessage(
         chatId,
         content,
@@ -363,14 +362,14 @@ export const useLlmStore = defineStore("llm", () => {
           ? "Mock Model"
           : workbenchConfig.selectedModel || workbenchConfig.defaultModel;
 
-      // Create a placeholder for the assistant's response with SENDING status
-      const assistantMessage = await chatStore.addMessage(
+      // Create a temporary placeholder for the assistant's response
+      const assistantMessage = chatStore.createTemporaryMessage(
         chatId,
         "",
         "assistant",
-        modelName, // Pass the model name as the username
+        modelName,
         userMessage.id,
-        MessageStatus.SENDING // Set initial status to SENDING
+        MessageStatus.SENDING
       );
 
       // Convert the message to the format expected by the LLM adapter
@@ -382,33 +381,73 @@ export const useLlmStore = defineStore("llm", () => {
         status: userMessage.status,
         created: userMessage.created,
         parentId: userMessage.parentId,
-        provider: workbenchConfig.provider || "litellm", // Ensure provider is never undefined
-        assistantMessageId: assistantMessage.id // Include the assistant message ID for updating
+        provider: workbenchConfig.provider || "litellm",
+        assistantMessageId: assistantMessage.id
       };
 
-      // Reset streaming message ID
-      streamingMessageId.value = assistantMessage.id;
+      // Track accumulated content and tool calls during streaming
+      let accumulatedContent = "";
+      let accumulatedToolCalls: ToolCall[] = [];
 
-      const finalizeProcessing = () => {
-        isStreaming.value = false;
+      // Function to finalize processing
+      const finalizeProcessing = async () => {
         isProcessing.value = false;
-        streamingMessageId.value = null;
+        isStreaming.value = false;
+
+        try {
+          // Persist the temporary message with final content and tool calls
+          await chatStore.persistMessage(assistantMessage.id, {
+            content: accumulatedContent,
+            status: MessageStatus.SENT,
+            tool_calls: accumulatedToolCalls
+          });
+        } catch (err) {
+          console.error("Error persisting assistant message:", err);
+          chatStore.updateMessageStatus(
+            assistantMessage.id,
+            MessageStatus.ERROR
+          );
+        }
       };
 
       if (useStreaming) {
-        // Keep track of accumulated content
-        let accumulatedContent = "";
-
+        // Handle streaming response
         const handleChunk = (chunk: LlmStreamChunk) => {
-          // Only append content if it's not a final chunk with duplicate content
-          if (!chunk.isFinal) {
-            // Append the new content to the accumulated content
+          if (chunk.content) {
             accumulatedContent += chunk.content;
-
-            // Update the assistant message with the accumulated content
             chatStore.updateMessageContent(
               assistantMessage.id,
               accumulatedContent
+            );
+          }
+
+          // Handle tool calls in the chunk
+          if (chunk.tool_calls && chunk.tool_calls.length > 0) {
+            // Convert tool calls to the correct format
+            const convertedToolCalls = chunk.tool_calls.map((toolCall) => {
+              const functionArgs =
+                typeof toolCall.function.arguments === "string"
+                  ? JSON.parse(toolCall.function.arguments)
+                  : toolCall.function.arguments;
+
+              return {
+                function: {
+                  name: toolCall.function.name,
+                  arguments: functionArgs
+                }
+              };
+            });
+
+            // Add to accumulated tool calls
+            accumulatedToolCalls = [
+              ...accumulatedToolCalls,
+              ...convertedToolCalls
+            ];
+
+            // Update the temporary message with the tool calls
+            chatStore.updateMessageToolCalls(
+              assistantMessage.id,
+              accumulatedToolCalls
             );
           }
         };
@@ -420,41 +459,83 @@ export const useLlmStore = defineStore("llm", () => {
             handleChunk
           );
 
-          // Listen for the END event to finalize processing
-          emitter.once(LlmStreamEvent.END, () => {
-            // Finalize processing when streaming is complete
-            finalizeProcessing();
+          // Set up event listeners
+          emitter.on("end", async () => {
+            await finalizeProcessing();
           });
 
-          // Listen for ERROR events
-          emitter.once(LlmStreamEvent.ERROR, (err: unknown) => {
+          emitter.on("error", async (err: unknown) => {
+            console.error("Error in LLM stream:", err);
             error.value = err instanceof Error ? err : new Error(String(err));
-            finalizeProcessing();
+            chatStore.updateMessageStatus(
+              assistantMessage.id,
+              MessageStatus.ERROR
+            );
+            await finalizeProcessing();
           });
-        } catch (err) {
-          // Set error value
+        } catch (err: unknown) {
+          console.error("Error setting up streaming:", err);
           error.value = err instanceof Error ? err : new Error(String(err));
-          finalizeProcessing();
+          chatStore.updateMessageStatus(
+            assistantMessage.id,
+            MessageStatus.ERROR
+          );
+          await finalizeProcessing();
         }
       } else {
-        // Use non-streaming for simpler implementation
-        const response = await llmAdapter.processMessage(llmMessage);
+        // Handle non-streaming response
+        try {
+          const response = await llmAdapter.processMessage(llmMessage);
 
-        // Update the assistant message with the response
-        chatStore.updateMessageContent(assistantMessage.id, response.content);
+          // Update accumulated content
+          accumulatedContent = response.content || "";
 
-        // Let the orchestrator handle status updates
-        // We only need to finalize processing on our end
-        finalizeProcessing();
+          // Convert tool calls to the correct format if present
+          if (response.tool_calls && response.tool_calls.length > 0) {
+            accumulatedToolCalls = response.tool_calls.map((toolCall) => {
+              const functionArgs =
+                typeof toolCall.function.arguments === "string"
+                  ? JSON.parse(toolCall.function.arguments)
+                  : toolCall.function.arguments;
+
+              return {
+                function: {
+                  name: toolCall.function.name,
+                  arguments: functionArgs
+                }
+              };
+            });
+          }
+
+          // Update the temporary message
+          chatStore.updateMessageContent(
+            assistantMessage.id,
+            accumulatedContent
+          );
+          if (accumulatedToolCalls.length > 0) {
+            chatStore.updateMessageToolCalls(
+              assistantMessage.id,
+              accumulatedToolCalls
+            );
+          }
+
+          // Finalize processing
+          await finalizeProcessing();
+        } catch (err: unknown) {
+          console.error("Error processing message:", err);
+          error.value = err instanceof Error ? err : new Error(String(err));
+          chatStore.updateMessageStatus(
+            assistantMessage.id,
+            MessageStatus.ERROR
+          );
+          await finalizeProcessing();
+        }
       }
-    } catch (err) {
-      console.error("Error sending message:", err);
+    } catch (err: unknown) {
+      console.error("Error in sendMessage:", err);
       error.value = err instanceof Error ? err : new Error(String(err));
-
-      // Ensure states are reset in case of an error
-      isStreaming.value = false;
       isProcessing.value = false;
-      streamingMessageId.value = null;
+      isStreaming.value = false;
     }
   }
 

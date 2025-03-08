@@ -126,6 +126,22 @@ export interface ChatManager {
   ): Promise<void>;
 
   /**
+   * Updates multiple aspects of a message in a single transaction
+   * @param chatId The ID of the chat containing the message
+   * @param messageId The ID of the message to update
+   * @param updates Object containing the updates to apply
+   */
+  updateMessage(
+    chatId: string,
+    messageId: string,
+    updates: {
+      content?: string;
+      status?: MessageStatus;
+      tool_calls?: ToolCall[];
+    }
+  ): Promise<void>;
+
+  /**
    * Updates a message's tool calls
    * @param chatId The ID of the chat containing the message
    * @param messageId The ID of the message to update

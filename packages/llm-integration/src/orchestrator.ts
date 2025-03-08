@@ -1,15 +1,14 @@
+import { EventEmitter } from "@piddie/shared-types";
 import type {
   LlmClient,
   LlmMessage,
+  LlmProviderConfig,
   LlmResponse,
-  LlmStreamChunk,
-  LlmProviderConfig
+  LlmStreamChunk
 } from "./types";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { EventEmitter } from "@piddie/shared-types";
-import type { ChatManager } from "@piddie/chat-management";
-import { v4 as uuidv4 } from "uuid";
+import type { ChatManager, ToolCall } from "@piddie/chat-management";
 import { MessageStatus } from "@piddie/chat-management";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { LlmAdapter } from "./index";
 import { McpHost } from "./mcp/McpHost";
 
@@ -20,16 +19,6 @@ interface Tool {
   inputSchema: {
     type: string;
     properties?: Record<string, unknown> | undefined;
-  };
-}
-
-/**
- * Interface for tool call in LLM responses
- */
-interface ToolCall {
-  function: {
-    name: string;
-    arguments: string | Record<string, unknown>;
   };
 }
 
@@ -46,13 +35,13 @@ interface LlmResponseWithToolResults extends LlmResponse {
  */
 export class Orchestrator implements LlmAdapter {
   private llmProviders: Map<string, LlmProviderConfig> = new Map();
-  private mcpHost: McpHost;
+  private mcpHost: any; // Use any for now to avoid import issues
   private client: LlmClient;
   private chatManager: ChatManager | undefined;
   private toolsBuffer: Tool[] | null = null;
 
   /**
-   * Creates a new Orchestrator instance
+   * Creates a new Orchestrator
    * @param client The LLM client to use
    * @param chatManager Optional chat manager for persistence
    */
@@ -68,7 +57,7 @@ export class Orchestrator implements LlmAdapter {
    * @param config The provider configuration
    */
   registerLlmProvider(name: string, config: LlmProviderConfig): void {
-    this.llmProviders.set(name, config);
+    this.llmProviders.set(name.toLowerCase(), config);
   }
 
   /**
@@ -77,7 +66,7 @@ export class Orchestrator implements LlmAdapter {
    * @returns The provider configuration or undefined if not found
    */
   getLlmProvider(name: string): LlmProviderConfig | undefined {
-    return this.llmProviders.get(name);
+    return this.llmProviders.get(name.toLowerCase());
   }
 
   /**
@@ -200,7 +189,7 @@ export class Orchestrator implements LlmAdapter {
   }
 
   /**
-   * Updates message status in the chat manager
+   * Updates the status of a message
    * @param chatId The ID of the chat containing the message
    * @param messageId The ID of the message to update
    * @param status The new status
@@ -211,22 +200,53 @@ export class Orchestrator implements LlmAdapter {
     status: MessageStatus
   ): Promise<void> {
     if (!this.chatManager) {
+      console.warn(
+        "[Orchestrator] No chat manager available to update message status"
+      );
+      return;
+    }
+
+    // Skip database updates for temporary messages (they're handled by the chat store)
+    if (messageId.startsWith('temp_')) {
+      console.log(`[Orchestrator] Skipping database update for temporary message ${messageId}`);
       return;
     }
 
     try {
       await this.chatManager.updateMessageStatus(chatId, messageId, status);
     } catch (error) {
-      //TODO: we keep on getting errors like this:
-      //   {
-      //     "name": "InvalidStateError",
-      //     "message": "Failed to execute 'objectStore' on 'IDBTransaction': The transaction has finished.\n InvalidStateError: Failed to execute 'objectStore' on 'IDBTransaction': The transaction has finished.",
-      //     "inner": {}
-      // }
-      // This is for sure not desirable, but it doesn't kill the whole processing. So let's look at this later
+      console.error(`Error updating message status for ${messageId}:`, error);
+    }
+  }
 
-      console.warn(`Error updating message status for ${messageId}:`, error);
-      // Continue processing even if status update fails
+  /**
+   * Updates the tool calls for a message
+   * @param chatId The ID of the chat containing the message
+   * @param messageId The ID of the message to update
+   * @param toolCalls The tool calls to add
+   */
+  private async updateMessageToolCalls(
+    chatId: string,
+    messageId: string,
+    toolCalls: ToolCall[]
+  ): Promise<void> {
+    if (!this.chatManager) {
+      console.warn(
+        "[Orchestrator] No chat manager available to update message tool calls"
+      );
+      return;
+    }
+
+    // Skip database updates for temporary messages (they're handled by the chat store)
+    if (messageId.startsWith('temp_')) {
+      console.log(`[Orchestrator] Skipping database update for temporary message ${messageId}`);
+      return;
+    }
+
+    try {
+      await this.chatManager.updateMessageToolCalls(chatId, messageId, toolCalls);
+    } catch (error) {
+      console.error(`Error updating tool calls for ${messageId}:`, error);
     }
   }
 
@@ -314,73 +334,98 @@ export class Orchestrator implements LlmAdapter {
   }
 
   /**
-   * Process a message and return a response
+   * Process a message using the LLM client
    * @param message The message to process
-   * @returns The response from the LLM
+   * @returns The LLM response
    */
   async processMessage(message: LlmMessage): Promise<LlmResponse> {
-    const providerName = message.provider;
-    const provider = this.getLlmProvider(providerName);
+    try {
+      console.log("[Orchestrator] Processing message");
 
-    if (!provider || !provider.client) {
-      throw new Error(`Provider ${providerName} not found or not initialized`);
-    }
-
-    // Process the message with the provider
-    const response = await provider.client.sendMessage(message);
-
-    // If we have a chat manager and an assistant message ID, update the message
-    if (this.chatManager && message.assistantMessageId) {
-      await this.chatManager.updateMessageContent(
-        message.chatId,
-        message.assistantMessageId,
-        response.content
+      // Enhance the message with chat history and tools
+      const enhancedMessage = await this.enhanceMessageWithHistoryAndTools(
+        message
       );
 
-      await this.chatManager.updateMessageStatus(
-        message.chatId,
-        message.assistantMessageId,
-        MessageStatus.SENT
-      );
+      // Get the provider config
+      const providerConfig = this.llmProviders.get(message.provider);
+      if (!providerConfig) {
+        throw new Error(`Provider ${message.provider} not found`);
+      }
 
-      // If the response contains tool calls, update them in the chat manager
-      if (response.tool_calls && response.tool_calls.length > 0) {
-        // Convert the tool calls to the format expected by the chat manager
-        const toolCalls = response.tool_calls.map(toolCall => {
-          // If arguments is a string, try to parse it as JSON
-          let args: Record<string, unknown> = {};
-          if (typeof toolCall.function.arguments === 'string') {
-            try {
-              args = JSON.parse(toolCall.function.arguments);
-            } catch (e) {
-              console.error('Error parsing tool call arguments:', e);
-              args = { rawArguments: toolCall.function.arguments };
+      console.log("[Orchestrator] Sending message to LLM");
+      // Process the message
+      const response = await this.client.sendMessage(enhancedMessage);
+
+      console.log("[Orchestrator] Received response from LLM");
+
+      // If we have a chat manager and an assistant message ID, update the message
+      if (message.assistantMessageId) {
+        // Skip database updates for temporary messages
+        if (!message.assistantMessageId.startsWith('temp_') && this.chatManager) {
+          // Convert tool calls to the correct format if present
+          const convertedToolCalls: ToolCall[] | undefined = response.tool_calls?.map((toolCall: any) => {
+            const functionArgs = typeof toolCall.function.arguments === 'string'
+              ? JSON.parse(toolCall.function.arguments)
+              : toolCall.function.arguments;
+
+            return {
+              function: {
+                name: toolCall.function.name,
+                arguments: functionArgs as Record<string, unknown>
+              }
+            };
+          });
+
+          // Update the message content and status
+          await this.chatManager.updateMessage(
+            message.chatId,
+            message.assistantMessageId,
+            {
+              content: response.content,
+              status: MessageStatus.SENT,
+              tool_calls: convertedToolCalls || []
             }
-          } else {
-            args = toolCall.function.arguments as Record<string, unknown>;
-          }
+          );
+        }
 
-          return {
-            function: {
-              name: toolCall.function.name,
-              arguments: args
-            }
-          };
-        });
-
-        await this.chatManager.updateMessageToolCalls(
+        // Update the message status
+        await this.updateMessageStatus(
           message.chatId,
           message.assistantMessageId,
-          toolCalls
+          MessageStatus.SENT
         );
       }
-    }
 
-    return response;
+      // Process tool calls if present
+      if (response.tool_calls && response.tool_calls.length > 0) {
+        console.log(
+          `[Orchestrator] Processing ${response.tool_calls.length} tool calls`
+        );
+
+        const toolResults = await this.processToolCalls(response);
+        (response as LlmResponseWithToolResults).toolResults = toolResults;
+      }
+
+      return response;
+    } catch (error) {
+      console.error("[Orchestrator] Error processing message:", error);
+
+      // Update message status to error
+      if (message.assistantMessageId) {
+        await this.updateMessageStatus(
+          message.chatId,
+          message.assistantMessageId,
+          MessageStatus.ERROR
+        );
+      }
+
+      throw error;
+    }
   }
 
   /**
-   * Process a message using the LLM client with streaming
+   * Process a message stream from the LLM
    * @param message The message to process
    * @param onChunk Optional callback for each chunk
    * @returns An event emitter for the stream
@@ -389,164 +434,184 @@ export class Orchestrator implements LlmAdapter {
     message: LlmMessage,
     onChunk?: (chunk: LlmStreamChunk) => void
   ): Promise<EventEmitter> {
+    // Enhance the message with history and tools
+    const enhancedMessage = await this.enhanceMessageWithHistoryAndTools(
+      message
+    );
+
+    // Get the provider config
+    const providerConfig = this.llmProviders.get(message.provider);
+    if (!providerConfig) {
+      throw new Error(`Provider ${message.provider} not found`);
+    }
+
+    // Create an event emitter for the stream
+    const emitter = new EventEmitter();
+
     try {
-      console.log("[Orchestrator] Processing message stream");
+      // Process the message with the provider
+      const stream = await this.client.streamMessage(enhancedMessage);
 
-      // Enhance the message with chat history and tools
-      const enhancedMessage =
-        await this.enhanceMessageWithHistoryAndTools(message);
-
-      console.log("[Orchestrator] Starting stream from LLM");
-      // Process the message with streaming
-      const emitter = await this.client.streamMessage(enhancedMessage);
-
-      // Create a new emitter to handle tool calls
-      const newEmitter = new EventEmitter();
-
-      // Collect tool calls
-      let toolCalls: ToolCall[] = [];
+      // Track accumulated content and tool calls
       let accumulatedContent = "";
+      let accumulatedToolCalls: ToolCall[] = [];
 
-      // Handle chunks
-      emitter.on("data", (data: unknown) => {
+      // Process the stream
+      stream.on("data", (data: unknown) => {
         const chunk = data as LlmStreamChunk;
 
-        // Accumulate content for the final response
+        // Append content if present
         if (chunk.content) {
           accumulatedContent += chunk.content;
         }
 
-        // Pass the chunk to the callback
-        if (onChunk) {
-          onChunk(chunk);
+        // Accumulate tool calls if present
+        if (chunk.tool_calls && chunk.tool_calls.length > 0) {
+          // Convert tool calls to the correct format
+          const convertedToolCalls: ToolCall[] = chunk.tool_calls.map((tc: any) => {
+            const args = typeof tc.function.arguments === 'string'
+              ? JSON.parse(tc.function.arguments)
+              : tc.function.arguments;
+
+            return {
+              function: {
+                name: tc.function.name,
+                arguments: args as Record<string, unknown>
+              }
+            };
+          });
+
+          accumulatedToolCalls = [...accumulatedToolCalls, ...convertedToolCalls];
         }
 
         // Emit the chunk
-        newEmitter.emit("data", chunk);
+        emitter.emit("data", chunk);
 
-        // Collect tool calls if present
-        if (chunk.tool_calls) {
-          toolCalls = [...toolCalls, ...chunk.tool_calls];
+        // Call the onChunk callback if provided
+        if (onChunk) {
+          onChunk(chunk);
         }
       });
 
       // Handle the end of the stream
-      emitter.on("end", async () => {
-        try {
-          // Create a response object for the ChatManager
-          const response = {
-            id: uuidv4(),
-            chatId: message.chatId,
-            content: accumulatedContent,
-            role: "assistant" as const,
-            created: new Date(),
-            parentId: message.id,
-            tool_calls: toolCalls.length > 0 ? toolCalls : []
-          } as LlmResponse;
+      stream.on("end", () => {
+        console.log("[Orchestrator] Stream ended");
 
-          // Execute tool calls if present
-          if (toolCalls.length > 0) {
+        // Create the response object
+        const response: LlmResponse = {
+          id: `resp_${Date.now()}`,
+          chatId: message.chatId,
+          content: accumulatedContent,
+          role: "assistant",
+          created: new Date(),
+          parentId: message.id,
+          tool_calls: accumulatedToolCalls
+        };
+
+        // Process tool calls if present
+        if (response.tool_calls && response.tool_calls.length > 0) {
+          try {
             console.log(
-              `[Orchestrator] Processing ${toolCalls.length} tool calls from stream`
+              `[Orchestrator] Processing ${response.tool_calls.length} tool calls`
             );
 
-            // If we have a chat manager and an assistant message ID, update the tool calls
-            if (this.chatManager && message.assistantMessageId) {
-              // Convert the tool calls to the format expected by the chat manager
-              const formattedToolCalls = toolCalls.map(toolCall => {
-                // If arguments is a string, try to parse it as JSON
-                let args: Record<string, unknown> = {};
-                if (typeof toolCall.function.arguments === 'string') {
-                  try {
-                    args = JSON.parse(toolCall.function.arguments);
-                  } catch (e) {
-                    console.error('Error parsing tool call arguments:', e);
-                    args = { rawArguments: toolCall.function.arguments };
-                  }
-                } else {
-                  args = toolCall.function.arguments as Record<string, unknown>;
-                }
+            // Skip updating tool calls for temporary messages
+            if (message.assistantMessageId && !message.assistantMessageId.startsWith('temp_') && this.chatManager) {
+              // Convert tool calls to the correct format
+              const formattedToolCalls: ToolCall[] = response.tool_calls.map((tc: any) => {
+                const args = typeof tc.function.arguments === 'string'
+                  ? JSON.parse(tc.function.arguments)
+                  : tc.function.arguments;
 
                 return {
                   function: {
-                    name: toolCall.function.name,
-                    arguments: args
+                    name: tc.function.name,
+                    arguments: args as Record<string, unknown>
                   }
                 };
               });
 
-              await this.chatManager.updateMessageToolCalls(
+              // Update the tool calls in the chat manager
+              this.updateMessageToolCalls(
                 message.chatId,
                 message.assistantMessageId,
                 formattedToolCalls
               );
             }
 
-            const toolResults = await this.processToolCalls(response);
+            // Process the tool calls
+            this.processToolCalls(response).then(toolResults => {
+              if (toolResults.length > 0) {
+                emitter.emit("tool_results", toolResults);
 
-            console.log("[Orchestrator] Stream tool calls completed");
-            // Emit the tool results
-            newEmitter.emit("tool_results", toolResults);
+                // Add the tool results to the response
+                (response as LlmResponseWithToolResults).toolResults = toolResults;
+              }
 
-            // Include tool results in the response
-            (response as LlmResponseWithToolResults).toolResults = toolResults;
+              // Update the message status
+              if (message.assistantMessageId) {
+                this.updateMessageStatus(
+                  message.chatId,
+                  message.assistantMessageId,
+                  MessageStatus.SENT
+                );
+              }
+
+              // Emit the end event with the response
+              emitter.emit("end", response);
+            }).catch(error => {
+              console.error("[Orchestrator] Error processing tool calls:", error);
+              emitter.emit("error", error);
+            });
+          } catch (error) {
+            console.error("[Orchestrator] Error processing tool calls from stream:", error);
+            emitter.emit("error", error);
           }
-
-          console.log(
-            "[Orchestrator] Stream processing complete, emitting end event"
-          );
-          // Emit the end event
-          newEmitter.emit("end");
-        } catch (error: unknown) {
-          console.error(
-            "[Orchestrator] Error processing tool calls from stream:",
-            error
-          );
-
-          // Update message status to error
-          await this.updateMessageStatus(
-            message.chatId,
-            message.id,
-            MessageStatus.ERROR
-          );
-
-          // Emit the error
-          newEmitter.emit("error", error);
+        } else {
+          // Update the message status
+          if (message.assistantMessageId) {
+            this.updateMessageStatus(
+              message.chatId,
+              message.assistantMessageId,
+              MessageStatus.SENT
+            ).then(() => {
+              // Emit the end event with the response
+              emitter.emit("end", response);
+            }).catch(error => {
+              console.error("[Orchestrator] Error updating message status:", error);
+              emitter.emit("error", error);
+            });
+          } else {
+            // Emit the end event with the response
+            emitter.emit("end", response);
+          }
         }
       });
 
       // Handle errors
-      emitter.on("error", (error: unknown) => {
+      stream.on("error", (error: unknown) => {
         console.error("[Orchestrator] Stream error:", error);
 
-        // Update message status to error
-        this.updateMessageStatus(
-          message.chatId,
-          message.id,
-          MessageStatus.ERROR
-        ).catch((updateError) => {
-          console.error(
-            "[Orchestrator] Error updating message status:",
-            updateError
-          );
-        });
+        // Update the message status
+        if (message.assistantMessageId) {
+          this.updateMessageStatus(
+            message.chatId,
+            message.assistantMessageId,
+            MessageStatus.ERROR
+          ).catch(updateError => {
+            console.error("[Orchestrator] Error updating message status:", updateError);
+          });
+        }
 
-        newEmitter.emit("error", error);
+        // Emit the error
+        emitter.emit("error", error);
       });
-
-      return newEmitter;
     } catch (error) {
-      console.error("[Orchestrator] Error processing message stream:", error);
-
-      // Update message status to error
-      await this.updateMessageStatus(
-        message.chatId,
-        message.id,
-        MessageStatus.ERROR
-      );
-
-      throw error;
+      console.error("[Orchestrator] Error setting up stream:", error);
+      emitter.emit("error", error);
     }
+
+    return emitter;
   }
 
   /**

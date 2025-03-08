@@ -28,14 +28,13 @@ export class LiteLlmClient extends BaseLlmClient {
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(config: LlmProviderConfig) {
-    constructor(config: LlmProviderConfig) {
-      super(config);
-      this.openai = new OpenAI({
-        apiKey: config.apiKey,
-        baseURL: config.baseUrl,
-        dangerouslyAllowBrowser: this.isLocalhostCommunication(config)
-      });
-    }
+    super(config);
+    this.openai = new OpenAI({
+      apiKey: config.apiKey,
+      baseURL: config.baseUrl,
+      dangerouslyAllowBrowser: this.isLocalhostCommunication(config)
+    });
+  }
 
   private isLocalhostCommunication(config: LlmProviderConfig) {
     return (

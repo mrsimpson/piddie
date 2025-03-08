@@ -45,6 +45,13 @@ function formatToolCallArguments(args: Record<string, unknown>): string {
   return JSON.stringify(args, null, 2);
 }
 
+/**
+ * Check if a message is temporary
+ */
+function isTemporaryMessage(message: Message): boolean {
+  return message.id.startsWith("temp_");
+}
+
 // Watch for changes in messages to auto-scroll
 watch(
   () => props.messages,
@@ -73,7 +80,10 @@ onMounted(async () => {
     <div
       v-for="message in messages"
       :key="message.id"
-      :class="getMessageClass(message.role, message.status)"
+      :class="[
+        getMessageClass(message.role, message.status),
+        { 'message-temporary': isTemporaryMessage(message) }
+      ]"
     >
       <div class="message-header">
         <span class="message-role">{{
@@ -158,6 +168,10 @@ onMounted(async () => {
 
 .message-error {
   border: 1px solid var(--sl-color-danger-500);
+}
+
+.message-temporary {
+  border: 1px dashed var(--sl-color-neutral-300);
 }
 
 .message-header {
