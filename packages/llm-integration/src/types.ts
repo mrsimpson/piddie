@@ -113,17 +113,20 @@ export interface LlmClient {
  * Interface for LLM provider configuration
  */
 export interface LlmProviderConfig {
-  /** Name of the provider */
-  name: string;
+  /** Provider type (openai, mock, etc.) – determines the adapter */
+  provider: string;
+
+  /** Human identifyable name of the provider */
+  name?: string;
 
   /** Description of the provider */
-  description: string;
-
-  /** API key for the provider */
-  apiKey: string;
+  description?: string;
 
   /** Model to use for the provider */
   model: string;
+
+  /** API key for the provider */
+  apiKey?: string;
 
   /** Base URL for the provider API */
   baseUrl?: string;
@@ -133,9 +136,6 @@ export interface LlmProviderConfig {
 
   /** Default model for the provider */
   defaultModel?: string;
-
-  /** Provider type (openai, mock, etc.) */
-  provider?: string;
 
   /** Client implementation for the provider */
   client?: LlmClient;

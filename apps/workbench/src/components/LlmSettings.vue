@@ -75,7 +75,7 @@ const providerOptions = computed(() => {
 
 // Watch for changes in the store config
 watch(
-  () => llmStore.config,
+  () => llmStore.workbenchConfig,
   (newConfig) => {
     apiKey.value = newConfig.apiKey;
     baseUrl.value = newConfig.baseUrl;

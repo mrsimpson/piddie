@@ -48,36 +48,99 @@ export const useChatStore = defineStore("chat", () => {
   }
 
   /**
-   * Creates a temporary message that exists only in memory
+   * Sends a user message to the LLM and creates an ephemeral assistant placeholder
+   * @param chatId The ID of the chat
+   * @param content The user message content
+   * @param username Optional username for the user message
+   * @returns The user message and assistant placeholder
    */
-  function createTemporaryMessage(
+  async function sendMessageToLlm(
+    chatId: string,
+    content: string,
+    username: string = "Developer"
+  ): Promise<{ userMessage: Message; assistantPlaceholder: Message }> {
+    if (!chatId) throw new Error("No chat ID provided");
+
+    // Create and persist user message
+    const userMessage = await addMessage(chatId, content, "user", username);
+
+    // Create ephemeral assistant placeholder
+    const assistantPlaceholder = await addMessage(
+      chatId,
+      "",
+      "assistant",
+      "Assistant", // Default name, can be updated later
+      userMessage.id,
+      MessageStatus.SENDING,
+      true // isEphemeral
+    );
+
+    return { userMessage, assistantPlaceholder };
+  }
+
+  /**
+   * Adds a message to a chat
+   * @param chatId The ID of the chat to add the message to
+   * @param content The message content
+   * @param role The role of the sender
+   * @param username Human identifiable name of the sender
+   * @param parentId Optional ID of the parent message (for replies)
+   * @param status The message status
+   * @param isEphemeral Whether the message should be stored temporarily in memory only
+   * @returns The created message
+   */
+  async function addMessage(
     chatId: string,
     content: string,
     role: "user" | "assistant" | "system",
     username: string,
     parentId?: string,
-    status: MessageStatus = MessageStatus.SENDING
-  ): Message {
-    const message: Message = {
-      id: `temp_${uuidv4()}`,
-      chatId,
-      content,
-      role,
-      status,
-      created: new Date(),
-      username,
-      parentId,
-      tool_calls: []
-    };
+    status: MessageStatus = MessageStatus.SENT,
+    isEphemeral: boolean = false
+  ): Promise<Message> {
+    if (!chatId) throw new Error("No chat ID provided");
 
-    temporaryMessages.value.set(message.id, message);
-    return message;
+    if (isEphemeral) {
+      // Create a temporary message in memory
+      const message: Message = {
+        id: `temp_${uuidv4()}`,
+        chatId,
+        content,
+        role,
+        status,
+        created: new Date(),
+        username,
+        parentId,
+        tool_calls: []
+      };
+
+      temporaryMessages.value.set(message.id, message);
+      return message;
+    } else {
+      // Create a persisted message in the database
+      const message = await chatManager.addMessage(
+        chatId,
+        content,
+        role,
+        username || role,
+        parentId
+      );
+
+      if (status !== MessageStatus.SENT) {
+        await chatManager.updateMessageStatus(chatId, message.id, status);
+      }
+
+      return message;
+    }
   }
 
   /**
-   * Persists a temporary message to the database
+   * Persists an ephemeral message to the database
+   * @param messageId The ID of the ephemeral message to persist
+   * @param updates Optional updates to apply when persisting
+   * @returns The persisted message
    */
-  async function persistMessage(
+  async function persistEphemeralMessage(
     messageId: string,
     updates?: {
       content?: string;
@@ -87,7 +150,7 @@ export const useChatStore = defineStore("chat", () => {
   ): Promise<Message> {
     const tempMessage = temporaryMessages.value.get(messageId);
     if (!tempMessage) {
-      throw new Error(`Temporary message ${messageId} not found`);
+      throw new Error(`Ephemeral message ${messageId} not found`);
     }
 
     // Create the message in the database
@@ -109,31 +172,6 @@ export const useChatStore = defineStore("chat", () => {
 
     // Remove from temporary messages
     temporaryMessages.value.delete(messageId);
-    return message;
-  }
-
-  async function addMessage(
-    chatId: string,
-    content: string,
-    role: "user" | "assistant" | "system",
-    username: string,
-    parentId?: string,
-    status: MessageStatus = MessageStatus.SENT
-  ) {
-    if (!chatId) throw new Error("No chat ID provided");
-
-    const message = await chatManager.addMessage(
-      chatId,
-      content,
-      role,
-      username || role,
-      parentId
-    );
-
-    if (status !== MessageStatus.SENT) {
-      await chatManager.updateMessageStatus(chatId, message.id, status);
-    }
-
     return message;
   }
 
@@ -160,24 +198,40 @@ export const useChatStore = defineStore("chat", () => {
   }
 
   /**
-   * Update a temporary message's content
+   * Update a message's content
    */
   function updateMessageContent(messageId: string, content: string) {
     const message = temporaryMessages.value.get(messageId);
     if (message) {
       message.content = content;
       temporaryMessages.value.set(messageId, { ...message });
+      return;
+    }
+
+    // If not a temporary message, update in the database
+    if (currentChat.value) {
+      chatManager.updateMessageContent(
+        currentChat.value.id,
+        messageId,
+        content
+      );
     }
   }
 
   /**
-   * Update a temporary message's status
+   * Update a message's status
    */
   function updateMessageStatus(messageId: string, status: MessageStatus) {
     const message = temporaryMessages.value.get(messageId);
     if (message) {
       message.status = status;
       temporaryMessages.value.set(messageId, { ...message });
+      return;
+    }
+
+    // If not a temporary message, update in the database
+    if (currentChat.value) {
+      chatManager.updateMessageStatus(currentChat.value.id, messageId, status);
     }
   }
 
@@ -216,9 +270,9 @@ export const useChatStore = defineStore("chat", () => {
     messages,
     chatManager,
     createChat,
+    sendMessageToLlm,
     addMessage,
-    createTemporaryMessage,
-    persistMessage,
+    persistEphemeralMessage,
     updateMessageToolCalls,
     updateMessageContent,
     updateMessageStatus,

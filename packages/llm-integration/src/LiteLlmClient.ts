@@ -32,7 +32,7 @@ export class LiteLlmClient extends BaseLlmClient {
     this.openai = new OpenAI({
       apiKey: config.apiKey,
       baseURL: config.baseUrl,
-      dangerouslyAllowBrowser: this.isLocalhostCommunication(config)
+      dangerouslyAllowBrowser: this.isLocalhostCommunication(config) || !config.baseUrl
     });
   }
 

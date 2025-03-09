@@ -4,14 +4,14 @@ import { MockLlmClient } from "./MockClient";
 import { OllamaClient } from "./OllamaClient";
 import { Orchestrator } from "./Orchestrator";
 import type {
-  LlmProviderConfig,
   LlmClient,
   LlmMessage,
+  LlmProviderConfig,
   LlmResponse,
   LlmStreamChunk
 } from "./types";
 import { EventEmitter } from "@piddie/shared-types";
-import type { ChatManager } from "@piddie/chat-management";
+import type { ChatManager, Message } from "@piddie/chat-management";
 
 /**
  * Interface for LLM adapter
@@ -22,7 +22,7 @@ export interface LlmAdapter {
    * @param name The name of the provider
    * @param config The provider configuration
    */
-  registerLlmProvider(name: string, config: LlmProviderConfig): void;
+  registerLlmProvider(config: LlmProviderConfig): void;
 
   /**
    * Get an LLM provider by name
@@ -60,6 +60,13 @@ export interface LlmAdapter {
   unregisterMcpServer(name: string): boolean;
 
   /**
+   * Check if the LLM provider supports tools
+   * @param providerName The name of the provider
+   * @returns True if the provider supports tools, false otherwise
+   */
+  checkToolSupport(providerName: string): Promise<boolean>;
+
+  /**
    * Process a message and return a response
    * @param message The message to process
    * @returns The response from the LLM
@@ -69,20 +76,41 @@ export interface LlmAdapter {
   /**
    * Process a message and stream the response
    * @param message The message to process
-   * @param onChunk Callback for each chunk of the response
-   * @returns The event emitter for the stream
+   * @param onChunk Optional callback for each chunk
+   * @returns An event emitter for the stream
    */
   processMessageStream(
     message: LlmMessage,
-    onChunk: (chunk: LlmStreamChunk) => void
+    onChunk?: (chunk: LlmStreamChunk) => void
   ): Promise<EventEmitter>;
 
   /**
-   * Checks if the current LLM provider supports function calling/tools
-   * @param providerName The name of the provider to check
-   * @returns A promise that resolves to true if tools are supported, false otherwise
+   * Get a completion for a user message and update the assistant placeholder
+   * @param userMessage The user message
+   * @param assistantPlaceholder The assistant placeholder message
+   * @param providerConfig The LLM provider configuration
+   * @param useStreaming Whether to use streaming
+   * @returns The completed assistant message
    */
-  checkToolSupport(providerName: string): Promise<boolean>;
+  getCompletion(
+    userMessage: Message,
+    assistantPlaceholder: Message,
+    providerConfig: LlmProviderConfig,
+    useStreaming?: boolean
+  ): Promise<Message>;
+
+  /**
+   * Enhance a message with system prompt and tools
+   * @param message The message to enhance
+   * @returns The enhanced message
+   */
+  enhanceMessage(message: LlmMessage): LlmMessage;
+
+  /**
+   * Generate a system prompt
+   * @returns The system prompt
+   */
+  generateSystemPrompt(): string;
 }
 
 /**
@@ -122,7 +150,7 @@ export function createLlmAdapter(
   const adapter = new Orchestrator(client, chatManager);
 
   // Register the provider with the adapter
-  adapter.registerLlmProvider(config.name, config);
+  adapter.registerLlmProvider(config);
 
   return adapter;
 }
@@ -151,7 +179,7 @@ export function createMockLlmAdapter(chatManager: ChatManager): LlmAdapter {
     client: client
   };
 
-  adapter.registerLlmProvider(mockConfig.name, mockConfig);
+  adapter.registerLlmProvider(mockConfig);
 
   return adapter;
 }

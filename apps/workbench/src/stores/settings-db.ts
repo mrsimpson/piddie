@@ -184,10 +184,24 @@ export class SettingsManager {
    * @returns The LLM configuration
    */
   async getLlmConfig(): Promise<LlmProviderConfig> {
-    const llmConfig = await this.getWorkbenchSetting(
-      WorkbenchSettingKey.LLM_CONFIG
-    );
-    return (llmConfig as LlmProviderConfig) || DEFAULT_LLM_CONFIG;
+    try {
+      const llmConfig = await this.getWorkbenchSetting(
+        WorkbenchSettingKey.LLM_CONFIG
+      );
+
+      if (!llmConfig) {
+        return DEFAULT_LLM_CONFIG;
+      }
+
+      // Ensure we have a valid configuration by merging with defaults
+      return {
+        ...DEFAULT_LLM_CONFIG,
+        ...(llmConfig as LlmProviderConfig)
+      };
+    } catch (error) {
+      console.error("Error getting LLM config:", error);
+      return DEFAULT_LLM_CONFIG;
+    }
   }
 
   /**
@@ -223,6 +237,16 @@ export class SettingsManager {
   }
 
   /**
+   * Makes an object serializable for IndexedDB by removing non-serializable properties
+   * @param obj The object to make serializable
+   * @returns A serializable copy of the object
+   */
+  private makeSerializable<T>(obj: T): T {
+    // Convert to JSON and back to remove non-serializable properties
+    return JSON.parse(JSON.stringify(obj));
+  }
+
+  /**
    * Updates a specific workbench setting
    * @param key The setting key to update
    * @param value The new value for the setting
@@ -236,7 +260,7 @@ export class SettingsManager {
     // Create the setting object with the key
     const setting: WorkbenchSetting = {
       key,
-      value,
+      value: this.makeSerializable(value),
       lastUpdated: new Date()
     };
 
@@ -297,10 +321,11 @@ export class SettingsManager {
   ): Promise<LlmProviderConfig> {
     const currentConfig = await this.getLlmConfig();
 
-    const updatedLlmConfig = {
+    // Create a serializable copy of the configuration
+    const updatedLlmConfig = this.makeSerializable({
       ...currentConfig,
       ...config
-    };
+    });
 
     await this.updateWorkbenchSetting(
       WorkbenchSettingKey.LLM_CONFIG,

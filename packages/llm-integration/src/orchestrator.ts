@@ -6,7 +6,7 @@ import type {
   LlmResponse,
   LlmStreamChunk
 } from "./types";
-import type { ChatManager, ToolCall } from "@piddie/chat-management";
+import type { ChatManager, ToolCall, Message } from "@piddie/chat-management";
 import { MessageStatus } from "@piddie/chat-management";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { LlmAdapter } from "./index";
@@ -56,8 +56,8 @@ export class Orchestrator implements LlmAdapter {
    * @param name The name of the provider
    * @param config The provider configuration
    */
-  registerLlmProvider(name: string, config: LlmProviderConfig): void {
-    this.llmProviders.set(name.toLowerCase(), config);
+  registerLlmProvider(config: LlmProviderConfig): void {
+    this.llmProviders.set(config.provider.toLowerCase(), config);
   }
 
   /**
@@ -65,8 +65,8 @@ export class Orchestrator implements LlmAdapter {
    * @param name The name of the provider
    * @returns The provider configuration or undefined if not found
    */
-  getLlmProvider(name: string): LlmProviderConfig | undefined {
-    return this.llmProviders.get(name.toLowerCase());
+  getLlmProvider(provider: string): LlmProviderConfig | undefined {
+    return this.llmProviders.get(provider.toLowerCase());
   }
 
   /**
@@ -79,11 +79,16 @@ export class Orchestrator implements LlmAdapter {
   }
 
   /**
-   * Registers a local MCP server with the orchestrator
+   * Register a local MCP server
    * @param server The MCP server to register
-   * @param name The name of the server
+   * @param name The name to register the server under
    */
   async registerLocalMcpServer(server: McpServer, name: string): Promise<void> {
+    if (!this.mcpHost) {
+      console.warn("McpHost is not initialized, cannot register server");
+      return;
+    }
+
     await this.mcpHost.registerLocalServer(server, name);
     // Invalidate the tools buffer when registering a new server
     this.toolsBuffer = null;
@@ -104,6 +109,11 @@ export class Orchestrator implements LlmAdapter {
    * @returns The server or undefined if not found
    */
   getMcpServer(name: string): McpServer | undefined {
+    if (!this.mcpHost) {
+      console.warn("McpHost is not initialized, cannot get server");
+      return undefined;
+    }
+
     const connection = this.mcpHost.getConnection(name);
     return connection?.server;
   }
@@ -114,12 +124,14 @@ export class Orchestrator implements LlmAdapter {
    * @returns True if the server was unregistered, false if it wasn't registered
    */
   unregisterMcpServer(name: string): boolean {
-    const connection = this.mcpHost.getConnection(name);
-    const result = connection !== undefined;
-    if (result) {
-      // Invalidate the tools buffer
-      this.toolsBuffer = null;
+    if (!this.mcpHost) {
+      console.warn("McpHost is not initialized, cannot unregister server");
+      return false;
     }
+
+    const result = this.mcpHost.unregisterServer(name);
+    // Invalidate the tools buffer when unregistering a server
+    this.toolsBuffer = null;
     return result;
   }
 
@@ -142,8 +154,18 @@ export class Orchestrator implements LlmAdapter {
    * @returns A promise that resolves to an array of tools
    */
   private async getAvailableTools(): Promise<Tool[]> {
+    if (!this.mcpHost) {
+      console.warn("McpHost is not initialized, no tools available");
+      return [];
+    }
+
     if (this.toolsBuffer === null) {
-      this.toolsBuffer = (await this.mcpHost.listTools()) as unknown as Tool[];
+      try {
+        this.toolsBuffer = (await this.mcpHost.listTools()) as unknown as Tool[];
+      } catch (error) {
+        console.error("Error listing tools:", error);
+        this.toolsBuffer = [];
+      }
     }
     return this.toolsBuffer || [];
   }
@@ -260,38 +282,45 @@ export class Orchestrator implements LlmAdapter {
   ): Promise<LlmMessage> {
     const enhancedMessage: LlmMessage = { ...message };
 
-    // Get available tools
-    const tools = await this.getAvailableTools();
+    try {
+      // Get available tools
+      const tools = await this.getAvailableTools();
 
-    // Get chat history
-    const chatHistory = await this.getChatHistory(
-      message.chatId,
-      message.assistantMessageId
-    );
+      // Get chat history
+      const chatHistory = await this.getChatHistory(
+        message.chatId,
+        message.assistantMessageId
+      );
 
-    // Add chat history to the message
-    if (chatHistory.length > 0) {
-      enhancedMessage.messages = chatHistory;
-    }
+      // Add chat history to the message
+      if (chatHistory.length > 0) {
+        enhancedMessage.messages = chatHistory;
+      }
 
-    // Add tools to the message if any were retrieved
-    if (tools.length > 0) {
-      enhancedMessage.tools = tools.map((tool) => ({
-        type: "function",
-        function: {
-          name: tool.name,
-          description: tool.description || "",
-          parameters: {
-            type: "object",
-            properties: tool.inputSchema.properties || {},
-            ...(tool.inputSchema.type !== "object"
-              ? { type: tool.inputSchema.type }
-              : {})
+      // Add tools to the message if any were retrieved
+      if (tools.length > 0) {
+        enhancedMessage.tools = tools.map((tool) => ({
+          type: "function",
+          function: {
+            name: tool.name,
+            description: tool.description || "",
+            parameters: {
+              type: "object",
+              properties: tool.inputSchema.properties || {},
+              ...(tool.inputSchema.type !== "object"
+                ? { type: tool.inputSchema.type }
+                : {})
+            }
           }
-        }
-      }));
-    } else {
-      enhancedMessage.tools = [];
+        }));
+      } else {
+        enhancedMessage.tools = [];
+      }
+    } catch (error) {
+      console.error("Error enhancing message with history and tools:", error);
+      // Ensure we at least have an empty history if there was an error
+      enhancedMessage.messages = enhancedMessage.messages || [];
+      enhancedMessage.tools = enhancedMessage.tools || [];
     }
 
     return enhancedMessage;
@@ -636,5 +665,230 @@ export class Orchestrator implements LlmAdapter {
    */
   generateSystemPrompt(): string {
     return "You are a helpful assistant.";
+  }
+
+  /**
+   * Get a completion for a user message and update the assistant placeholder
+   * @param userMessage The user message
+   * @param assistantPlaceholder The assistant placeholder message
+   * @param providerConfig The LLM provider configuration
+   * @param useStreaming Whether to use streaming
+   * @returns The completed assistant message
+   */
+  async getCompletion(
+    userMessage: Message,
+    assistantPlaceholder: Message,
+    providerConfig: LlmProviderConfig,
+    useStreaming: boolean = true
+  ): Promise<Message> {
+    try {
+      // Register the provider if not already registered
+      if (!this.getLlmProvider(providerConfig.provider)) {
+        this.registerLlmProvider(providerConfig);
+      }
+
+      // Create LLM message with all necessary context
+      const llmMessage = {
+        id: userMessage.id,
+        chatId: userMessage.chatId,
+        content: userMessage.content,
+        role: userMessage.role,
+        status: MessageStatus.SENT,
+        created: userMessage.created instanceof Date ? userMessage.created : new Date(userMessage.created),
+        parentId: userMessage.parentId || "",
+        provider: providerConfig.provider,
+        assistantMessageId: assistantPlaceholder.id
+      } as LlmMessage;
+
+      // Enhance the message with history and tools
+      const enhancedMessage = await this.enhanceMessageWithHistoryAndTools(llmMessage);
+
+      // Track accumulated content and tool calls
+      let accumulatedContent = "";
+      let accumulatedToolCalls: ToolCall[] = [];
+
+      if (useStreaming) {
+        // Process with streaming
+        const emitter = await this.processMessageStream(enhancedMessage);
+
+        // Create a promise that resolves when streaming is complete
+        return new Promise((resolve, reject) => {
+          // Handle data chunks
+          emitter.on("data", (data: unknown) => {
+            const chunk = data as LlmStreamChunk;
+
+            // Accumulate content
+            if (chunk.content) {
+              accumulatedContent += chunk.content;
+
+              // Update the assistant placeholder content
+              if (this.chatManager) {
+                this.updateMessageContent(
+                  assistantPlaceholder.chatId,
+                  assistantPlaceholder.id,
+                  accumulatedContent
+                );
+              }
+            }
+
+            // Handle tool calls
+            if (chunk.tool_calls && chunk.tool_calls.length > 0) {
+              // Convert tool calls to the correct format
+              const convertedToolCalls = chunk.tool_calls.map((tc: any) => {
+                const args = typeof tc.function.arguments === 'string'
+                  ? JSON.parse(tc.function.arguments)
+                  : tc.function.arguments;
+
+                return {
+                  function: {
+                    name: tc.function.name,
+                    arguments: args as Record<string, unknown>
+                  }
+                };
+              });
+
+              // Add to accumulated tool calls
+              accumulatedToolCalls = [...accumulatedToolCalls, ...convertedToolCalls];
+
+              // Update the assistant placeholder tool calls
+              if (this.chatManager) {
+                this.updateMessageToolCalls(
+                  assistantPlaceholder.chatId,
+                  assistantPlaceholder.id,
+                  accumulatedToolCalls
+                );
+              }
+            }
+          });
+
+          // Handle completion
+          emitter.on("end", async () => {
+            try {
+              // Persist the assistant placeholder
+              if (this.chatManager) {
+                await this.chatManager.updateMessage(
+                  assistantPlaceholder.chatId,
+                  assistantPlaceholder.id,
+                  {
+                    content: accumulatedContent,
+                    status: MessageStatus.SENT,
+                    tool_calls: accumulatedToolCalls
+                  }
+                );
+              }
+
+              // Return the completed message
+              resolve({
+                ...assistantPlaceholder,
+                content: accumulatedContent,
+                status: MessageStatus.SENT,
+                tool_calls: accumulatedToolCalls
+              });
+            } catch (error) {
+              reject(error);
+            }
+          });
+
+          // Handle errors
+          emitter.on("error", (error: unknown) => {
+            // Update the assistant placeholder status
+            if (this.chatManager) {
+              this.updateMessageStatus(
+                assistantPlaceholder.chatId,
+                assistantPlaceholder.id,
+                MessageStatus.ERROR
+              );
+            }
+
+            reject(error);
+          });
+        });
+      } else {
+        // Process without streaming
+        const response = await this.processMessage(enhancedMessage);
+
+        // Convert tool calls to the correct format if present
+        if (response.tool_calls && response.tool_calls.length > 0) {
+          accumulatedToolCalls = response.tool_calls.map((tc: any) => {
+            const args = typeof tc.function.arguments === 'string'
+              ? JSON.parse(tc.function.arguments)
+              : tc.function.arguments;
+
+            return {
+              function: {
+                name: tc.function.name,
+                arguments: args as Record<string, unknown>
+              }
+            };
+          });
+        }
+
+        // Update the assistant placeholder
+        if (this.chatManager) {
+          // Persist the assistant placeholder
+          await this.chatManager.updateMessage(
+            assistantPlaceholder.chatId,
+            assistantPlaceholder.id,
+            {
+              content: response.content,
+              status: MessageStatus.SENT,
+              tool_calls: accumulatedToolCalls
+            }
+          );
+        }
+
+        // Return the completed message
+        return {
+          ...assistantPlaceholder,
+          content: response.content,
+          status: MessageStatus.SENT,
+          tool_calls: accumulatedToolCalls
+        };
+      }
+    } catch (error) {
+      console.error("[Orchestrator] Error getting completion:", error);
+
+      // Update the assistant placeholder status
+      if (this.chatManager) {
+        this.updateMessageStatus(
+          assistantPlaceholder.chatId,
+          assistantPlaceholder.id,
+          MessageStatus.ERROR
+        );
+      }
+
+      throw error;
+    }
+  }
+
+  /**
+   * Update a message's content
+   * @param chatId The ID of the chat containing the message
+   * @param messageId The ID of the message to update
+   * @param content The new content
+   */
+  private async updateMessageContent(
+    chatId: string,
+    messageId: string,
+    content: string
+  ): Promise<void> {
+    if (!this.chatManager) {
+      console.warn(
+        "[Orchestrator] No chat manager available to update message content"
+      );
+      return;
+    }
+
+    // Skip database updates for temporary messages (they're handled by the chat store)
+    if (messageId.startsWith('temp_')) {
+      console.log(`[Orchestrator] Skipping database update for temporary message ${messageId}`);
+      return;
+    }
+
+    try {
+      await this.chatManager.updateMessageContent(chatId, messageId, content);
+    } catch (error) {
+      console.error(`Error updating message content for ${messageId}:`, error);
+    }
   }
 }

@@ -126,7 +126,6 @@ export const useLlmStore = defineStore("llm", () => {
       }
     }
   );
-
   // Load settings from database on store initialization
   onMounted(async () => {
     try {
@@ -363,13 +362,14 @@ export const useLlmStore = defineStore("llm", () => {
           : workbenchConfig.selectedModel || workbenchConfig.defaultModel;
 
       // Create a temporary placeholder for the assistant's response
-      const assistantMessage = chatStore.createTemporaryMessage(
+      const assistantMessage = await chatStore.addMessage(
         chatId,
         "",
         "assistant",
         modelName,
         userMessage.id,
-        MessageStatus.SENDING
+        MessageStatus.SENDING,
+        true
       );
 
       // Convert the message to the format expected by the LLM adapter
@@ -396,7 +396,7 @@ export const useLlmStore = defineStore("llm", () => {
 
         try {
           // Persist the temporary message with final content and tool calls
-          await chatStore.persistMessage(assistantMessage.id, {
+          await chatStore.persistEphemeralMessage(assistantMessage.id, {
             content: accumulatedContent,
             status: MessageStatus.SENT,
             tool_calls: accumulatedToolCalls
