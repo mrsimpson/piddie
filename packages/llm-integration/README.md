@@ -75,31 +75,151 @@ graph TD
     O --> BFS
 ```
 
-#### Dynamic Interaction for File Writing
+#### Dynamic Interaction for Chat Messages
 
 ```mermaid
 sequenceDiagram
     participant User
-    participant Workbench
+    participant ChatUI as Chat UI
+    participant LlmStore as LLM Store
+    participant ChatStore as Chat Store
+    participant Orchestrator
+    participant LLM
+    participant DB as Database
+
+    User->>ChatUI: Send message
+    ChatUI->>LlmStore: sendMessage(content, chatId)
+    
+    LlmStore->>ChatStore: addMessage (user message)
+    ChatStore->>DB: Create user message
+    DB-->>ChatStore: Return user message
+    ChatStore-->>LlmStore: Return user message
+    
+    LlmStore->>ChatStore: addMessage (assistant placeholder, isEphemeral=true)
+    ChatStore->>ChatStore: Store temporary message in memory
+    ChatStore-->>LlmStore: Return temporary assistant message
+    
+    LlmStore->>Orchestrator: processMessageStream/processMessage
+    Orchestrator->>Orchestrator: enhanceMessageWithHistoryAndTools
+    Orchestrator->>LLM: Send enhanced request
+    
+    alt Streaming Response
+        LLM-->>Orchestrator: Stream response chunks
+        loop For each chunk
+            Orchestrator-->>LlmStore: Emit chunk event
+            LlmStore->>ChatStore: updateMessageContent/updateMessageToolCalls
+            ChatStore->>ChatStore: Update temporary message in memory
+            ChatStore-->>ChatUI: Reactive UI update
+        end
+    else Non-Streaming Response
+        LLM-->>Orchestrator: Complete response
+        Orchestrator-->>LlmStore: Return response
+        LlmStore->>ChatStore: updateMessageContent/updateMessageToolCalls
+        ChatStore->>ChatStore: Update temporary message in memory
+        ChatStore-->>ChatUI: Reactive UI update
+    end
+    
+    LlmStore->>ChatStore: persistEphemeralMessage
+    ChatStore->>DB: Create permanent message
+    ChatStore->>DB: Update with tool calls if present
+    ChatStore->>ChatStore: Replace temporary message with permanent one
+    ChatStore-->>ChatUI: Reactive UI update with permanent message
+    
+    ChatUI-->>User: Display complete response
+```
+
+#### MCP Tool Interaction Pattern
+
+The Model Context Protocol (MCP) enables the LLM to interact with various tools and services through a standardized interface. The Orchestrator acts as an MCP Host that coordinates these interactions.
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant ChatUI as Chat UI
+    participant LlmStore as LLM Store
     participant Orchestrator as Orchestrator (MCP Host)
     participant LLM
+    participant MCPServer as MCP Server
+    participant ChatStore as Chat Store
+
+    User->>ChatUI: Send message requiring tool use
+    Note over ChatUI,LlmStore: Same initial flow as chat messages
+    
+    LlmStore->>Orchestrator: processMessageStream
+    
+    Note right of Orchestrator: MCP Host Initialization
+    Orchestrator->>Orchestrator: Collect available tools from registered MCP servers
+    Orchestrator->>Orchestrator: Enhance message with tool definitions
+    Orchestrator->>Orchestrator: Add system prompt with tool usage instructions
+    
+    Orchestrator->>LLM: Send enhanced request with tool definitions
+    
+    LLM-->>Orchestrator: Response with tool call
+    
+    Note right of Orchestrator: Tool Execution Phase
+    Orchestrator->>Orchestrator: Parse tool call from response
+    Orchestrator->>Orchestrator: Identify target MCP server for tool
+    Orchestrator->>MCPServer: Execute tool call with arguments
+    MCPServer-->>Orchestrator: Return tool execution result
+    
+    Orchestrator-->>LlmStore: Emit chunk with tool call
+    LlmStore->>ChatStore: updateMessageToolCalls
+    ChatStore-->>ChatUI: Display tool call in UI
+    
+    Note right of Orchestrator: Result Integration Phase
+    Orchestrator-->>LlmStore: Continue with response text
+    LlmStore->>ChatStore: updateMessageContent
+    ChatStore-->>ChatUI: Update message content
+    
+    Note over LlmStore,ChatStore: Final persistence same as chat messages
+    
+    ChatUI-->>User: Display complete response with tool calls
+```
+
+#### File System Operations via MCP
+
+File operations are a specific implementation of the MCP tool interaction pattern. The Orchestrator interacts with the Files Management MCP Server, which delegates operations to the Files Management component.
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant ChatUI as Chat UI
+    participant Orchestrator as Orchestrator (MCP Host)
+    participant LLM
+    participant FMMCP as Files Management MCP Server
+    participant FM as Files Management
     participant BFS as Browser File System
 
-    User->>Workbench: Request to write code
-    Workbench->>Orchestrator: Forward request
-
-    Orchestrator->>Orchestrator: Enhance with system prompt & tools
+    User->>ChatUI: Request file operation (read/write/list)
+    ChatUI->>Orchestrator: Forward request (via LLM Store)
+    
+    Orchestrator->>Orchestrator: Enhance with file operation tools
     Orchestrator->>LLM: Send enhanced request
-
-    LLM->>Orchestrator: Response with write_file tool call
-
-    Orchestrator->>BFS: Execute write_file operation
-    BFS->>Orchestrator: Operation result
-
-    Orchestrator->>Orchestrator: Format response with results
-    Orchestrator->>Workbench: Return enhanced response
-    Workbench->>User: Display response
+    
+    LLM-->>Orchestrator: Response with file operation tool call
+    
+    Orchestrator->>FMMCP: Execute file operation tool call
+    FMMCP->>FM: Delegate to Files Management component
+    FM->>BFS: Perform actual file system operation
+    BFS-->>FM: Return operation result
+    FM-->>FMMCP: Return formatted result
+    FMMCP-->>Orchestrator: Return tool execution result
+    
+    Orchestrator-->>ChatUI: Return response with tool call and result
+    ChatUI-->>User: Display file operation result
 ```
+
+The Files Management MCP Server provides a standardized interface for file operations that abstracts away the underlying file system implementation. This allows the LLM to interact with files without needing to know the details of the file system. The server implements tools such as:
+
+- `read_file`: Read the contents of a file
+- `write_file`: Write content to a file
+- `list_files`: List files in a directory
+- `delete_file`: Delete a file
+- `create_directory`: Create a new directory
+
+When the LLM needs to perform a file operation, it generates a tool call with the appropriate tool name and arguments. The Orchestrator routes this call to the Files Management MCP Server, which delegates the operation to the Files Management component. The component then performs the actual file system operation using the Browser File System API and returns the result.
+
+This architecture provides a clean separation of concerns and allows the LLM to interact with the file system in a controlled and secure manner.
 
 #### MCP Host-Client-Server Interaction Flow
 
