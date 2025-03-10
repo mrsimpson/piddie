@@ -79,7 +79,7 @@ export const useLlmStore = defineStore("llm", () => {
       baseUrl: workbenchConfig.baseUrl,
       selectedModel: workbenchConfig.selectedModel,
       defaultModel: workbenchConfig.defaultModel,
-      provider: workbenchConfig.provider
+      provider: workbenchConfig.provider || "litellm"
     };
   };
 
@@ -338,7 +338,8 @@ export const useLlmStore = defineStore("llm", () => {
   ) {
     try {
       // Check if API key is set
-      if (!workbenchConfig.apiKey && workbenchConfig.provider !== "mock") {
+      if (!workbenchConfig.apiKey && workbenchConfig.provider === "litellm") {
+        //TODO: replace with a metadata at te providers that it needs a key
         error.value = new Error("API key is not set");
         return;
       }
@@ -389,12 +390,82 @@ export const useLlmStore = defineStore("llm", () => {
       let accumulatedContent = "";
       let accumulatedToolCalls: ToolCall[] = [];
 
+      // Map to track function call arguments by function name
+      // Format: { "functionName": { argumentString, isComplete, callIndex } }
+      const functionArgsMap = new Map<
+        string,
+        {
+          argumentString: string;
+          isComplete: boolean;
+          callIndex: number;
+        }
+      >();
+
+      // Counter to track tool calls with the same name
+      const functionCallCounters: Record<string, number> = {};
+
       // Function to finalize processing
       const finalizeProcessing = async () => {
         isProcessing.value = false;
         isStreaming.value = false;
 
         try {
+          // Process any incomplete function arguments in the map
+          if (functionArgsMap.size > 0) {
+            const finalToolCalls: ToolCall[] = [];
+
+            // First add all the already processed tool calls
+            finalToolCalls.push(...accumulatedToolCalls);
+
+            // Process any remaining function arguments that might not have been processed yet
+            functionArgsMap.forEach((value, functionName) => {
+              if (!value.isComplete) {
+                try {
+                  // Try to parse the accumulated argument string
+                  const argString = value.argumentString.trim();
+
+                  // Only try to parse if it looks like complete JSON
+                  if (
+                    (argString.startsWith("{") && argString.endsWith("}")) ||
+                    (argString.startsWith("[") && argString.endsWith("]"))
+                  ) {
+                    const functionArgs = JSON.parse(argString);
+
+                    // Check if this function call already exists in finalToolCalls
+                    const existingIndex = finalToolCalls.findIndex(
+                      (tc) =>
+                        tc.function.name === functionName &&
+                        JSON.stringify(tc.function.arguments) ===
+                          JSON.stringify(functionArgs)
+                    );
+
+                    if (existingIndex === -1) {
+                      // Add as a new tool call if it doesn't exist
+                      finalToolCalls.push({
+                        function: {
+                          name: functionName,
+                          arguments: functionArgs
+                        }
+                      });
+                    }
+
+                    // Mark as complete
+                    value.isComplete = true;
+                  }
+                } catch (e) {
+                  // If parsing fails, it might be incomplete JSON
+                  console.warn(
+                    `Failed to parse function arguments for ${functionName}:`,
+                    e
+                  );
+                }
+              }
+            });
+
+            // Update the accumulated tool calls
+            accumulatedToolCalls = finalToolCalls;
+          }
+
           // Persist the temporary message with final content and tool calls
           await chatStore.persistEphemeralMessage(assistantMessage.id, {
             content: accumulatedContent,
@@ -423,28 +494,112 @@ export const useLlmStore = defineStore("llm", () => {
 
           // Handle tool calls in the chunk
           if (chunk.tool_calls && chunk.tool_calls.length > 0) {
-            // Convert tool calls to the correct format
-            const convertedToolCalls = chunk.tool_calls.map((toolCall) => {
-              const functionArgs =
-                typeof toolCall.function.arguments === "string"
-                  ? JSON.parse(toolCall.function.arguments)
-                  : toolCall.function.arguments;
+            // Process each tool call
+            chunk.tool_calls.forEach((toolCall) => {
+              const functionName = toolCall.function.name;
 
-              return {
-                function: {
-                  name: toolCall.function.name,
-                  arguments: functionArgs
+              // Check if we already have an entry for this function name
+              let entry = functionArgsMap.get(functionName);
+
+              // If we have a complete entry or no entry, create a new one
+              if (!entry || entry.isComplete) {
+                // Get or increment the counter for this function name
+                functionCallCounters[functionName] =
+                  (functionCallCounters[functionName] || 0) + 1;
+                const callIndex = functionCallCounters[functionName] - 1;
+
+                // Create a new entry
+                entry = {
+                  argumentString: "",
+                  isComplete: false,
+                  callIndex: callIndex
+                };
+              }
+
+              // Append the new argument chunk
+              if (typeof toolCall.function.arguments === "string") {
+                entry.argumentString += toolCall.function.arguments;
+
+                // Check if this chunk completes the JSON object
+                const argString = entry.argumentString.trim();
+                if (
+                  (argString.startsWith("{") && argString.endsWith("}")) ||
+                  (argString.startsWith("[") && argString.endsWith("]"))
+                ) {
+                  try {
+                    // Try to parse the arguments
+                    const functionArgs = JSON.parse(argString);
+
+                    // Create a new tool call with the parsed arguments
+                    const newToolCall: ToolCall = {
+                      function: {
+                        name: functionName,
+                        arguments: functionArgs
+                      }
+                    };
+
+                    // Check if we already have this tool call
+                    const existingIndex = accumulatedToolCalls.findIndex(
+                      (tc) =>
+                        tc.function.name === functionName &&
+                        JSON.stringify(tc.function.arguments) ===
+                          JSON.stringify(functionArgs)
+                    );
+
+                    if (existingIndex === -1) {
+                      // Add to accumulated tool calls
+                      accumulatedToolCalls.push(newToolCall);
+                    }
+
+                    // Mark as complete and create a new entry for future chunks with this function name
+                    entry.isComplete = true;
+
+                    // Start a new entry for the next call to this function
+                    functionCallCounters[functionName] =
+                      (functionCallCounters[functionName] || 0) + 1;
+                  } catch (e) {
+                    // If parsing fails, it's likely incomplete JSON
+                    // We'll continue accumulating
+                  }
                 }
-              };
+              } else if (toolCall.function.arguments) {
+                // If it's already an object, it's complete
+                entry.argumentString = JSON.stringify(
+                  toolCall.function.arguments
+                );
+                entry.isComplete = true;
+
+                // Create a new tool call
+                const newToolCall: ToolCall = {
+                  function: {
+                    name: functionName,
+                    arguments: toolCall.function.arguments
+                  }
+                };
+
+                // Check if we already have this tool call
+                const existingIndex = accumulatedToolCalls.findIndex(
+                  (tc) =>
+                    tc.function.name === functionName &&
+                    JSON.stringify(tc.function.arguments) ===
+                      JSON.stringify(toolCall.function.arguments)
+                );
+
+                if (existingIndex === -1) {
+                  // Add to accumulated tool calls
+                  accumulatedToolCalls.push(newToolCall);
+                }
+
+                // Start a new entry for the next call to this function
+                functionCallCounters[functionName] =
+                  (functionCallCounters[functionName] || 0) + 1;
+              }
+
+              // Update the map
+              functionArgsMap.set(functionName, entry);
             });
 
-            // Add to accumulated tool calls
-            accumulatedToolCalls = [
-              ...accumulatedToolCalls,
-              ...convertedToolCalls
-            ];
-
-            // Update the temporary message with the tool calls
+            // Update the UI with current tool calls
             chatStore.updateMessageToolCalls(
               assistantMessage.id,
               accumulatedToolCalls
@@ -454,6 +609,7 @@ export const useLlmStore = defineStore("llm", () => {
 
         try {
           // Process the message with streaming
+          console.log("[LlmStore] Starting streaming process");
           const emitter = await llmAdapter.processMessageStream(
             llmMessage,
             handleChunk
@@ -461,11 +617,12 @@ export const useLlmStore = defineStore("llm", () => {
 
           // Set up event listeners
           emitter.on("end", async () => {
+            console.log("[LlmStore] Stream ended, finalizing processing");
             await finalizeProcessing();
           });
 
           emitter.on("error", async (err: unknown) => {
-            console.error("Error in LLM stream:", err);
+            console.error("[LlmStore] Error in LLM stream:", err);
             error.value = err instanceof Error ? err : new Error(String(err));
             chatStore.updateMessageStatus(
               assistantMessage.id,
@@ -492,18 +649,47 @@ export const useLlmStore = defineStore("llm", () => {
 
           // Convert tool calls to the correct format if present
           if (response.tool_calls && response.tool_calls.length > 0) {
-            accumulatedToolCalls = response.tool_calls.map((toolCall) => {
-              const functionArgs =
-                typeof toolCall.function.arguments === "string"
-                  ? JSON.parse(toolCall.function.arguments)
-                  : toolCall.function.arguments;
+            // Process each tool call
+            response.tool_calls.forEach((toolCall) => {
+              const functionName = toolCall.function.name;
 
-              return {
-                function: {
-                  name: toolCall.function.name,
-                  arguments: functionArgs
-                }
-              };
+              try {
+                // Parse arguments if they're a string
+                const functionArgs =
+                  typeof toolCall.function.arguments === "string"
+                    ? JSON.parse(toolCall.function.arguments)
+                    : toolCall.function.arguments;
+
+                // Create a new tool call with the parsed arguments
+                const newToolCall: ToolCall = {
+                  function: {
+                    name: functionName,
+                    arguments: functionArgs
+                  }
+                };
+
+                // Add to accumulated tool calls
+                accumulatedToolCalls.push(newToolCall);
+
+                // Also add to the map for consistency with streaming case
+                functionCallCounters[functionName] =
+                  (functionCallCounters[functionName] || 0) + 1;
+                const callIndex = functionCallCounters[functionName] - 1;
+
+                functionArgsMap.set(functionName, {
+                  argumentString:
+                    typeof toolCall.function.arguments === "string"
+                      ? toolCall.function.arguments
+                      : JSON.stringify(toolCall.function.arguments),
+                  isComplete: true,
+                  callIndex: callIndex
+                });
+              } catch (e) {
+                console.error(
+                  `Error parsing function arguments for ${functionName}:`,
+                  e
+                );
+              }
             });
           }
 
@@ -579,14 +765,14 @@ export const useLlmStore = defineStore("llm", () => {
   }
 
   return {
-    isStreaming,
     isProcessing,
+    isStreaming,
+    error,
+    connectionStatus,
     isLoading,
     isVerifying,
-    connectionStatus,
-    streamingMessageId,
-    error,
-    config: workbenchConfig, // Expose the workbench config
+    workbenchConfig,
+    config: workbenchConfig, // Expose workbenchConfig as config for backward compatibility
     availableModels,
     verifyConnection,
     updateConfig,

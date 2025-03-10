@@ -162,16 +162,44 @@ export const useChatStore = defineStore("chat", () => {
       tempMessage.parentId
     );
 
-    // Apply updates if any
-    if (updates) {
-      await chatManager.updateMessage(message.chatId, message.id, {
-        status: updates.status,
-        tool_calls: updates.tool_calls
-      });
+    // Apply status update if needed
+    if (updates?.status && updates.status !== MessageStatus.SENT) {
+      await chatManager.updateMessageStatus(
+        message.chatId,
+        message.id,
+        updates.status
+      );
+    }
+
+    // Apply tool calls if any
+    if (updates?.tool_calls && updates?.tool_calls.length > 0) {
+      await chatManager.updateMessageToolCalls(
+        message.chatId,
+        message.id,
+        updates.tool_calls
+      );
+
+      // Add tool calls to the message object for UI update
+      message.tool_calls = updates.tool_calls;
     }
 
     // Remove from temporary messages
     temporaryMessages.value.delete(messageId);
+
+    // // Add to messages list
+    // const index = messages.value.findIndex((m) => m.id === messageId);
+    // if (index !== -1) {
+    //   // Replace the temporary message with the persisted one
+    //   messages.value.splice(index, 1, message);
+    // } else {
+    //   // Add the message if it wasn't in the list
+    //   messages.value.push(message);
+
+    // Reload the chat to ensure all messages are properly loaded
+    if (currentChat.value && currentChat.value.id === message.chatId) {
+      await loadChat(message.chatId);
+    }
+
     return message;
   }
 

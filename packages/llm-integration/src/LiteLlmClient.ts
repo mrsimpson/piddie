@@ -1,4 +1,12 @@
+import OpenAI from "openai";
+import { v4 as uuidv4 } from "uuid";
 import { EventEmitter } from "@piddie/shared-types";
+import type {
+  ChatCompletionAssistantMessageParam,
+  ChatCompletionSystemMessageParam,
+  ChatCompletionUserMessageParam,
+  ChatCompletionRole
+} from "openai/resources/chat";
 import type {
   LlmMessage,
   LlmProviderConfig,
@@ -6,15 +14,7 @@ import type {
   LlmStreamChunk
 } from "./types";
 import { LlmStreamEvent } from "./types";
-import type {
-  ChatCompletionRole,
-  ChatCompletionUserMessageParam,
-  ChatCompletionAssistantMessageParam,
-  ChatCompletionSystemMessageParam
-} from "openai/resources/chat";
 import { BaseLlmClient, ToolSupportStatus } from "./BaseLlmClient";
-import OpenAI from "openai";
-import { v4 as uuidv4 } from "uuid";
 
 /**
  * Client implementation for the LiteLLM API
@@ -32,7 +32,8 @@ export class LiteLlmClient extends BaseLlmClient {
     this.openai = new OpenAI({
       apiKey: config.apiKey,
       baseURL: config.baseUrl,
-      dangerouslyAllowBrowser: this.isLocalhostCommunication(config) || !config.baseUrl
+      dangerouslyAllowBrowser:
+        this.isLocalhostCommunication(config) || !config.baseUrl
     });
   }
 
@@ -67,7 +68,7 @@ export class LiteLlmClient extends BaseLlmClient {
         messages: messages as any,
         tools: hasNativeToolsSupport
           ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (enhancedMessage.tools as any)
+            (enhancedMessage.tools as any)
           : undefined
       });
 
@@ -179,6 +180,8 @@ export class LiteLlmClient extends BaseLlmClient {
         // Determine if we should include tools in the request
         const includeTools = this.shouldIncludeToolsInRequest(enhancedMessage);
 
+        console.log("[LiteLlmClient] Starting streaming request");
+
         // Use OpenAI SDK with streaming
         const stream = await this.openai.chat.completions.create({
           model: this.getSelectedModel(),
@@ -195,7 +198,7 @@ export class LiteLlmClient extends BaseLlmClient {
 
           if (!delta) continue;
 
-          // Handle content updates
+          // Handle content updates - emit immediately for responsive UI
           if (delta.content) {
             response.content += delta.content;
 
@@ -205,7 +208,11 @@ export class LiteLlmClient extends BaseLlmClient {
               content: delta.content,
               isFinal: false
             };
-            eventEmitter.emit(LlmStreamEvent.DATA, streamChunk);
+
+            // Use setTimeout to ensure the event loop can process UI updates
+            setTimeout(() => {
+              eventEmitter.emit(LlmStreamEvent.DATA, streamChunk);
+            }, 0);
           }
 
           // Handle tool calls (only for native tool support)
@@ -284,13 +291,15 @@ export class LiteLlmClient extends BaseLlmClient {
               // Update the response
               response.tool_calls = currentToolCalls;
 
-              // Emit a chunk with the tool calls
-              const streamChunk: LlmStreamChunk = {
-                content: "",
-                tool_calls: currentToolCalls,
-                isFinal: false
-              };
-              eventEmitter.emit(LlmStreamEvent.DATA, streamChunk);
+              // Emit a chunk with the tool calls - use setTimeout for responsiveness
+              setTimeout(() => {
+                const streamChunk: LlmStreamChunk = {
+                  content: "",
+                  tool_calls: currentToolCalls,
+                  isFinal: false
+                };
+                eventEmitter.emit(LlmStreamEvent.DATA, streamChunk);
+              }, 0);
             }
           }
 
@@ -348,7 +357,7 @@ export class LiteLlmClient extends BaseLlmClient {
             const finalChunk: LlmStreamChunk = {
               content: processedResponse.content,
               ...(processedResponse.tool_calls &&
-                processedResponse.tool_calls.length > 0
+              processedResponse.tool_calls.length > 0
                 ? { tool_calls: processedResponse.tool_calls }
                 : {}),
               isFinal: true
@@ -414,7 +423,7 @@ export class LiteLlmClient extends BaseLlmClient {
         const finalChunk: LlmStreamChunk = {
           content: processedResponse.content,
           ...(processedResponse.tool_calls &&
-            processedResponse.tool_calls.length > 0
+          processedResponse.tool_calls.length > 0
             ? { tool_calls: processedResponse.tool_calls }
             : {}),
           isFinal: true

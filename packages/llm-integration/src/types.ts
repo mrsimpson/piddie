@@ -82,6 +82,9 @@ export interface LlmResponse {
       arguments: string | Record<string, unknown>;
     };
   }>;
+
+  /** Results of executed tool calls */
+  tool_results?: Record<string, unknown>;
 }
 
 /**
@@ -164,6 +167,12 @@ export interface LlmStreamChunk {
       arguments: string | Record<string, unknown>;
     };
   }>;
+
+  /** Result of a tool execution */
+  tool_result?: {
+    name: string;
+    result: unknown;
+  };
 
   /** Whether this is the final chunk */
   isFinal: boolean;

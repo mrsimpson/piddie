@@ -22,17 +22,17 @@ const showSettings = ref(false);
 const isCreating = ref(false);
 
 // Computed property to check if a model is selected
-const isModelSelected = computed(() => !!llmStore.workbenchConfig.defaultModel);
+const isModelSelected = computed(() => !!llmStore.config.defaultModel);
 
 // Computed property to get the selected model name
 const selectedModelName = computed(() => {
-  if (!llmStore.workbenchConfig.defaultModel) return "";
+  if (!llmStore.config.defaultModel) return "";
 
   // Find the model in available models
   const modelInfo = llmStore.availableModels.find(
-    (m) => m.id === llmStore.workbenchConfig.defaultModel
+    (m) => m.id === llmStore.config.defaultModel
   );
-  return modelInfo ? modelInfo.name : llmStore.workbenchConfig.defaultModel;
+  return modelInfo ? modelInfo.name : llmStore.config.defaultModel;
 });
 
 const samplePrompts = [
