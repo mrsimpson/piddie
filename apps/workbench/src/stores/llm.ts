@@ -16,7 +16,6 @@ import type { ProviderType } from "../adapters/LlmProviderFactory";
 // Import from the llm-integration package
 import {
   createLlmAdapter,
-  LlmStreamEvent,
   type LlmStreamChunk,
   type LlmProviderConfig,
   type LlmMessage
@@ -557,7 +556,7 @@ export const useLlmStore = defineStore("llm", () => {
                     // Start a new entry for the next call to this function
                     functionCallCounters[functionName] =
                       (functionCallCounters[functionName] || 0) + 1;
-                  } catch (e) {
+                  } catch {
                     // If parsing fails, it's likely incomplete JSON
                     // We'll continue accumulating
                   }

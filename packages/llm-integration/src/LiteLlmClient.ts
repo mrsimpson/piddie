@@ -15,6 +15,7 @@ import type {
 } from "./types";
 import { LlmStreamEvent } from "./types";
 import { BaseLlmClient, ToolSupportStatus } from "./BaseLlmClient";
+import { ToolCall } from "@piddie/chat-management";
 
 /**
  * Client implementation for the LiteLLM API
@@ -26,7 +27,6 @@ export class LiteLlmClient extends BaseLlmClient {
    * Creates a new LiteLlmClient
    * @param config The LLM provider configuration
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(config: LlmProviderConfig) {
     super(config);
     this.openai = new OpenAI({
@@ -81,12 +81,7 @@ export class LiteLlmClient extends BaseLlmClient {
       const responseContent = responseMessage.content || "";
 
       // Process tool calls based on whether native tool support is available
-      let processedToolCalls: Array<{
-        function: {
-          name: string;
-          arguments: string | Record<string, unknown>;
-        };
-      }> = [];
+      let processedToolCalls: ToolCall[] = [];
 
       if (
         this.toolSupportStatus === ToolSupportStatus.NATIVE &&

@@ -61,6 +61,22 @@ export class McpHost {
   }
 
   /**
+   * Unregister a server by name
+   * @param name The name of the server
+   * @returns The server or undefined if not found
+   */
+  unregisterServer(name: string): boolean {
+    const connection = this.connections.get(name);
+    if (connection) {
+      connection.client.close();
+      connection.server?.close();
+      console.log(`[McpHost] Unregistered server: ${name}`);
+      return this.connections.delete(name);
+    }
+    return true;
+  }
+
+  /**
    * Get a connection by name
    * @param name The name of the connection
    * @returns The connection or undefined if not found

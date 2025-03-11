@@ -1,5 +1,5 @@
 import type { ChatCompletionRole } from "openai/resources/chat";
-import type { MessageStatus } from "@piddie/chat-management";
+import type { MessageStatus, ToolCall } from "@piddie/chat-management";
 import type { EventEmitter } from "@piddie/shared-types";
 
 /**
@@ -76,12 +76,7 @@ export interface LlmResponse {
   parentId?: string;
 
   /** Tool calls included in the response */
-  tool_calls?: Array<{
-    function: {
-      name: string;
-      arguments: string | Record<string, unknown>;
-    };
-  }>;
+  tool_calls?: ToolCall[];
 
   /** Results of executed tool calls */
   tool_results?: Record<string, unknown>;
@@ -161,12 +156,7 @@ export interface LlmStreamChunk {
   content: string;
 
   /** Tool calls included in the chunk */
-  tool_calls?: Array<{
-    function: {
-      name: string;
-      arguments: string | Record<string, unknown>;
-    };
-  }>;
+  tool_calls?: ToolCall[];
 
   /** Result of a tool execution */
   tool_result?: {

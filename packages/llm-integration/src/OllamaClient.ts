@@ -4,6 +4,7 @@ import { BaseLlmClient, ToolSupportStatus } from "./BaseLlmClient";
 import type { LlmMessage, LlmResponse, LlmStreamChunk } from "./types";
 import { LlmStreamEvent } from "./types";
 import { v4 as uuidv4 } from "uuid";
+import { ToolCall } from "@piddie/chat-management";
 
 // Define interfaces for Ollama API requests and responses
 interface OllamaCompletionRequest {
@@ -38,12 +39,7 @@ interface OllamaCompletionResponse {
   message: {
     role: string;
     content: string;
-    tool_calls?: Array<{
-      function: {
-        name: string;
-        arguments: string | Record<string, unknown>;
-      };
-    }>;
+    tool_calls?: ToolCall[];
   };
   done: boolean;
 }
@@ -227,12 +223,7 @@ export class OllamaClient extends BaseLlmClient {
 
         // Variables to accumulate content and tool calls
         let fullContent = "";
-        let accumulatedToolCalls: Array<{
-          function: {
-            name: string;
-            arguments: string | Record<string, unknown>;
-          };
-        }> = [];
+        let accumulatedToolCalls: ToolCall[] = [];
 
         // Prepare the request payload
         const payload: OllamaCompletionRequest = {

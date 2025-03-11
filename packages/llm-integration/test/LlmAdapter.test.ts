@@ -102,12 +102,14 @@ describe("LLM Adapter", () => {
     const config: LlmProviderConfig = {
       name: "Test Provider",
       description: "Test Provider Description",
-      provider: "openai",
+      provider: "litellm",
       apiKey: "test-key",
       model: "test-model"
     };
 
     adapter = new Orchestrator(new LiteLlmClient(config), mockChatManager);
+
+    adapter.registerLlmProvider(config);
   });
 
   describe("processMessage", () => {
@@ -119,7 +121,7 @@ describe("LLM Adapter", () => {
         role: "user",
         status: MessageStatus.SENDING,
         created: new Date(),
-        provider: "openai"
+        provider: "litellm"
       };
 
       const response = await adapter.processMessage(message);
@@ -130,8 +132,6 @@ describe("LLM Adapter", () => {
         content: "This is a response",
         model: "test-model"
       });
-
-      // No longer verify chat manager was called since Orchestrator doesn't handle message status
     });
 
     it("should handle errors during message processing", async () => {
@@ -144,7 +144,16 @@ describe("LLM Adapter", () => {
         checkToolSupport: vi.fn().mockResolvedValue(false)
       };
 
+      const errorConfig = {
+        name: "Error Provider",
+        description: "Error Provider Description",
+        provider: "litellm",
+        apiKey: "test-key",
+        model: "test-model"
+      };
+
       const errorAdapter = new Orchestrator(errorClient, mockChatManager);
+      errorAdapter.registerLlmProvider(errorConfig);
 
       const message: LlmMessage = {
         id: "message-id",
@@ -153,7 +162,7 @@ describe("LLM Adapter", () => {
         role: "user",
         status: MessageStatus.SENDING,
         created: new Date(),
-        provider: "openai"
+        provider: "litellm"
       };
 
       // Process message should throw
@@ -181,7 +190,7 @@ describe("LLM Adapter", () => {
         role: "user",
         status: MessageStatus.SENDING,
         created: new Date(),
-        provider: "openai"
+        provider: "litellm"
       };
 
       const chunks: any[] = [];
@@ -205,15 +214,16 @@ describe("LLM Adapter", () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
 
       // Verify events were emitted
-      expect(onData).toHaveBeenCalledTimes(3);
+      expect(onData).toHaveBeenCalledTimes(4);
       expect(onEnd).toHaveBeenCalledTimes(1);
       expect(onError).not.toHaveBeenCalled();
 
       // Verify chunks were collected
-      expect(chunks).toHaveLength(3);
+      expect(chunks).toHaveLength(4);
       expect(chunks[0].content).toBe("This is ");
       expect(chunks[1].content).toBe("a streaming ");
       expect(chunks[2].content).toBe("response");
+      expect(chunks[3].content).toBe("This is a streaming response");
 
       // No longer verify chat manager was called
     });
@@ -221,6 +231,7 @@ describe("LLM Adapter", () => {
     it("should handle errors during streaming", async () => {
       // Mock client to throw an error
       const errorClient = {
+        checkToolSupport: vi.fn().mockResolvedValue(false),
         sendMessage: vi.fn(),
         streamMessage: vi.fn().mockImplementation(() => {
           const emitter = new EventEmitter();
@@ -234,7 +245,15 @@ describe("LLM Adapter", () => {
         })
       };
 
-      const errorAdapter = new Orchestrator(errorClient);
+      const errorAdapter = new Orchestrator(errorClient, mockChatManager);
+      const errorConfig = {
+        name: "Error Provider",
+        description: "Error Provider Description",
+        provider: "litellm",
+        apiKey: "test-key",
+        model: "test-model"
+      };
+      errorAdapter.registerLlmProvider(errorConfig);
 
       const message: LlmMessage = {
         id: "message-id",
@@ -243,7 +262,7 @@ describe("LLM Adapter", () => {
         role: "user",
         status: MessageStatus.SENDING,
         created: new Date(),
-        provider: "openai"
+        provider: "litellm"
       };
 
       const stream = await errorAdapter.processMessageStream(message);

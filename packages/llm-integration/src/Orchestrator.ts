@@ -28,7 +28,7 @@ interface Tool {
  */
 export class Orchestrator implements LlmAdapter {
   private llmProviders: Map<string, LlmProviderConfig> = new Map();
-  private mcpHost: any = null; // Use any for now to avoid import issues
+  private mcpHost: McpHost;
   private client: LlmClient;
   private chatManager: ChatManager | undefined;
   private toolsBuffer: Tool[] | null = null;
@@ -335,7 +335,7 @@ export class Orchestrator implements LlmAdapter {
    * @param toolCall The tool call to execute
    * @returns The result of the tool call
    */
-  private async executeToolCall(toolCall: any): Promise<unknown> {
+  private async executeToolCall(toolCall: ToolCall): Promise<unknown> {
     if (!this.mcpHost) {
       console.warn(
         "[Orchestrator] McpHost is not initialized, cannot execute tool call"
@@ -377,12 +377,11 @@ export class Orchestrator implements LlmAdapter {
    * @returns The results of the tool calls
    */
   private async executeToolCalls(
-    toolCalls: any[]
+    toolCalls: ToolCall[]
   ): Promise<Record<string, unknown>> {
     const results: Record<string, unknown> = {};
 
-    for (let i = 0; i < toolCalls.length; i++) {
-      const toolCall = toolCalls[i];
+    for (const toolCall of toolCalls) {
       const toolName = toolCall.function.name;
 
       try {
@@ -472,7 +471,7 @@ export class Orchestrator implements LlmAdapter {
         ) {
           // Convert tool calls to the correct format if present
           const convertedToolCalls: ToolCall[] =
-            response.tool_calls?.map((toolCall: any) => {
+            response.tool_calls?.map((toolCall: ToolCall) => {
               const functionArgs =
                 typeof toolCall.function.arguments === "string"
                   ? JSON.parse(toolCall.function.arguments)
@@ -511,10 +510,10 @@ export class Orchestrator implements LlmAdapter {
    * @param text The text to parse
    * @returns Array of tool calls
    */
-  private parseToolCallsFromText(text: string): any[] {
+  private parseToolCallsFromText(text: string): ToolCall[] {
     const toolCalls = [];
     const toolRegex = new RegExp(
-      `<${this.MCP_TOOL_USE}>([\\s\\S]*?)<\/${this.MCP_TOOL_USE}>`,
+      `<${this.MCP_TOOL_USE}>([\\s\\S]*?)<${this.MCP_TOOL_USE}>`,
       "g"
     );
     let match;
@@ -589,7 +588,7 @@ export class Orchestrator implements LlmAdapter {
 
       // Set up variables to track the full content and tool calls
       let fullContent = "";
-      let toolCalls: any[] = [];
+      let toolCalls: ToolCall[] = [];
 
       // Track which tool calls have been executed
       const executedToolCalls = new Set<string>();
@@ -734,7 +733,7 @@ export class Orchestrator implements LlmAdapter {
           emitter.emit("error", err);
         });
 
-        originalEmitter.on("end", (response?: any) => {
+        originalEmitter.on("end", (response?: unknown) => {
           console.log("[Orchestrator] Stream ended");
           // Check for any remaining tool calls in the full content
           const { content, extractedToolCalls } =
@@ -867,18 +866,19 @@ export class Orchestrator implements LlmAdapter {
           emitter.emit("error", err);
         });
 
-        originalEmitter.on("end", (response?: any) => {
+        originalEmitter.on("end", (data?: unknown) => {
           console.log("[Orchestrator] Native tool support stream ended");
 
           // For native tool support, we need to collect all tool calls from the response
           // and execute any that haven't been executed yet
+          const response = data as LlmResponse;
           if (
             response &&
             response.tool_calls &&
             response.tool_calls.length > 0
           ) {
             const remainingToolCalls = response.tool_calls.filter(
-              (toolCall: any) => {
+              (toolCall: ToolCall) => {
                 const toolCallId = `${toolCall.function.name}-${JSON.stringify(toolCall.function.arguments)}`;
                 return !executedToolCalls.has(toolCallId);
               }
@@ -891,7 +891,7 @@ export class Orchestrator implements LlmAdapter {
 
               // Execute each remaining tool call
               Promise.all(
-                remainingToolCalls.map(async (toolCall: any) => {
+                remainingToolCalls.map(async (toolCall: ToolCall) => {
                   const toolCallId = `${toolCall.function.name}-${JSON.stringify(toolCall.function.arguments)}`;
 
                   // Skip if we've already executed this tool call
@@ -990,14 +990,14 @@ export class Orchestrator implements LlmAdapter {
   private extractToolCallsFromPartialText(
     text: string,
     isFinal: boolean = false
-  ): { content: string; extractedToolCalls: any[] } {
+  ): { content: string; extractedToolCalls: ToolCall[] } {
     // Skip extraction for non-final chunks if text is too short to contain a complete tool call
     // This optimization prevents unnecessary regex processing on small chunks
     if (!isFinal && text.length < 50 && !text.includes("<tool>")) {
       return { content: text, extractedToolCalls: [] };
     }
 
-    const extractedToolCalls: any[] = [];
+    const extractedToolCalls: ToolCall[] = [];
     let updatedContent = text;
 
     // Regular expression to match complete tool calls
@@ -1012,7 +1012,6 @@ export class Orchestrator implements LlmAdapter {
           const tool = JSON.parse(toolJson);
 
           extractedToolCalls.push({
-            type: "function",
             function: {
               name: tool.name,
               arguments:
@@ -1044,7 +1043,6 @@ export class Orchestrator implements LlmAdapter {
           const tool = JSON.parse(toolJson);
 
           extractedToolCalls.push({
-            type: "function",
             function: {
               name: tool.name,
               arguments:
@@ -1056,7 +1054,7 @@ export class Orchestrator implements LlmAdapter {
 
           // Remove the incomplete tool call from the content
           updatedContent = updatedContent.replace(incompleteToolRegex, "");
-        } catch (error) {
+        } catch {
           // Ignore parsing errors for incomplete tool calls
         }
       }
@@ -1211,19 +1209,21 @@ After using a tool, continue your response based on the tool's output.`;
             // Handle tool calls
             if (chunk.tool_calls && chunk.tool_calls.length > 0) {
               // Convert tool calls to the correct format
-              const convertedToolCalls = chunk.tool_calls.map((tc: any) => {
-                const args =
-                  typeof tc.function.arguments === "string"
-                    ? JSON.parse(tc.function.arguments)
-                    : tc.function.arguments;
+              const convertedToolCalls = chunk.tool_calls.map(
+                (tc: ToolCall) => {
+                  const args =
+                    typeof tc.function.arguments === "string"
+                      ? JSON.parse(tc.function.arguments)
+                      : tc.function.arguments;
 
-                return {
-                  function: {
-                    name: tc.function.name,
-                    arguments: args as Record<string, unknown>
-                  }
-                };
-              });
+                  return {
+                    function: {
+                      name: tc.function.name,
+                      arguments: args as Record<string, unknown>
+                    }
+                  };
+                }
+              );
 
               // Add to accumulated tool calls
               accumulatedToolCalls = [
@@ -1290,7 +1290,7 @@ After using a tool, continue your response based on the tool's output.`;
 
         // Convert tool calls to the correct format if present
         if (response.tool_calls && response.tool_calls.length > 0) {
-          accumulatedToolCalls = response.tool_calls.map((tc: any) => {
+          accumulatedToolCalls = response.tool_calls.map((tc: ToolCall) => {
             const args =
               typeof tc.function.arguments === "string"
                 ? JSON.parse(tc.function.arguments)
