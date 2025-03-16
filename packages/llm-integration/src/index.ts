@@ -1,33 +1,116 @@
-import { OpenAiClient } from "./openai-client";
-import { MockLlmClient } from "./mock-client";
-import { Orchestrator } from "./orchestrator";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { LiteLlmClient } from "./LiteLlmClient";
+import { MockLlmClient } from "./MockClient";
+import { OllamaClient } from "./OllamaClient";
+import { Orchestrator } from "./Orchestrator";
 import type {
-  LlmProviderConfig,
   LlmClient,
   LlmMessage,
-  LlmResponse
+  LlmProviderConfig,
+  LlmResponse,
+  LlmStreamChunk
 } from "./types";
-import type { ChatManager } from "@piddie/chat-management";
-import type { EventEmitter } from "./event-emitter";
+import { EventEmitter } from "@piddie/shared-types";
+import type { ChatManager, Message } from "@piddie/chat-management";
 
 /**
- * Interface for the LLM adapter
- * Provides methods for interacting with the LLM
+ * Interface for LLM adapter
  */
 export interface LlmAdapter {
   /**
-   * Processes a message by enhancing it with context and tools before sending to the LLM
+   * Register an LLM provider
+   * @param name The name of the provider
+   * @param config The provider configuration
+   */
+  registerLlmProvider(config: LlmProviderConfig): void;
+
+  /**
+   * Get an LLM provider by name
+   * @param name The name of the provider
+   * @returns The provider configuration
+   */
+  getLlmProvider(name: string): LlmProviderConfig | undefined;
+
+  /**
+   * Unregister an LLM provider
+   * @param name The name of the provider
+   * @returns True if the provider was unregistered, false if it wasn't registered
+   */
+  unregisterLlmProvider(name: string): boolean;
+
+  /**
+   * Register an MCP server
+   * @param server The MCP server to register
+   * @param name The name of the server which is use to identitfy it lateron
+   */
+  registerMcpServer(server: McpServer, name: string): Promise<void>;
+
+  /**
+   * Get an MCP server by name
+   * @param name The name of the server
+   * @returns The MCP server
+   */
+  getMcpServer(name: string): McpServer | undefined;
+
+  /**
+   * Unregister an MCP server
+   * @param name The name of the server
+   * @returns True if the server was unregistered, false if it wasn't registered
+   */
+  unregisterMcpServer(name: string): boolean;
+
+  /**
+   * Check if the LLM provider supports tools
+   * @param providerName The name of the provider
+   * @returns True if the provider supports tools, false otherwise
+   */
+  checkToolSupport(providerName: string): Promise<boolean>;
+
+  /**
+   * Process a message and return a response
    * @param message The message to process
-   * @returns The LLM response
+   * @returns The response from the LLM
    */
   processMessage(message: LlmMessage): Promise<LlmResponse>;
 
   /**
-   * Processes a message by enhancing it with context and tools before streaming the response from the LLM
+   * Process a message and stream the response
    * @param message The message to process
-   * @returns An event emitter that emits 'data', 'end', and 'error' events
+   * @param onChunk Optional callback for each chunk
+   * @returns An event emitter for the stream
    */
-  processMessageStream(message: LlmMessage): Promise<EventEmitter>;
+  processMessageStream(
+    message: LlmMessage,
+    onChunk?: (chunk: LlmStreamChunk) => void
+  ): Promise<EventEmitter>;
+
+  /**
+   * Get a completion for a user message and update the assistant placeholder
+   * @param userMessage The user message
+   * @param assistantPlaceholder The assistant placeholder message
+   * @param providerConfig The LLM provider configuration
+   * @param useStreaming Whether to use streaming
+   * @returns The completed assistant message
+   */
+  getCompletion(
+    userMessage: Message,
+    assistantPlaceholder: Message,
+    providerConfig: LlmProviderConfig,
+    useStreaming?: boolean
+  ): Promise<Message>;
+
+  /**
+   * Enhance a message with system prompt and tools
+   * @param message The message to enhance
+   * @returns The enhanced message
+   */
+  enhanceMessage(message: LlmMessage): LlmMessage;
+
+  /**
+   * Generate a system prompt
+   * @returns The system prompt
+   */
+  generateSystemPrompt(): string;
 }
 
 /**
@@ -36,16 +119,21 @@ export interface LlmAdapter {
  * @returns The LLM client instance
  */
 export function createLlmClient(config: LlmProviderConfig): LlmClient {
-  // Use mock client if specified in the config
-  return config.provider === "mock"
-    ? new MockLlmClient()
-    : new OpenAiClient(config);
+  // Use appropriate client based on provider type
+  if (config.provider === "mock") {
+    return new MockLlmClient();
+  } else if (config.provider === "ollama") {
+    return new OllamaClient(config);
+  } else {
+    // Default to OpenAI client
+    return new LiteLlmClient(config);
+  }
 }
 
 /**
  * Creates an LLM adapter with the specified configuration
  * @param config The LLM provider configuration
- * @param chatManager The chat manager for conversation history
+ * @param chatManager Optional chat manager for persistence
  * @returns The LLM adapter instance
  */
 export function createLlmAdapter(
@@ -53,19 +141,52 @@ export function createLlmAdapter(
   chatManager: ChatManager
 ): LlmAdapter {
   const client = createLlmClient(config);
-  return new Orchestrator(client, chatManager);
+  config.client = client;
+
+  if (!chatManager) {
+    throw new Error("Chat manager is required");
+  }
+
+  const adapter = new Orchestrator(client, chatManager);
+
+  // Register the provider with the adapter
+  adapter.registerLlmProvider(config);
+
+  return adapter;
 }
 
 /**
  * Creates a mock LLM adapter for testing and development
- * @param chatManager The chat manager for conversation history
+ * @param chatManager Optional chat manager for persistence
  * @returns The LLM adapter instance with a mock client
  */
 export function createMockLlmAdapter(chatManager: ChatManager): LlmAdapter {
   const client = new MockLlmClient();
-  return new Orchestrator(client, chatManager);
+
+  if (!chatManager) {
+    throw new Error("Chat manager is required");
+  }
+
+  const adapter = new Orchestrator(client, chatManager);
+
+  // Register a mock provider with the adapter
+  const mockConfig: LlmProviderConfig = {
+    name: "mock",
+    description: "Mock LLM provider for testing",
+    apiKey: "mock-api-key",
+    model: "mock-model",
+    provider: "mock",
+    client: client
+  };
+
+  adapter.registerLlmProvider(mockConfig);
+
+  return adapter;
 }
 
 export * from "./types";
-export * from "./mock-client";
-export * from "./orchestrator";
+export { LiteLlmClient } from "./LiteLlmClient";
+export { MockLlmClient } from "./MockClient";
+export { OllamaClient } from "./OllamaClient";
+export { BaseLlmClient, ToolSupportStatus } from "./BaseLlmClient";
+export * from "./Orchestrator";

@@ -1,4 +1,5 @@
 import Dexie from "dexie";
+import type { ProviderType } from "../adapters/LlmProviderFactory";
 
 /**
  * Interface for LLM provider configuration
@@ -8,7 +9,7 @@ export interface LlmProviderConfig {
   baseUrl: string;
   defaultModel: string;
   selectedModel?: string;
-  provider?: "openai" | "mock";
+  provider?: ProviderType;
   availableModels?: ModelInfo[];
 }
 
@@ -38,7 +39,8 @@ export enum WorkbenchSettingKey {
   CHAT_PANEL_WIDTH = "chatPanelWidth",
   IS_FILE_EXPLORER_COLLAPSED = "isFileExplorerCollapsed",
   IS_CHAT_PANEL_COLLAPSED = "isChatPanelCollapsed",
-  SELECTED_PROVIDER = "selectedProvider"
+  SELECTED_PROVIDER = "selectedProvider",
+  LLM_CONFIG = "llmConfig"
 }
 
 // Keep these for migration purposes
@@ -120,7 +122,7 @@ export class SettingsDatabase extends Dexie {
         if (!hasSelectedProvider) {
           workbenchSettings.push({
             key: WorkbenchSettingKey.SELECTED_PROVIDER,
-            value: "openai",
+            value: "litellm",
             lastUpdated: new Date()
           });
         }
@@ -137,11 +139,11 @@ export class SettingsDatabase extends Dexie {
  * Default LLM configuration
  */
 export const DEFAULT_LLM_CONFIG: LlmProviderConfig = {
-  apiKey: import.meta.env.VITE_OPENAI_API_KEY || "",
-  baseUrl: import.meta.env.VITE_OPENAI_BASE_URL || "https://api.openai.com/v1",
-  defaultModel: import.meta.env.VITE_OPENAI_MODEL || "gpt-3.5-turbo",
-  selectedModel: import.meta.env.VITE_OPENAI_MODEL || "gpt-3.5-turbo",
-  provider: "openai",
+  apiKey: import.meta.env.VITE_LITELLM_API_KEY || "",
+  baseUrl: import.meta.env.VITE_LITELLM_BASE_URL || "http://localhost:4000/v1",
+  defaultModel: import.meta.env.VITE_LITELLM_MODEL || "",
+  selectedModel: import.meta.env.VITE_LITELLM_MODEL || "",
+  provider: "litellm",
   availableModels: []
 };
 
@@ -163,7 +165,8 @@ export const DEFAULT_WORKBENCH_SETTINGS = {
   [WorkbenchSettingKey.CHAT_PANEL_WIDTH]: 300,
   [WorkbenchSettingKey.IS_FILE_EXPLORER_COLLAPSED]: false,
   [WorkbenchSettingKey.IS_CHAT_PANEL_COLLAPSED]: false,
-  [WorkbenchSettingKey.SELECTED_PROVIDER]: "openai"
+  [WorkbenchSettingKey.SELECTED_PROVIDER]: "litellm",
+  [WorkbenchSettingKey.LLM_CONFIG]: DEFAULT_LLM_CONFIG
 };
 
 /**
@@ -181,15 +184,24 @@ export class SettingsManager {
    * @returns The LLM configuration
    */
   async getLlmConfig(): Promise<LlmProviderConfig> {
-    let config = await this.db.llmConfig.get({ provider: "openai" });
+    try {
+      const llmConfig = await this.getWorkbenchSetting(
+        WorkbenchSettingKey.LLM_CONFIG
+      );
 
-    if (!config) {
-      // Create default LLM config if it doesn't exist
-      config = { ...DEFAULT_LLM_CONFIG };
-      await this.db.llmConfig.add(config);
+      if (!llmConfig) {
+        return DEFAULT_LLM_CONFIG;
+      }
+
+      // Ensure we have a valid configuration by merging with defaults
+      return {
+        ...DEFAULT_LLM_CONFIG,
+        ...(llmConfig as LlmProviderConfig)
+      };
+    } catch (error) {
+      console.error("Error getting LLM config:", error);
+      return DEFAULT_LLM_CONFIG;
     }
-
-    return config;
   }
 
   /**
@@ -225,6 +237,16 @@ export class SettingsManager {
   }
 
   /**
+   * Makes an object serializable for IndexedDB by removing non-serializable properties
+   * @param obj The object to make serializable
+   * @returns A serializable copy of the object
+   */
+  private makeSerializable<T>(obj: T): T {
+    // Convert to JSON and back to remove non-serializable properties
+    return JSON.parse(JSON.stringify(obj));
+  }
+
+  /**
    * Updates a specific workbench setting
    * @param key The setting key to update
    * @param value The new value for the setting
@@ -238,7 +260,7 @@ export class SettingsManager {
     // Create the setting object with the key
     const setting: WorkbenchSetting = {
       key,
-      value,
+      value: this.makeSerializable(value),
       lastUpdated: new Date()
     };
 
@@ -276,42 +298,41 @@ export class SettingsManager {
    * Gets the selected provider from workbench settings
    * @returns The selected provider
    */
-  async getSelectedProvider(): Promise<"openai" | "mock"> {
-    return this.getWorkbenchSetting(
-      WorkbenchSettingKey.SELECTED_PROVIDER
-    ) as Promise<"openai" | "mock">;
+  async getSelectedProvider(): Promise<ProviderType> {
+    const config = await this.getLlmConfig();
+    return config.provider || "litellm";
   }
 
   /**
    * Updates the selected provider in workbench settings
    * @param provider The provider to select
    */
-  async updateSelectedProvider(provider: "openai" | "mock"): Promise<void> {
-    await this.updateWorkbenchSetting(
-      WorkbenchSettingKey.SELECTED_PROVIDER,
-      provider
-    );
+  async updateSelectedProvider(provider: ProviderType): Promise<void> {
+    await this.updateLlmConfig({ provider });
   }
 
   /**
    * Updates the LLM configuration
-   * @param config The new LLM configuration
+   * @param config The LLM configuration to update
+   * @returns The updated LLM configuration
    */
   async updateLlmConfig(
     config: Partial<LlmProviderConfig>
   ): Promise<LlmProviderConfig> {
-    const existingConfig = await this.getLlmConfig();
+    const currentConfig = await this.getLlmConfig();
 
-    // Update the configuration
-    const updatedConfig = {
-      ...existingConfig,
+    // Create a serializable copy of the configuration
+    const updatedLlmConfig = this.makeSerializable({
+      ...currentConfig,
       ...config
-    };
+    });
 
-    // Update or add the configuration
-    await this.db.llmConfig.put(updatedConfig);
+    await this.updateWorkbenchSetting(
+      WorkbenchSettingKey.LLM_CONFIG,
+      updatedLlmConfig
+    );
 
-    return updatedConfig;
+    return updatedLlmConfig;
   }
 
   /**
@@ -320,71 +341,6 @@ export class SettingsManager {
   async resetLlmConfig(): Promise<LlmProviderConfig> {
     await this.db.llmConfig.clear();
     return this.updateLlmConfig(DEFAULT_LLM_CONFIG);
-  }
-
-  /**
-   * Verifies the connection to the OpenAI API and retrieves available models
-   * @param config The LLM configuration to verify
-   * @returns The list of available models if successful
-   */
-  async verifyConnection(config: LlmProviderConfig): Promise<ModelInfo[]> {
-    try {
-      console.log(
-        "Settings manager verifying connection with URL:",
-        config.baseUrl
-      );
-
-      // Make a request to the OpenAI models endpoint
-      const url = `${config.baseUrl}/models`;
-      console.log("Making request to:", url);
-
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${config.apiKey}`,
-          "Content-Type": "application/json"
-        }
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(
-          `Failed to connect to API: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`
-        );
-      }
-
-      const data = await response.json();
-      console.log("Received models data:", data);
-
-      // Extract model information
-      const models: ModelInfo[] = data.data
-        .map((model: unknown) => ({
-          id: (model as ModelInfo).id,
-          name: (model as ModelInfo).id
-            .replace(/^gpt-/, "GPT ")
-            .replace(/-/g, " "),
-          created: (model as ModelInfo).created
-        }))
-        .sort((a: ModelInfo, b: ModelInfo) => {
-          // Sort by creation date (newest first)
-          if (a.created && b.created) {
-            return b.created - a.created;
-          }
-          return a.id.localeCompare(b.id);
-        });
-
-      console.log("Filtered and processed models:", models);
-
-      // Update the configuration with the available models
-      await this.updateLlmConfig({
-        availableModels: models
-      });
-
-      return models;
-    } catch (error) {
-      console.error("Error verifying connection:", error);
-      throw error;
-    }
   }
 }
 

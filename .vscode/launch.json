@@ -1,0 +1,20 @@
+{
+  // Verwendet IntelliSense zum Ermitteln möglicher Attribute.
+  // Zeigen Sie auf vorhandene Attribute, um die zugehörigen Beschreibungen anzuzeigen.
+  // Weitere Informationen finden Sie unter https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "chrome",
+      "request": "launch",
+      "name": "Workbench",
+      "url": "http://localhost:9999",
+      "webRoot": "${workspaceFolder}",
+      "env": {
+        "VITE_LITELLM_API_KEY": "sk-1234",
+        "VITE_LITELLM_BASE_URL": "http://localhost:4000/v1",
+        "VITE_LITELLM_MODEL": "llama3.1:latest"
+      }
+    }
+  ]
+}

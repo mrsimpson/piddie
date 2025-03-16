@@ -22,7 +22,7 @@ const isChatPanelCollapsed = ref(false);
 // Panel sizing
 const fileExplorerWidth = ref(250);
 const chatPanelWidth = ref(300);
-const isResizingFileExplorer = ref(false);
+const isResizingChat = ref(false);
 const isResizingLeftPanel = ref(false);
 const startX = ref(0);
 const startWidth = ref(0);
@@ -192,12 +192,12 @@ function onChatPanelCollapse(collapsed: boolean) {
 }
 
 // Resizing functions
-function startResizingFileExplorer(e: MouseEvent) {
-  if (isFileExplorerCollapsed.value) return;
+function startResizingChat(e: MouseEvent) {
+  if (isChatPanelCollapsed.value) return;
 
-  isResizingFileExplorer.value = true;
+  isResizingChat.value = true;
   startX.value = e.clientX;
-  startWidth.value = fileExplorerWidth.value;
+  startWidth.value = chatPanelWidth.value;
   e.preventDefault();
 }
 
@@ -211,10 +211,10 @@ function startResizingLeftPanel(e: MouseEvent) {
 }
 
 function handleMouseMove(e: MouseEvent) {
-  if (isResizingFileExplorer.value) {
+  if (isResizingChat.value) {
     const delta = e.clientX - startX.value;
     const newWidth = Math.max(100, startWidth.value + delta);
-    fileExplorerWidth.value = newWidth;
+    chatPanelWidth.value = newWidth;
   } else if (isResizingLeftPanel.value) {
     const delta = e.clientX - startX.value;
     const newTotalWidth = Math.max(200, startWidth.value + delta);
@@ -245,10 +245,10 @@ function handleMouseMove(e: MouseEvent) {
 }
 
 function handleMouseUp() {
-  if (isResizingFileExplorer.value || isResizingLeftPanel.value) {
+  if (isResizingChat.value || isResizingLeftPanel.value) {
     debouncedSavePanelWidths();
   }
-  isResizingFileExplorer.value = false;
+  isResizingChat.value = false;
   isResizingLeftPanel.value = false;
 }
 </script>
@@ -259,6 +259,26 @@ function handleMouseUp() {
     :style="{ gridTemplateColumns: `${leftPanelWidth}px 1fr` }"
   >
     <div class="left-panel">
+      <div
+        class="chat-container"
+        :class="{ collapsed: isChatPanelCollapsed }"
+        :style="{
+          width: isChatPanelCollapsed ? '40px' : `${chatPanelWidth}px`
+        }"
+      >
+        <ChatPanel
+          :initial-collapsed="isChatPanelCollapsed"
+          @collapse="onChatPanelCollapse"
+        />
+      </div>
+
+      <!-- Resizer between file explorer and chat panel -->
+      <div
+        class="resizer file-explorer-resizer"
+        :class="{ hidden: isFileExplorerCollapsed }"
+        @mousedown="startResizingChat"
+      ></div>
+
       <div
         class="file-explorer-container"
         :class="{ collapsed: isFileExplorerCollapsed }"
@@ -271,26 +291,6 @@ function handleMouseUp() {
           :error="error"
           :initial-collapsed="isFileExplorerCollapsed"
           @collapse="onFileExplorerCollapse"
-        />
-      </div>
-
-      <!-- Resizer between file explorer and chat panel -->
-      <div
-        class="resizer file-explorer-resizer"
-        :class="{ hidden: isFileExplorerCollapsed }"
-        @mousedown="startResizingFileExplorer"
-      ></div>
-
-      <div
-        class="chat-container"
-        :class="{ collapsed: isChatPanelCollapsed }"
-        :style="{
-          width: isChatPanelCollapsed ? '40px' : `${chatPanelWidth}px`
-        }"
-      >
-        <ChatPanel
-          :initial-collapsed="isChatPanelCollapsed"
-          @collapse="onChatPanelCollapse"
         />
       </div>
 

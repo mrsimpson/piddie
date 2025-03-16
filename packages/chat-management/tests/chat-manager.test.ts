@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { Chat, Message } from "../src/types";
 import { MessageStatus } from "../src/types";
 import type { Table } from "dexie";
-import { DexieChatManager } from "../src/internal/dexie-implementation";
-import { ChatDatabase } from "../src/internal/dexie-implementation";
+import { DexieChatManager } from "../src/internal/DexieChatManager";
+import { ChatDatabase } from "../src/internal/DexieChatManager";
 
 // Create mock functions for chats table
 const chatMocks = {
@@ -122,7 +122,7 @@ describe("ChatManager", () => {
         const metadata = { projectId: "test-project" };
         chatMocks.add.mockResolvedValueOnce("new-id");
 
-        const chat = await chatManager.createChat(metadata);
+        const chat = await chatManager.createChat(metadata.projectId, metadata);
 
         expect(chat).toMatchObject({
           metadata,
@@ -135,6 +135,7 @@ describe("ChatManager", () => {
           id: chat.id,
           created: chat.created,
           lastUpdated: chat.lastUpdated,
+          projectId: metadata.projectId,
           metadata
         });
       });
@@ -142,14 +143,15 @@ describe("ChatManager", () => {
       it("THEN should create chat without metadata", async () => {
         chatMocks.add.mockResolvedValueOnce("new-id");
 
-        const chat = await chatManager.createChat();
+        const chat = await chatManager.createChat("project_1");
 
         expect(chat.metadata).toBeUndefined();
         expect(chatMocks.add).toHaveBeenCalledWith({
           id: chat.id,
           created: chat.created,
           lastUpdated: chat.lastUpdated,
-          metadata: undefined
+          metadata: undefined,
+          projectId: "project_1"
         });
       });
     });
@@ -160,7 +162,8 @@ describe("ChatManager", () => {
           id: "chat_1",
           created: new Date(),
           lastUpdated: new Date(),
-          metadata: undefined
+          metadata: undefined,
+          projectId: "project_1"
         };
         chatMocks.get.mockResolvedValueOnce(chat);
         messageMocks.add.mockResolvedValueOnce("msg_1");
@@ -193,7 +196,8 @@ describe("ChatManager", () => {
           id: "chat_1",
           created: new Date(),
           lastUpdated: new Date(),
-          metadata: undefined
+          metadata: undefined,
+          projectId: "project_1"
         };
         const parentMessage: Message = {
           id: "msg_1",
@@ -202,7 +206,8 @@ describe("ChatManager", () => {
           role: "user",
           status: MessageStatus.SENT,
           created: new Date(),
-          parentId: undefined
+          parentId: undefined,
+          username: "user"
         };
 
         chatMocks.get.mockResolvedValueOnce(chat);
@@ -242,7 +247,8 @@ describe("ChatManager", () => {
           role: "user",
           status: MessageStatus.SENDING,
           created: new Date(),
-          parentId: undefined
+          parentId: undefined,
+          username: "user"
         };
 
         messageMocks.get.mockResolvedValueOnce(message);
@@ -284,7 +290,8 @@ describe("ChatManager", () => {
         id,
         created: new Date(lastUpdated.getTime() - 1000), // 1 second before lastUpdated
         lastUpdated,
-        metadata: undefined
+        metadata: undefined,
+        projectId: "project_1"
       });
 
       it("THEN should return chats sorted by lastUpdated", async () => {
@@ -368,7 +375,8 @@ describe("ChatManager", () => {
           id: "chat_1",
           created: new Date(),
           lastUpdated: new Date(),
-          metadata: undefined
+          metadata: undefined,
+          projectId: "project_1"
         };
 
         const mockMessages = [
@@ -421,7 +429,8 @@ describe("ChatManager", () => {
           id: "chat_1",
           created: new Date(),
           lastUpdated: new Date(),
-          metadata: undefined
+          metadata: undefined,
+          projectId: "project_1"
         };
 
         chatMocks.get.mockResolvedValueOnce(chat);
@@ -441,7 +450,8 @@ describe("ChatManager", () => {
           id: "chat_1",
           created: new Date(),
           lastUpdated: new Date(),
-          metadata: undefined
+          metadata: undefined,
+          projectId: "project_1"
         };
         chatMocks.get.mockResolvedValueOnce(chat);
         whereMocks.delete.mockResolvedValueOnce(1);

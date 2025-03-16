@@ -261,6 +261,18 @@ export const useFileSystemStore = defineStore("file-system", () => {
         })
       );
 
+      // Dispose of all file systems
+      await Promise.all(
+        systems.value.map(async (system) => {
+          try {
+            // Cast to any to access the dispose method until TypeScript definitions are updated
+            await system.fileSystem.dispose();
+          } catch (err) {
+            console.warn("Error disposing file system:", err);
+          }
+        })
+      );
+
       // Dispose sync manager and wait for completion
       if (syncManager) {
         await syncManager.dispose();
@@ -285,6 +297,54 @@ export const useFileSystemStore = defineStore("file-system", () => {
     }
   }
 
+  /**
+   * Gets the active file system
+   * @returns The active file system or null if not available
+   */
+  function getBrowserFileSystem(): FileSystem | null {
+    if (systems.value.length === 0) {
+      return null;
+    }
+
+    // we write to the BrowserFileSystem
+    return (
+      systems.value.find(
+        (system) => system.fileSystem instanceof BrowserFileSystem
+      )?.fileSystem ?? null
+    );
+  }
+
+  /**
+   * Cleans up a specific project's file system
+   * This should be called when a project is deleted and it's not the current project
+   * @param projectId The ID of the project to clean up
+   */
+  async function cleanupProjectFileSystem(projectId: string): Promise<void> {
+    try {
+      console.log(`Cleaning up file system for project: ${projectId}`);
+
+      // Create a temporary BrowserFileSystem instance for the project
+      const fileSystem = new BrowserFileSystem({
+        name: projectId,
+        rootDir: "/"
+      });
+
+      // Call dispose to delete the IndexedDB database
+      // Cast to any to access the dispose method until TypeScript definitions are updated
+      await fileSystem.dispose();
+
+      console.log(
+        `Successfully cleaned up file system for project: ${projectId}`
+      );
+    } catch (error) {
+      console.error(
+        `Failed to clean up file system for project ${projectId}:`,
+        error
+      );
+      // Don't rethrow the error, as we want to continue with project deletion even if cleanup fails
+    }
+  }
+
   return {
     syncManager,
     systems,
@@ -292,6 +352,8 @@ export const useFileSystemStore = defineStore("file-system", () => {
     initializeForProject,
     addSyncTarget,
     cleanup,
-    initialized
+    initialized,
+    getBrowserFileSystem,
+    cleanupProjectFileSystem
   };
 });

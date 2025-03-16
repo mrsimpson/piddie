@@ -637,4 +637,13 @@ export abstract class FsPromisesAdapter implements FileSystem {
     };
     return Promise.resolve();
   }
+
+  /**
+   * Base implementation of dispose that does nothing.
+   * Subclasses should override this method to perform cleanup specific to their implementation.
+   */
+  async dispose(): Promise<void> {
+    // Base implementation does nothing
+    return Promise.resolve();
+  }
 }

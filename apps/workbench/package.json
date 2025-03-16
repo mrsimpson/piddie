@@ -14,6 +14,7 @@
     "test": "vitest --run --passWithNoTests"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.6.1",
     "@piddie/chat-management": "workspace:*",
     "@piddie/files-management": "workspace:*",
     "@piddie/llm-integration": "workspace:*",

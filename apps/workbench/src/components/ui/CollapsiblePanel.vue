@@ -77,11 +77,11 @@ function toggleCollapse() {
   width: 100%;
   overflow: hidden;
   box-sizing: border-box;
+  border-right: 1px solid var(--sl-color-neutral-200);
 }
 
 .panel-container.collapsed {
   width: 40px;
-  border-right: 1px solid var(--sl-color-neutral-200);
 }
 
 .panel-content {

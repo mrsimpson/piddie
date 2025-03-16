@@ -17,10 +17,14 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.6.1",
     "@piddie/chat-management": "workspace:*",
     "@piddie/files-management": "workspace:*",
+    "@piddie/shared-types": "workspace:*",
     "dexie": "4.0.11",
     "events": "^3.3.0",
-    "openai": "^4.28.0"
+    "ollama": "0.5.14",
+    "openai": "^4.85.1",
+    "uuid": "11.1.0"
   }
 }

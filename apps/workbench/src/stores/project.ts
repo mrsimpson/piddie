@@ -38,17 +38,26 @@ export const useProjectStore = defineStore("project", () => {
 
       // Check if the current chat is already associated with the project
       const currentChatIsForProject =
-        currentChat.value?.metadata &&
-        typeof currentChat.value.metadata === "object" &&
-        "projectId" in currentChat.value.metadata &&
-        currentChat.value.metadata.projectId === projectId;
-
-      // Clean up existing resources
-      await fileSystemStore.cleanup();
+        !!currentChat.value?.projectId &&
+        currentChat.value?.projectId === projectId;
 
       // Only clean up chat if it's not already associated with the project
-      if (!currentChatIsForProject) {
+      if (!!currentChat.value?.projectId && !currentChatIsForProject) {
         await chatStore.cleanup();
+      }
+
+      // Initialize chat only if it's not already associated with the project
+      if (!currentChatIsForProject) {
+        // Try to find an existing chat for this project
+        const projectChats = await chatStore.listProjectChats(projectId);
+
+        if (projectChats.length > 0) {
+          // Use the most recent chat
+          await chatStore.loadChat(projectChats[0].id);
+        } else {
+          // Create a new chat for this project
+          await chatStore.createChat(projectId);
+        }
       }
 
       // Load project
@@ -57,24 +66,6 @@ export const useProjectStore = defineStore("project", () => {
       // Initialize file system
       if (currentProject.value) {
         await fileSystemStore.initializeForProject(currentProject.value);
-      }
-
-      // Initialize chat only if it's not already associated with the project
-      if (!currentChatIsForProject) {
-        const chats = await chatStore.listChats();
-        const projectChat = chats.find(
-          (chat) =>
-            chat.metadata &&
-            typeof chat.metadata === "object" &&
-            "projectId" in chat.metadata &&
-            chat.metadata.projectId === projectId
-        );
-
-        if (projectChat) {
-          await chatStore.loadChat(projectChat.id);
-        } else if (currentProject.value) {
-          await chatStore.createChat({ projectId: currentProject.value.id });
-        }
       }
 
       isChatVisible.value = true;
@@ -110,26 +101,32 @@ export const useProjectStore = defineStore("project", () => {
   }
 
   async function deleteProject(projectId: string) {
-    // Find and delete associated chat first
-    const chats = await chatStore.listChats();
-    const projectChat = chats.find(
-      (chat) =>
-        chat.metadata &&
-        typeof chat.metadata === "object" &&
-        "projectId" in chat.metadata &&
-        chat.metadata.projectId === projectId
-    );
+    // Check if we're deleting the current project
+    const isDeletingCurrentProject = currentProject.value?.id === projectId;
 
-    if (projectChat) {
-      await chatStore.deleteChat(projectChat.id);
+    // Find and delete associated chats
+    const projectChats = await chatStore.listProjectChats(projectId);
+
+    for (const chat of projectChats) {
+      await chatStore.deleteChat(chat.id);
+    }
+
+    // Clean up file systems
+    if (isDeletingCurrentProject) {
+      // If we're deleting the current project, clean up all file systems
+      await fileSystemStore.cleanup();
+    } else {
+      // If we're deleting a different project, just clean up that project's file system
+      await fileSystemStore.cleanupProjectFileSystem(projectId);
     }
 
     // Delete the project
     await projectManager.deleteProject(projectId);
+
     await loadProjects();
 
     // Clear current project if it's the one being deleted
-    if (currentProject.value?.id === projectId) {
+    if (isDeletingCurrentProject) {
       currentProject.value = null;
       isChatVisible.value = false;
     }

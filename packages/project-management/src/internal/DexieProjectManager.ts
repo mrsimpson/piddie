@@ -1,7 +1,7 @@
 import Dexie, { type Table } from "dexie";
 import type { Project, ProjectManager } from "../types";
 import type { ChatManager } from "@piddie/chat-management";
-import { generateProjectId } from "../utils/generate-project-id";
+import { generateProjectId } from "../utils/generateProjectId";
 
 /**
  * Error thrown when unable to generate a unique project ID
@@ -73,10 +73,7 @@ export class DexieProjectManager implements ProjectManager {
 
     // Create chat first to ensure it exists
     if (this.chatManager) {
-      await this.chatManager.createChat({
-        projectId,
-        projectName: name
-      });
+      await this.chatManager.createChat(projectId);
     }
 
     const project: Project = {

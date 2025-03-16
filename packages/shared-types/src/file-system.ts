@@ -225,6 +225,12 @@ export interface FileSystem {
 
   unlock(owner: string): Promise<void>;
   getLockState(): LockState;
+
+  /**
+   * Dispose of the file system and clean up resources
+   * This should be called when the file system is no longer needed
+   */
+  dispose(): Promise<void>;
 }
 
 /**
