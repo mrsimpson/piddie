@@ -73,7 +73,7 @@ export class McpHost {
       console.log(`[McpHost] Unregistered server: ${name}`);
       return this.connections.delete(name);
     }
-    return true;
+    return false;
   }
 
   /**
