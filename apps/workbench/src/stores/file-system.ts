@@ -190,11 +190,11 @@ export const useFileSystemStore = defineStore("file-system", () => {
 
   async function initializeForProject(project: Project) {
     try {
-      // If already initialized, clean up first and wait for cleanup
+      console.log(`Initializing file systems for project: ${project.id}`);
+
+      // Reset the store state but don't delete file systems
       if (initialized.value) {
-        await cleanup();
-        // Additional wait to ensure WebContainer and all timers are fully cleaned up
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        await resetStoreState();
       }
 
       // Reset systems array before initialization
@@ -203,15 +203,21 @@ export const useFileSystemStore = defineStore("file-system", () => {
       // Initialize sync manager
       await initializeSyncManager();
 
-      // Initialize browser file system as primary
+      // Create or reuse browser file system for this project
+      // The browser file system is automatically persisted with the project ID as name
+      console.log(
+        `Creating/loading browser file system for project: ${project.id}`
+      );
       const browserFs = new BrowserFileSystem({
         name: project.id,
         rootDir: "/"
       });
       await browserFs.initialize();
+
+      // Add the browser file system as a sync target
       await addSyncTarget(browserFs, "browser", "Browser Storage", true);
 
-      // Initialize web container as secondary
+      // Always create a new WebContainer for the project
       try {
         console.log("Booting WebContainer...");
         webContainer = await WebContainer.boot();
@@ -221,7 +227,12 @@ export const useFileSystemStore = defineStore("file-system", () => {
 
         const webContainerFs = new WebContainerFileSystem(webContainer);
         await webContainerFs.initialize();
-        await addSyncTarget(webContainerFs, "webcontainer", "WebContainer");
+        await addSyncTarget(
+          webContainerFs,
+          "webcontainer",
+          "WebContainer",
+          false
+        );
         console.log("WebContainer target added");
       } catch (webContainerError) {
         console.error("Failed to initialize WebContainer:", webContainerError);
@@ -233,7 +244,7 @@ export const useFileSystemStore = defineStore("file-system", () => {
     } catch (err) {
       // On error, ensure we clean up any partial initialization
       try {
-        await cleanup();
+        await resetStoreState();
       } catch (cleanupErr) {
         console.error(
           "Failed to cleanup after initialization error:",
@@ -245,8 +256,11 @@ export const useFileSystemStore = defineStore("file-system", () => {
     }
   }
 
-  async function cleanup() {
+  // Reset store state without deleting file systems
+  async function resetStoreState() {
     try {
+      console.log("Resetting store state without deleting file systems");
+
       // Stop monitoring
       stopMonitoring();
 
@@ -261,18 +275,6 @@ export const useFileSystemStore = defineStore("file-system", () => {
         })
       );
 
-      // Dispose of all file systems
-      await Promise.all(
-        systems.value.map(async (system) => {
-          try {
-            // Cast to any to access the dispose method until TypeScript definitions are updated
-            await system.fileSystem.dispose();
-          } catch (err) {
-            console.warn("Error disposing file system:", err);
-          }
-        })
-      );
-
       // Dispose sync manager and wait for completion
       if (syncManager) {
         await syncManager.dispose();
@@ -281,6 +283,7 @@ export const useFileSystemStore = defineStore("file-system", () => {
 
       // Ensure webcontainer is fully torn down before nulling
       if (webContainer) {
+        console.log("Tearing down WebContainer");
         await webContainer.teardown();
         webContainer = null;
       }
@@ -291,6 +294,23 @@ export const useFileSystemStore = defineStore("file-system", () => {
 
       // Wait a bit to ensure all cleanup is complete
       await new Promise((resolve) => setTimeout(resolve, 100));
+
+      console.log("Store state reset completed successfully");
+    } catch (err) {
+      console.error("Failed to reset store state:", err);
+      throw err;
+    }
+  }
+
+  // Full cleanup including deleting file systems
+  async function cleanup() {
+    try {
+      console.log("Performing full cleanup including file systems");
+
+      // First reset the store state
+      await resetStoreState();
+
+      console.log("Full cleanup completed successfully");
     } catch (err) {
       console.error("Failed to clean up file systems:", err);
       throw err;
@@ -324,15 +344,14 @@ export const useFileSystemStore = defineStore("file-system", () => {
       console.log(`Cleaning up file system for project: ${projectId}`);
 
       // Create a temporary BrowserFileSystem instance for the project
-      const fileSystem = new BrowserFileSystem({
+      // This will connect to the existing IndexedDB database for the project
+      const tempFileSystem = new BrowserFileSystem({
         name: projectId,
         rootDir: "/"
       });
 
-      // Call dispose to delete the IndexedDB database
-      // Cast to any to access the dispose method until TypeScript definitions are updated
-      await fileSystem.dispose();
-
+      // Dispose the file system to delete the IndexedDB database
+      await tempFileSystem.dispose();
       console.log(
         `Successfully cleaned up file system for project: ${projectId}`
       );
@@ -352,6 +371,7 @@ export const useFileSystemStore = defineStore("file-system", () => {
     initializeForProject,
     addSyncTarget,
     cleanup,
+    resetStoreState,
     initialized,
     getBrowserFileSystem,
     cleanupProjectFileSystem

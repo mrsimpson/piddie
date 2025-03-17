@@ -131,8 +131,9 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(async () => {
-  await projectStore.$dispose();
-  await fileSystemStore.cleanup();
+  // Clean up resources when the component is unmounted
+  // This will be called when navigating away from the project view entirely,
+  // but not when switching between projects (which is handled by the file system store)
 
   // Save panel widths before unmounting
   await savePanelWidths();
@@ -151,8 +152,9 @@ onBeforeUnmount(async () => {
 // Watch for route changes
 watch(
   () => route.params.id,
-  async (newId) => {
-    if (newId) {
+  async (newId, oldId) => {
+    if (newId && newId !== oldId) {
+      console.log(`Switching from project ${oldId} to ${newId}`);
       projectId.value = newId as string;
       await initializeFromRoute();
     }
