@@ -4,7 +4,7 @@ import { BaseLlmClient, ToolSupportStatus } from "./BaseLlmClient";
 import type { LlmMessage, LlmResponse, LlmStreamChunk } from "./types";
 import { LlmStreamEvent } from "./types";
 import { v4 as uuidv4 } from "uuid";
-import { ToolCall } from "@piddie/chat-management";
+import { type ToolCall } from "@piddie/chat-management";
 
 // Define interfaces for Ollama API requests and responses
 interface OllamaCompletionRequest {
@@ -22,15 +22,15 @@ interface OllamaCompletionRequest {
     stop?: string[];
   };
   tools?:
-    | Array<{
-        type: string;
-        function: {
-          name: string;
-          description?: string;
-          parameters: Record<string, unknown>;
-        };
-      }>
-    | undefined;
+  | Array<{
+    type: string;
+    function: {
+      name: string;
+      description?: string;
+      parameters: Record<string, unknown>;
+    };
+  }>
+  | undefined;
 }
 
 interface OllamaCompletionResponse {

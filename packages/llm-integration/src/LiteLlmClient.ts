@@ -15,7 +15,7 @@ import type {
 } from "./types";
 import { LlmStreamEvent } from "./types";
 import { BaseLlmClient, ToolSupportStatus } from "./BaseLlmClient";
-import { ToolCall } from "@piddie/chat-management";
+import { type ToolCall } from "@piddie/chat-management";
 
 /**
  * Client implementation for the LiteLLM API

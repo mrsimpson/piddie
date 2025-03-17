@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
-import type { FileSystem, FileSystemItem } from "@piddie/shared-types";
+import type {
+  FileSystem,
+  FileSystemItem,
+  FileChangeInfo
+} from "@piddie/shared-types";
 import "@shoelace-style/shoelace/dist/components/icon/icon.js";
 import "@shoelace-style/shoelace/dist/components/spinner/spinner.js";
 
@@ -14,6 +18,11 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: "navigate", path: string): void;
 }>();
+
+// Expose the handleFileChanges method to parent components
+defineExpose({
+  handleFileChanges
+});
 
 const sortedItems = computed(() => {
   return [...props.entries].sort((a, b) => {
@@ -33,6 +42,43 @@ function navigateTo(path: string) {
 function navigateUp() {
   const parentPath = props.currentPath.split("/").slice(0, -1).join("/") || "/";
   emit("navigate", parentPath);
+}
+
+// Handle file changes from sync target
+function handleFileChanges(changes: FileChangeInfo[]) {
+  console.log("FileSystemExplorer: Handling changes:", changes);
+  const currentDir = props.currentPath;
+
+  // Check if the current directory itself was deleted
+  const currentDirDeleted = changes.some(
+    (change) =>
+      change.type === "delete" &&
+      (change.path === currentDir || currentDir.startsWith(change.path + "/"))
+  );
+
+  if (currentDirDeleted) {
+    console.log(
+      "FileSystemExplorer: Current directory was deleted, navigating up"
+    );
+    // Navigate up if current directory was deleted
+    navigateUp();
+    return;
+  }
+
+  // Check if any of the changes affect the current directory
+  const hasChangesInCurrentDir = changes.some((change) => {
+    const parentDir = change.path.split("/").slice(0, -1).join("/") || "/";
+    return parentDir === currentDir;
+  });
+
+  if (hasChangesInCurrentDir) {
+    console.log(
+      "FileSystemExplorer: Changes affect current directory, reloading"
+    );
+    // Reload the current directory if changes affect it
+    // We don't need to do anything here as the parent component will handle reloading
+    // when it receives the changes
+  }
 }
 
 function formatSize(size: number): string {
