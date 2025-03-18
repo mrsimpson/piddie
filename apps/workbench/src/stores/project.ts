@@ -115,10 +115,8 @@ export const useProjectStore = defineStore("project", () => {
     if (isDeletingCurrentProject) {
       // If we're deleting the current project, clean up all file systems
       await fileSystemStore.cleanup();
-    } else {
-      // If we're deleting a different project, just clean up that project's file system
-      await fileSystemStore.cleanupProjectFileSystem(projectId);
     }
+    await fileSystemStore.cleanupProjectFileSystem(projectId);
 
     // Delete the project
     await projectManager.deleteProject(projectId);

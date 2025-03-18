@@ -22,15 +22,15 @@ interface OllamaCompletionRequest {
     stop?: string[];
   };
   tools?:
-  | Array<{
-    type: string;
-    function: {
-      name: string;
-      description?: string;
-      parameters: Record<string, unknown>;
-    };
-  }>
-  | undefined;
+    | Array<{
+        type: string;
+        function: {
+          name: string;
+          description?: string;
+          parameters: Record<string, unknown>;
+        };
+      }>
+    | undefined;
 }
 
 interface OllamaCompletionResponse {
