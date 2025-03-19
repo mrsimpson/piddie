@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --port 9999",
+    "dev": "vite --port 9004",
     "build": "vue-tsc --build && vite build",
     "preview": "vite preview",
     "build-only": "vite build",
@@ -16,7 +16,6 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.6.1",
     "@piddie/chat-management": "workspace:*",
-    "@piddie/chat-management-ui-vue": "workspace:*",
     "@piddie/files-management": "workspace:*",
     "@piddie/llm-integration": "workspace:*",
     "@piddie/project-management": "workspace:*",

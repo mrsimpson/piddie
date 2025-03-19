@@ -1,10 +1,10 @@
 {
-  "name": "@piddie/workbench",
+  "name": "@piddie/chat-management-ui-vue",
   "version": "0.0.1",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --port 9999",
+    "dev": "vite --port 9002",
     "build": "vue-tsc --build && vite build",
     "preview": "vite preview",
     "build-only": "vite build",
@@ -14,16 +14,8 @@
     "test": "vitest --run --passWithNoTests"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.6.1",
     "@piddie/chat-management": "workspace:*",
-    "@piddie/chat-management-ui-vue": "workspace:*",
-    "@piddie/files-management": "workspace:*",
-    "@piddie/llm-integration": "workspace:*",
-    "@piddie/project-management": "workspace:*",
-    "@piddie/shared-types": "workspace:*",
     "@shoelace-style/shoelace": "^2.19.1",
-    "@webcontainer/api": "1.5.1-internal.6",
-    "dexie": "4.0.11",
     "pinia": "3.0.1",
     "vitest": "3.0.7",
     "vue": "^3.5.13",

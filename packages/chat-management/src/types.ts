@@ -1,5 +1,7 @@
 import type { ChatCompletionRole } from "openai/resources/chat";
 
+export type { ChatCompletionRole };
+
 /**
  * Represents the status of a message
  */

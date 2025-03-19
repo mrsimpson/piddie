@@ -172,6 +172,9 @@ importers:
       '@piddie/chat-management':
         specifier: workspace:*
         version: link:../../packages/chat-management
+      '@piddie/chat-management-ui-vue':
+        specifier: workspace:*
+        version: link:../../packages/chat-management-ui-vue
       '@piddie/files-management':
         specifier: workspace:*
         version: link:../../packages/files-management
@@ -240,6 +243,52 @@ importers:
         specifier: 4.85.1
         version: 4.85.1(ws@8.18.1)(zod@3.24.2)
 
+  packages/chat-management-ui-vue:
+    dependencies:
+      '@piddie/chat-management':
+        specifier: workspace:*
+        version: link:../chat-management
+      '@shoelace-style/shoelace':
+        specifier: ^2.19.1
+        version: 2.19.1(@floating-ui/utils@0.2.9)(@types/react@19.0.8)
+      pinia:
+        specifier: 3.0.1
+        version: 3.0.1(typescript@5.7.3)(vue@3.5.13(typescript@5.7.3))
+      vitest:
+        specifier: 3.0.7
+        version: 3.0.7(@types/node@22.10.7)(jiti@2.4.2)(yaml@2.6.1)
+      vue:
+        specifier: ^3.5.13
+        version: 3.5.13(typescript@5.7.3)
+      vue-router:
+        specifier: ^4.5.0
+        version: 4.5.0(vue@3.5.13(typescript@5.7.3))
+    devDependencies:
+      '@vitejs/plugin-vue':
+        specifier: ^4.2.3
+        version: 4.6.2(vite@6.0.11(@types/node@22.10.7)(jiti@2.4.2)(yaml@2.6.1))(vue@3.5.13(typescript@5.7.3))
+      '@vue/test-utils':
+        specifier: 2.4.6
+        version: 2.4.6
+      '@vue/tsconfig':
+        specifier: ^0.7.0
+        version: 0.7.0(typescript@5.7.3)(vue@3.5.13(typescript@5.7.3))
+      typescript:
+        specifier: ~5.7.3
+        version: 5.7.3
+      vite:
+        specifier: ^6.0.11
+        version: 6.0.11(@types/node@22.10.7)(jiti@2.4.2)(yaml@2.6.1)
+      vite-plugin-static-copy:
+        specifier: 2.2.0
+        version: 2.2.0(vite@6.0.11(@types/node@22.10.7)(jiti@2.4.2)(yaml@2.6.1))
+      vite-plugin-vue-devtools:
+        specifier: ^7.7.0
+        version: 7.7.1(rollup@4.31.0)(vite@6.0.11(@types/node@22.10.7)(jiti@2.4.2)(yaml@2.6.1))(vue@3.5.13(typescript@5.7.3))
+      vue-tsc:
+        specifier: ^2.2.0
+        version: 2.2.0(typescript@5.7.3)
+
   packages/files-management:
     dependencies:
       '@isomorphic-git/lightning-fs':
@@ -274,6 +323,55 @@ importers:
         specifier: ^1.0.0
         version: 1.6.1(@types/node@22.10.7)
 
+  packages/files-management-ui-vue:
+    dependencies:
+      '@piddie/files-management':
+        specifier: workspace:*
+        version: link:../files-management
+      '@piddie/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
+      '@shoelace-style/shoelace':
+        specifier: ^2.19.1
+        version: 2.19.1(@floating-ui/utils@0.2.9)(@types/react@19.0.8)
+      pinia:
+        specifier: 3.0.1
+        version: 3.0.1(typescript@5.7.3)(vue@3.5.13(typescript@5.7.3))
+      vitest:
+        specifier: 3.0.7
+        version: 3.0.7(@types/node@22.10.7)(jiti@2.4.2)(yaml@2.6.1)
+      vue:
+        specifier: ^3.5.13
+        version: 3.5.13(typescript@5.7.3)
+      vue-router:
+        specifier: ^4.5.0
+        version: 4.5.0(vue@3.5.13(typescript@5.7.3))
+    devDependencies:
+      '@vitejs/plugin-vue':
+        specifier: ^4.2.3
+        version: 4.6.2(vite@6.0.11(@types/node@22.10.7)(jiti@2.4.2)(yaml@2.6.1))(vue@3.5.13(typescript@5.7.3))
+      '@vue/test-utils':
+        specifier: 2.4.6
+        version: 2.4.6
+      '@vue/tsconfig':
+        specifier: ^0.7.0
+        version: 0.7.0(typescript@5.7.3)(vue@3.5.13(typescript@5.7.3))
+      typescript:
+        specifier: ~5.7.3
+        version: 5.7.3
+      vite:
+        specifier: ^6.0.11
+        version: 6.0.11(@types/node@22.10.7)(jiti@2.4.2)(yaml@2.6.1)
+      vite-plugin-static-copy:
+        specifier: 2.2.0
+        version: 2.2.0(vite@6.0.11(@types/node@22.10.7)(jiti@2.4.2)(yaml@2.6.1))
+      vite-plugin-vue-devtools:
+        specifier: ^7.7.0
+        version: 7.7.1(rollup@4.31.0)(vite@6.0.11(@types/node@22.10.7)(jiti@2.4.2)(yaml@2.6.1))(vue@3.5.13(typescript@5.7.3))
+      vue-tsc:
+        specifier: ^2.2.0
+        version: 2.2.0(typescript@5.7.3)
+
   packages/llm-integration:
     dependencies:
       '@modelcontextprotocol/sdk':
@@ -304,6 +402,73 @@ importers:
         specifier: 11.1.0
         version: 11.1.0
 
+  packages/llm-integration-ui-vue:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: 1.6.1
+        version: 1.6.1
+      '@piddie/chat-management':
+        specifier: workspace:*
+        version: link:../chat-management
+      '@piddie/files-management':
+        specifier: workspace:*
+        version: link:../files-management
+      '@piddie/llm-integration':
+        specifier: workspace:*
+        version: link:../llm-integration
+      '@piddie/project-management':
+        specifier: workspace:*
+        version: link:../project-management
+      '@piddie/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
+      '@shoelace-style/shoelace':
+        specifier: ^2.19.1
+        version: 2.19.1(@floating-ui/utils@0.2.9)(@types/react@19.0.8)
+      '@webcontainer/api':
+        specifier: 1.5.1-internal.6
+        version: 1.5.1-internal.6
+      dexie:
+        specifier: 4.0.11
+        version: 4.0.11
+      pinia:
+        specifier: 3.0.1
+        version: 3.0.1(typescript@5.7.3)(vue@3.5.13(typescript@5.7.3))
+      vitest:
+        specifier: 3.0.7
+        version: 3.0.7(@types/node@22.10.7)(jiti@2.4.2)(yaml@2.6.1)
+      vue:
+        specifier: ^3.5.13
+        version: 3.5.13(typescript@5.7.3)
+      vue-router:
+        specifier: ^4.5.0
+        version: 4.5.0(vue@3.5.13(typescript@5.7.3))
+    devDependencies:
+      '@vitejs/plugin-vue':
+        specifier: ^4.2.3
+        version: 4.6.2(vite@6.0.11(@types/node@22.10.7)(jiti@2.4.2)(yaml@2.6.1))(vue@3.5.13(typescript@5.7.3))
+      '@vue/test-utils':
+        specifier: 2.4.6
+        version: 2.4.6
+      '@vue/tsconfig':
+        specifier: ^0.7.0
+        version: 0.7.0(typescript@5.7.3)(vue@3.5.13(typescript@5.7.3))
+      typescript:
+        specifier: ~5.7.3
+        version: 5.7.3
+      vite:
+        specifier: ^6.0.11
+        version: 6.0.11(@types/node@22.10.7)(jiti@2.4.2)(yaml@2.6.1)
+      vite-plugin-static-copy:
+        specifier: 2.2.0
+        version: 2.2.0(vite@6.0.11(@types/node@22.10.7)(jiti@2.4.2)(yaml@2.6.1))
+      vite-plugin-vue-devtools:
+        specifier: ^7.7.0
+        version: 7.7.1(rollup@4.31.0)(vite@6.0.11(@types/node@22.10.7)(jiti@2.4.2)(yaml@2.6.1))(vue@3.5.13(typescript@5.7.3))
+      vue-tsc:
+        specifier: ^2.2.0
+        version: 2.2.0(typescript@5.7.3)
+
   packages/project-management:
     dependencies:
       '@piddie/chat-management':
@@ -315,6 +480,73 @@ importers:
       dexie:
         specifier: 4.0.11
         version: 4.0.11
+
+  packages/project-management-ui-vue:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: 1.6.1
+        version: 1.6.1
+      '@piddie/chat-management':
+        specifier: workspace:*
+        version: link:../chat-management
+      '@piddie/files-management':
+        specifier: workspace:*
+        version: link:../files-management
+      '@piddie/llm-integration':
+        specifier: workspace:*
+        version: link:../llm-integration
+      '@piddie/project-management':
+        specifier: workspace:*
+        version: link:../project-management
+      '@piddie/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
+      '@shoelace-style/shoelace':
+        specifier: ^2.19.1
+        version: 2.19.1(@floating-ui/utils@0.2.9)(@types/react@19.0.8)
+      '@webcontainer/api':
+        specifier: 1.5.1-internal.6
+        version: 1.5.1-internal.6
+      dexie:
+        specifier: 4.0.11
+        version: 4.0.11
+      pinia:
+        specifier: 3.0.1
+        version: 3.0.1(typescript@5.7.3)(vue@3.5.13(typescript@5.7.3))
+      vitest:
+        specifier: 3.0.7
+        version: 3.0.7(@types/node@22.10.7)(jiti@2.4.2)(yaml@2.6.1)
+      vue:
+        specifier: ^3.5.13
+        version: 3.5.13(typescript@5.7.3)
+      vue-router:
+        specifier: ^4.5.0
+        version: 4.5.0(vue@3.5.13(typescript@5.7.3))
+    devDependencies:
+      '@vitejs/plugin-vue':
+        specifier: ^4.2.3
+        version: 4.6.2(vite@6.0.11(@types/node@22.10.7)(jiti@2.4.2)(yaml@2.6.1))(vue@3.5.13(typescript@5.7.3))
+      '@vue/test-utils':
+        specifier: 2.4.6
+        version: 2.4.6
+      '@vue/tsconfig':
+        specifier: ^0.7.0
+        version: 0.7.0(typescript@5.7.3)(vue@3.5.13(typescript@5.7.3))
+      typescript:
+        specifier: ~5.7.3
+        version: 5.7.3
+      vite:
+        specifier: ^6.0.11
+        version: 6.0.11(@types/node@22.10.7)(jiti@2.4.2)(yaml@2.6.1)
+      vite-plugin-static-copy:
+        specifier: 2.2.0
+        version: 2.2.0(vite@6.0.11(@types/node@22.10.7)(jiti@2.4.2)(yaml@2.6.1))
+      vite-plugin-vue-devtools:
+        specifier: ^7.7.0
+        version: 7.7.1(rollup@4.31.0)(vite@6.0.11(@types/node@22.10.7)(jiti@2.4.2)(yaml@2.6.1))(vue@3.5.13(typescript@5.7.3))
+      vue-tsc:
+        specifier: ^2.2.0
+        version: 2.2.0(typescript@5.7.3)
 
   packages/runtime-environment:
     dependencies:
@@ -5603,7 +5835,7 @@ snapshots:
       '@vue/devtools-shared': 7.7.2
       mitt: 3.0.1
       nanoid: 5.0.9
-      pathe: 2.0.2
+      pathe: 2.0.3
       vite-hot-client: 0.2.4(vite@6.0.11(@types/node@22.10.7)(jiti@2.4.2)(yaml@2.6.1))
       vue: 3.5.13(typescript@5.7.3)
     transitivePeerDependencies:
@@ -5899,7 +6131,7 @@ snapshots:
       assertion-error: 2.0.1
       check-error: 2.1.1
       deep-eql: 5.0.2
-      loupe: 3.1.2
+      loupe: 3.1.3
       pathval: 2.0.0
 
   chalk@4.1.2:
@@ -7215,7 +7447,7 @@ snapshots:
   mlly@1.7.4:
     dependencies:
       acorn: 8.14.0
-      pathe: 2.0.2
+      pathe: 2.0.3
       pkg-types: 1.3.1
       ufo: 1.5.4
 
@@ -7424,7 +7656,7 @@ snapshots:
     dependencies:
       confbox: 0.1.8
       mlly: 1.7.4
-      pathe: 2.0.2
+      pathe: 2.0.3
 
   points-on-curve@0.2.0: {}
 
