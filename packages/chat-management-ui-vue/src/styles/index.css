@@ -1,0 +1,11 @@
+/* Import Shoelace theme styles - required for the components */
+@import '@shoelace-style/shoelace/dist/themes/light.css';
+
+/* General utility styles for chat components */
+.piddie-chat-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+}

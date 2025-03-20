@@ -4,9 +4,9 @@ import { useChatStore } from "../stores/chat";
 import { useLlmStore } from "../stores/llm";
 import { useProjectStore } from "../stores/project";
 import { MessageStatus } from "@piddie/chat-management";
+import { MessagesList, SimpleChatInput } from "@piddie/chat-management-ui-vue";
 import CollapsiblePanel from "./ui/CollapsiblePanel.vue";
 import LlmSettings from "./LlmSettings.vue";
-import MessagesList from "./MessagesList.vue";
 import "@shoelace-style/shoelace/dist/components/card/card.js";
 import "@shoelace-style/shoelace/dist/components/input/input.js";
 import "@shoelace-style/shoelace/dist/components/button/button.js";
@@ -26,7 +26,6 @@ const chatStore = useChatStore();
 const llmStore = useLlmStore();
 const projectStore = useProjectStore();
 
-const userInput = ref("");
 const isSubmitting = computed(() => llmStore.isProcessing);
 const messages = computed(() => chatStore.messages);
 const currentChat = computed(() => chatStore.currentChat);
@@ -78,19 +77,16 @@ watch(
 );
 
 // Send a message to the LLM
-async function sendMessage() {
+async function sendMessage(content: string) {
   if (
-    !userInput.value.trim() ||
+    !content.trim() ||
     isSubmitting.value ||
     !currentChat.value ||
     !isModelSelected.value
   )
     return;
 
-  const message = userInput.value;
-  userInput.value = "";
-
-  await llmStore.sendMessage(message, currentChat.value.id);
+  await llmStore.sendMessage(content, currentChat.value.id);
 }
 
 // Cancel the current streaming response
@@ -136,15 +132,15 @@ function handleCollapse(isCollapsed: boolean) {
           <LlmSettings :embedded="true" />
         </div>
 
-        <!-- Text Input Area -->
-        <textarea
-          v-model="userInput"
-          placeholder="Type your message here..."
-          @keydown.enter.prevent="sendMessage"
-          :disabled="isSubmitting || !currentProject || !isModelSelected"
-        ></textarea>
+        <!-- Chat Input -->
+        <div class="chat-input-wrapper">
+          <SimpleChatInput
+            @send-message="sendMessage"
+            :disabled="isSubmitting || !currentProject || !isModelSelected"
+          />
+        </div>
 
-        <!-- Model Selection and Send Button Row -->
+        <!-- Model Selection and Actions Row -->
         <div class="model-and-actions-row">
           <!-- Model Selection Button -->
           <div
@@ -160,32 +156,19 @@ function handleCollapse(isCollapsed: boolean) {
             ></sl-icon>
           </div>
 
-          <!-- Send and Cancel Buttons -->
-          <div class="chat-actions">
-            <button
-              v-if="llmStore.isStreaming"
-              @click="cancelStreaming"
-              class="cancel-button"
-            >
+          <!-- Cancel Button -->
+          <div class="chat-actions" v-if="llmStore.isStreaming">
+            <button @click="cancelStreaming" class="cancel-button">
               Cancel
             </button>
+          </div>
 
-            <button
-              @click="sendMessage"
-              :disabled="
-                isSubmitting ||
-                !userInput.trim() ||
-                !currentProject ||
-                !isModelSelected
-              "
-              class="send-button"
-            >
-              <span v-if="isSubmitting">
-                <sl-spinner class="send-spinner"></sl-spinner>
-                Sending...
-              </span>
-              <span v-else> Send </span>
-            </button>
+          <!-- Processing Indicator -->
+          <div class="chat-actions" v-if="isSubmitting">
+            <div class="processing-indicator">
+              <sl-spinner class="send-spinner"></sl-spinner>
+              Sending...
+            </div>
           </div>
         </div>
       </div>
@@ -226,22 +209,8 @@ function handleCollapse(isCollapsed: boolean) {
   box-sizing: border-box;
 }
 
-textarea {
-  width: 100%;
-  min-height: 80px;
-  padding: 0.75rem;
-  border: 1px solid var(--sl-color-neutral-300);
-  border-radius: var(--sl-border-radius-medium);
-  resize: vertical;
-  font-family: inherit;
-  font-size: inherit;
+.chat-input-wrapper {
   margin-bottom: 0.5rem;
-  box-sizing: border-box;
-}
-
-textarea:disabled {
-  background-color: var(--sl-color-neutral-100);
-  cursor: not-allowed;
 }
 
 .model-and-actions-row {
@@ -305,6 +274,14 @@ textarea:disabled {
   flex-shrink: 0;
 }
 
+.processing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--sl-color-neutral-700);
+}
+
 button {
   padding: 0.5rem 1rem;
   border: none;
@@ -318,24 +295,6 @@ button {
   white-space: nowrap;
 }
 
-.send-button {
-  background-color: var(--sl-color-primary-600);
-  color: white;
-}
-
-.send-button:hover:not(:disabled) {
-  background-color: var(--sl-color-primary-700);
-}
-
-.send-button:disabled {
-  background-color: var(--sl-color-neutral-300);
-  cursor: not-allowed;
-}
-
-.send-spinner {
-  font-size: 1rem;
-}
-
 .cancel-button {
   background-color: var(--sl-color-neutral-300);
   color: var(--sl-color-neutral-900);
@@ -343,6 +302,10 @@ button {
 
 .cancel-button:hover {
   background-color: var(--sl-color-neutral-400);
+}
+
+.send-spinner {
+  font-size: 1rem;
 }
 
 :deep(.panel-content) {

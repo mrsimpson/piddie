@@ -3,11 +3,21 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "main": "./dist/index.umd.js",
+  "module": "./dist/index.es.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.es.js",
+      "require": "./dist/index.umd.js"
+    },
+    "./styles": "./dist/assets/index.css"
+  },
   "scripts": {
     "dev": "vite --port 9002",
-    "build": "vue-tsc --build && vite build",
+    "build": "rm -rf dist && vue-tsc --build --emitDeclarationOnly --declaration && vite build",
     "preview": "vite preview",
-    "build-only": "vite build",
     "type-check": "vue-tsc --build",
     "lint": "eslint .",
     "format": "prettier --write src/",
@@ -25,8 +35,8 @@
     "@vitejs/plugin-vue": "^4.2.3",
     "@vue/test-utils": "2.4.6",
     "@vue/tsconfig": "^0.7.0",
-    "typescript": "~5.7.3",
     "vite": "^6.0.11",
+    "vite-plugin-dts": "4.5.3",
     "vite-plugin-static-copy": "2.2.0",
     "vite-plugin-vue-devtools": "^7.7.0",
     "vue-tsc": "^2.2.0"

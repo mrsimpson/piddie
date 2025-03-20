@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 
+const props = defineProps<{
+  disabled?: boolean;
+}>();
+
 const emit = defineEmits<{
   (event: 'send-message', content: string): void;
 }>();
@@ -8,7 +12,7 @@ const emit = defineEmits<{
 const userInput = ref('');
 
 function sendMessage() {
-  if (!userInput.value.trim()) return;
+  if (!userInput.value.trim() || props.disabled) return;
   
   emit('send-message', userInput.value);
   userInput.value = '';
@@ -22,10 +26,12 @@ function sendMessage() {
       placeholder="Type your message here..."
       @keydown.enter.prevent="sendMessage"
       rows="3"
+      :disabled="disabled"
     ></textarea>
     <button 
       @click="sendMessage"
       class="send-button"
+      :disabled="disabled || !userInput.trim()"
     >
       Send
     </button>
@@ -52,6 +58,11 @@ textarea {
   outline: none;
 }
 
+textarea:disabled {
+  background-color: var(--sl-color-neutral-100);
+  cursor: not-allowed;
+}
+
 .send-button {
   align-self: flex-end;
   background-color: var(--sl-color-primary-600);
@@ -64,7 +75,7 @@ textarea {
   font-weight: 500;
 }
 
-.send-button:hover {
+.send-button:hover:not(:disabled) {
   background-color: var(--sl-color-primary-700);
 }
 
