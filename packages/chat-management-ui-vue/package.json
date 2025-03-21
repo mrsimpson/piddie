@@ -6,19 +6,21 @@
   "main": "./dist/index.umd.js",
   "module": "./dist/index.es.js",
   "types": "./dist/index.d.ts",
+  "style": "./dist/style.css",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.es.js",
       "require": "./dist/index.umd.js"
     },
-    "./styles": "./dist/assets/index.css"
+    "./style": "./dist/style.css"
   },
   "scripts": {
-    "dev": "vite --port 9002",
-    "build": "rm -rf dist && vue-tsc --build --emitDeclarationOnly --declaration && vite build",
+    "dev": "NODE_ENV=production vite build --watch",
+    "run:demo": "NODE_ENV=development vite --port 9002",
+    "build": "rm -rf dist && NODE_ENV=production vite build",
     "preview": "vite preview",
-    "type-check": "vue-tsc --build",
+    "typecheck": "vue-tsc --build",
     "lint": "eslint .",
     "format": "prettier --write src/",
     "test": "vitest --run --passWithNoTests"

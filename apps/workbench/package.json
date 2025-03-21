@@ -8,7 +8,7 @@
     "build": "vue-tsc --build && vite build",
     "preview": "vite preview",
     "build-only": "vite build",
-    "type-check": "vue-tsc --build",
+    "typecheck": "vue-tsc --build",
     "lint": "eslint .",
     "format": "prettier --write src/",
     "test": "vitest --run --passWithNoTests"

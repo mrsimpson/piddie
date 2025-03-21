@@ -3,7 +3,10 @@ import { ref, onMounted, watch } from "vue";
 import { storeToRefs } from "pinia";
 import MessagesList from "./components/MessagesList.vue";
 import SimpleChatInput from "./components/SimpleChatInput.vue";
-import { MessageStatus, type ChatCompletionRole } from "@piddie/chat-management";
+import {
+  MessageStatus,
+  type ChatCompletionRole
+} from "@piddie/chat-management";
 import { useChatStore } from "./stores/chat";
 
 // Demo project ID
@@ -24,7 +27,7 @@ onMounted(async () => {
   try {
     // Create a new chat for the demo project
     await chatStore.createChat(DEMO_PROJECT_ID, { demo: true });
-    
+
     // Explicitly load the chat after creation to ensure messages are available
     if (currentChat.value) {
       await chatStore.loadChat(currentChat.value.id);
@@ -40,43 +43,45 @@ function handleSidePanelCollapse(collapsed: boolean) {
 
 async function handleSendMessage(content: string) {
   if (!content.trim() || !currentChat.value) return;
-  
+
   try {
     if (selectedRole.value === "user") {
       // When sending as user, use the sendMessageToLlm to create a user message and assistant placeholder
-      const { userMessage, assistantPlaceholder } = await chatStore.sendMessageToLlm(
-        currentChat.value.id,
-        content,
-        "You"
-      );
-      
+      const { userMessage, assistantPlaceholder } =
+        await chatStore.sendMessageToLlm(currentChat.value.id, content, "You");
+
       console.log("User message created:", userMessage.id);
       console.log("Assistant placeholder created:", assistantPlaceholder.id);
-      
+
       // Ensure the chat is reloaded to display the new messages
       await chatStore.loadChat(currentChat.value.id);
-      
+
       // Store the placeholder ID for later use when assistant responds
       currentAssistantPlaceholder.value = assistantPlaceholder.id;
-      
+
       // Automatically switch to assistant role after sending a user message
       selectedRole.value = "assistant";
-      
     } else {
       // When sending as assistant, update the placeholder if available
       if (currentAssistantPlaceholder.value) {
         // Update the existing placeholder with the assistant's response
-        await chatStore.updateMessageContent(currentAssistantPlaceholder.value, content);
-        await chatStore.updateMessageStatus(currentAssistantPlaceholder.value, MessageStatus.SENT);
-        
+        await chatStore.updateMessageContent(
+          currentAssistantPlaceholder.value,
+          content
+        );
+        await chatStore.updateMessageStatus(
+          currentAssistantPlaceholder.value,
+          MessageStatus.SENT
+        );
+
         // Reload the chat to reflect the updated message
         if (currentChat.value) {
           await chatStore.loadChat(currentChat.value.id);
         }
-        
+
         // Clear the placeholder reference since it's been used
         currentAssistantPlaceholder.value = null;
-        
+
         // Switch back to user role for the next message
         selectedRole.value = "user";
       } else {
@@ -87,10 +92,10 @@ async function handleSendMessage(content: string) {
           selectedRole.value,
           "Assistant"
         );
-        
+
         // Reload the chat to reflect the new message
         await chatStore.loadChat(currentChat.value.id);
-        
+
         // Switch back to user role
         selectedRole.value = "user";
       }
@@ -101,24 +106,30 @@ async function handleSendMessage(content: string) {
 }
 
 // Debug function to log messages when they change
-watch(messages, (newMessages) => {
-  console.log("Messages updated:", newMessages.length);
-  newMessages.forEach(msg => {
-    console.log(`Message: ${msg.id} - Role: ${msg.role} - Content: ${msg.content.substring(0, 20)}...`);
-  });
-}, { deep: true });
+watch(
+  messages,
+  (newMessages) => {
+    console.log("Messages updated:", newMessages.length);
+    newMessages.forEach((msg) => {
+      console.log(
+        `Message: ${msg.id} - Role: ${msg.role} - Content: ${msg.content.substring(0, 20)}...`
+      );
+    });
+  },
+  { deep: true }
+);
 
 async function clearChat() {
   if (currentChat.value) {
     try {
       await chatStore.deleteChat(currentChat.value.id);
       await chatStore.createChat(DEMO_PROJECT_ID, { demo: true });
-      
+
       // Make sure to reload the chat after creation
       if (currentChat.value) {
         await chatStore.loadChat(currentChat.value.id);
       }
-      
+
       currentAssistantPlaceholder.value = null;
       selectedRole.value = "user";
     } catch (error) {
@@ -139,41 +150,48 @@ async function clearChat() {
       <div class="main-content">
         <div class="chat-demo-container">
           <h1>Chat Management Demo</h1>
-          
+
           <!-- Debug info - can be removed in production -->
           <div class="debug-info">
             <small>Messages count: {{ messages.length }}</small>
             <small v-if="currentChat">Chat ID: {{ currentChat.id }}</small>
           </div>
-          
+
           <div class="role-selector">
             <label>
-              <input 
-                type="radio" 
-                v-model="selectedRole" 
+              <input
+                type="radio"
+                v-model="selectedRole"
                 value="user"
                 :disabled="!!currentAssistantPlaceholder"
-              > Send as User
+              />
+              Send as User
             </label>
             <label>
-              <input 
-                type="radio" 
-                v-model="selectedRole" 
+              <input
+                type="radio"
+                v-model="selectedRole"
                 value="assistant"
                 :disabled="!currentAssistantPlaceholder"
-              > Send as Assistant
+              />
+              Send as Assistant
             </label>
             <div class="current-role">
-              Current turn: <strong>{{ selectedRole === "user" ? "User" : "Assistant" }}</strong>
-              <span v-if="currentAssistantPlaceholder" class="hint">(Assistant needs to respond)</span>
+              Current turn:
+              <strong>{{
+                selectedRole === "user" ? "User" : "Assistant"
+              }}</strong>
+              <span v-if="currentAssistantPlaceholder" class="hint"
+                >(Assistant needs to respond)</span
+              >
             </div>
             <button @click="clearChat" class="clear-btn">Clear Chat</button>
           </div>
-          
+
           <div class="messages-container">
             <MessagesList :messages="messages" />
           </div>
-          
+
           <div class="chat-input">
             <SimpleChatInput @send-message="handleSendMessage" />
           </div>

@@ -1,6 +1,11 @@
 import { ref, computed } from "vue";
 import { defineStore } from "pinia";
-import type { Chat, ChatCompletionRole, Message, ToolCall } from "@piddie/chat-management";
+import type {
+  Chat,
+  ChatCompletionRole,
+  Message,
+  ToolCall
+} from "@piddie/chat-management";
 import { createChatManager, MessageStatus } from "@piddie/chat-management";
 import { v4 as uuidv4 } from "uuid";
 

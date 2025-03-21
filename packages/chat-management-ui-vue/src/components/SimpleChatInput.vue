@@ -1,21 +1,21 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref } from "vue";
 
 const props = defineProps<{
   disabled?: boolean;
 }>();
 
 const emit = defineEmits<{
-  (event: 'send-message', content: string): void;
+  (event: "send-message", content: string): void;
 }>();
 
-const userInput = ref('');
+const userInput = ref("");
 
 function sendMessage() {
   if (!userInput.value.trim() || props.disabled) return;
-  
-  emit('send-message', userInput.value);
-  userInput.value = '';
+
+  emit("send-message", userInput.value);
+  userInput.value = "";
 }
 </script>
 
@@ -28,7 +28,7 @@ function sendMessage() {
       rows="3"
       :disabled="disabled"
     ></textarea>
-    <button 
+    <button
       @click="sendMessage"
       class="send-button"
       :disabled="disabled || !userInput.trim()"
@@ -83,4 +83,4 @@ textarea:disabled {
   background-color: var(--sl-color-neutral-400);
   cursor: not-allowed;
 }
-</style> 
+</style>
