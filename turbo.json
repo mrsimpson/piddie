@@ -1,18 +1,10 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "tasks": {
-    "//#lint": {
-      "inputs": ["!.git/**", "!node_modules/**", "!packages/**"]
-    },
-    "//#lint:fix": {
-      "inputs": ["!.git/**", "!node_modules/**", "!packages/**"]
-    },
-    "//#format": {
-      "inputs": ["!.git/**", "!node_modules/**", "!packages/**"]
-    },
-    "//#format:fix": {
-      "inputs": ["!.git/**", "!node_modules/**", "!packages/**"]
-    },
+    "//#lint": {},
+    "//#lint:fix": {},
+    "//#format": {},
+    "//#format:fix": {},
     "build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**", "tsconfig.tsbuildinfo"]

@@ -4,6 +4,3 @@ pnpm-lock.yaml
 node_modules
 dist
 docs/.vitepress/cache
-
-# Packages
-/packages
