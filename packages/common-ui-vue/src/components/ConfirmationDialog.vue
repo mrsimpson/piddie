@@ -13,7 +13,6 @@ const props = defineProps<{
 const dialogRef = ref<SlDialog | null>(null);
 const confirmButtonRef = ref<HTMLElement | null>(null);
 const cancelButtonRef = ref<HTMLElement | null>(null);
-const closeButtonRef = ref<HTMLElement | null>(null);
 
 function showDialog() {
   dialogRef.value?.show();

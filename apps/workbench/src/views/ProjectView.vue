@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, watch, provide, computed } from "vue";
 import { useRoute } from "vue-router";
-import { useProjectStore } from "@/stores/project";
+import { useProjectStore } from "../../../../packages/project-management-ui-vue/src/stores/project";
 import { useFileSystemStore } from "@piddie/files-management-ui-vue";
 import { storeToRefs } from "pinia";
 import { FileExplorerPanel } from "@piddie/files-management-ui-vue";
@@ -13,7 +13,6 @@ import "@piddie/files-management-ui-vue/style";
 const route = useRoute();
 const projectStore = useProjectStore();
 const fileSystemStore = useFileSystemStore();
-const { currentProject } = storeToRefs(projectStore);
 const error = ref<Error | null>(null);
 
 const projectId = ref<string | null>(null);

@@ -2,9 +2,9 @@
 import { ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useProjectStore } from "../stores/project";
-import type { Project } from "../types/project";
+import type { Project } from "@piddie/shared-types";
 import { EditableText } from "@piddie/common-ui-vue";
-import ConfirmationDialog from "./ConfirmationDialog.vue";
+import { ConfirmationDialog } from "@piddie/common-ui-vue";
 import "@shoelace-style/shoelace/dist/components/card/card.js";
 import "@shoelace-style/shoelace/dist/components/relative-time/relative-time.js";
 import "@shoelace-style/shoelace/dist/components/icon-button/icon-button.js";

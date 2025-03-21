@@ -1,5 +1,5 @@
 {
-  "name": "@piddie/files-management-ui-vue",
+  "name": "@piddie/project-management-ui-vue",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -27,13 +27,15 @@
   },
   "dependencies": {
     "@piddie/common-ui-vue": "workspace:*",
-    "@piddie/files-management": "workspace:*",
     "@piddie/shared-types": "workspace:*",
+    "@piddie/project-management": "workspace:*",
+    "@piddie/chat-management-ui-vue": "workspace:*",
+    "@piddie/files-management-ui-vue": "workspace:*",
     "@shoelace-style/shoelace": "^2.19.1",
-    "@webcontainer/api": "1.5.1-internal.6",
     "pinia": "3.0.1",
     "vitest": "3.0.7",
-    "vue": "^3.5.13"
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.3",

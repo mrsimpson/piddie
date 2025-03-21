@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { useRouter } from "vue-router";
-import { useProjectStore } from "../stores/project";
-import { useChatStore } from "../stores/chat";
+import { useProjectStore } from "@piddie/project-management-ui-vue";
+import { useChatStore } from "@piddie/chat-management-ui-vue";
 import { useLlmStore } from "../stores/llm";
 import LlmSettings from "../components/LlmSettings.vue";
 import "@shoelace-style/shoelace/dist/components/textarea/textarea.js";

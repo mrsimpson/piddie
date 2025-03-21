@@ -1,8 +1,8 @@
 import { ref, computed } from "vue";
 import { defineStore } from "pinia";
-import type { Project } from "../types/project";
+import type { Project } from "@piddie/shared-types";
 import { createProjectManager } from "@piddie/project-management";
-import { useChatStore } from "./chat";
+import { useChatStore } from "@piddie/chat-management-ui-vue";
 import { useFileSystemStore } from "@piddie/files-management-ui-vue";
 import { storeToRefs } from "pinia";
 

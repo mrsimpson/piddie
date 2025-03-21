@@ -12,7 +12,7 @@ import type { SynchronizedFileSystem } from "../types/file-system";
 import { createSynchronizedFileSystem } from "../types/file-system";
 import { WATCHER_PRIORITIES } from "@piddie/shared-types";
 import { WebContainer } from "@webcontainer/api";
-import type { Project } from "@piddie/project-management";
+import type { Project } from "@piddie/shared-types";
 import type { SyncTarget } from "@piddie/shared-types";
 
 let webContainer: WebContainer | null = null;

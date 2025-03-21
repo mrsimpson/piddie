@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { storeToRefs } from "pinia";
-import { useProjectStore } from "./stores/project";
+import { useProjectStore } from "../../../packages/project-management-ui-vue/src/stores/project";
 import { ThemeToggle } from "@piddie/common-ui-vue";
 import "@piddie/common-ui-vue/style";
 
 const projectStore = useProjectStore();
+
+// @ts-expect-error - Known type mismatch with Pinia stores exported from the ui-lib-package
 const { isChatVisible } = storeToRefs(projectStore);
 const isProjectsListCollapsed = ref(false);
 

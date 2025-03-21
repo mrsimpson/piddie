@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
 import type { RouteRecordRaw } from "vue-router";
-import ProjectsList from "./components/ProjectsList.vue";
+import ProjectsList from "../../../packages/project-management-ui-vue/src/components/ProjectsList.vue";
 
 const routes: RouteRecordRaw[] = [
   {

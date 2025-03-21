@@ -1,6 +1,6 @@
 import { ref, reactive, onMounted, watch } from "vue";
 import { defineStore } from "pinia";
-import { useChatStore } from "./chat";
+import { useChatStore } from "@piddie/chat-management-ui-vue";
 import { useFileSystemStore } from "@piddie/files-management-ui-vue";
 import { MessageStatus, type ToolCall } from "@piddie/chat-management";
 import { FileManagementMcpServer } from "@piddie/files-management";
