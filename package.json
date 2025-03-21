@@ -29,7 +29,7 @@
   "scripts": {
     "build": "turbo run build",
     "build:clean": "turbo run clean:build",
-    "dev": "turbo run dev",
+    "dev": "turbo run dev --concurrency=16",
     "docs:dev": "vitepress dev docs --port 9000",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
