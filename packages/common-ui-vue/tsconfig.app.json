@@ -9,12 +9,12 @@
     "src/**/__tests__/*"
   ],
   "compilerOptions": {
+    "incremental": true,
     "composite": true,
-    "baseUrl": ".",
     "declaration": true,
-    "declarationDir": "./dist",
-    "emitDeclarationOnly": true,
-    "noEmit": false,
+    "declarationMap": true,
+    "outDir": "./dist",
+    "baseUrl": ".",
     "paths": {
       "@/*": [
         "./src/*"

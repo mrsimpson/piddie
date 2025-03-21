@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch, defineProps } from "vue";
 import { useLlmStore } from "../stores/llm";
-import CollapsiblePanel from "./ui/CollapsiblePanel.vue";
+import { CollapsiblePanel } from "@piddie/common-ui-vue";
 import { LlmProviderFactory } from "../adapters/LlmProviderFactory";
 import type { ProviderType } from "../adapters/LlmProviderFactory";
 import "@shoelace-style/shoelace/dist/components/input/input.js";

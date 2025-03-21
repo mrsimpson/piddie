@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.6.1",
+    "@piddie/common-ui-vue": "workspace:*",
     "@piddie/chat-management": "workspace:*",
     "@piddie/chat-management-ui-vue": "workspace:*",
     "@piddie/files-management": "workspace:*",
@@ -30,7 +31,7 @@
     "vue-router": "^4.5.0"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^4.2.3",
+    "@vitejs/plugin-vue": "^5.2.3",
     "@vue/test-utils": "2.4.6",
     "@vue/tsconfig": "^0.7.0",
     "typescript": "~5.7.3",

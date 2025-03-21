@@ -3,7 +3,7 @@ import { onMounted, watch, ref } from "vue";
 import { storeToRefs } from "pinia";
 import { useProjectStore } from "../stores/project";
 import ProjectListItem from "./ProjectListItem.vue";
-import CollapsiblePanel from "./ui/CollapsiblePanel.vue";
+import { CollapsiblePanel } from "@piddie/common-ui-vue";
 import "@shoelace-style/shoelace/dist/components/button/button.js";
 import "@shoelace-style/shoelace/dist/components/icon/icon.js";
 import { useRouter, useRoute } from "vue-router";

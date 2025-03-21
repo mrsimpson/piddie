@@ -19,7 +19,7 @@ export default defineConfig({
     build: isDemoMode ? {} : {
         lib: {
             entry: resolve(__dirname, "src/index.ts"),
-            name: "ChatManagementUI",
+            name: "CommonUI",
             fileName: (format) => `index.${format}.js`,
             formats: ['es', 'umd']
         },
@@ -28,7 +28,7 @@ export default defineConfig({
         cssCodeSplit: false,
         emptyOutDir: true,
         rollupOptions: {
-            external: ["vue", "pinia", "@piddie/chat-management", "vue-router", "@shoelace-style/shoelace"],
+            external: ["vue", "pinia", "vue-router", "@shoelace-style/shoelace"],
             output: {
                 // Name the CSS file consistently
                 assetFileNames: (assetInfo) => {
@@ -39,7 +39,10 @@ export default defineConfig({
                     return 'assets/[name][extname]';
                 },
                 globals: {
-                    vue: "Vue"
+                    vue: "Vue",
+                    pinia: "Pinia",
+                    "vue-router": "VueRouter",
+                    "@shoelace-style/shoelace": "Shoelace"
                 }
             }
         }

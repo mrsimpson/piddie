@@ -2,7 +2,7 @@
 import { ref } from "vue";
 import { storeToRefs } from "pinia";
 import { useProjectStore } from "./stores/project";
-import ThemeToggle from "./components/ui/ThemeToggle.vue";
+import { ThemeToggle } from "@piddie/common-ui-vue";
 
 const projectStore = useProjectStore();
 const { isChatVisible } = storeToRefs(projectStore);

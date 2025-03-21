@@ -1,5 +1,5 @@
 {
-  "name": "@piddie/chat-management-ui-vue",
+  "name": "@piddie/common-ui-vue",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -17,8 +17,8 @@
   },
   "scripts": {
     "dev": "NODE_ENV=production vite build --watch",
-    "run:demo": "NODE_ENV=development vite --port 9002",
-    "build": "vue-tsc --declaration --emitDeclarationOnly && NODE_ENV=production vite build",
+    "run:demo": "NODE_ENV=development vite --port 900X",
+    "build": "vue-tsc --declaration --emitDeclarationOnly && rm -rf dist && NODE_ENV=production vite build",
     "preview": "vite preview",
     "typecheck": "vue-tsc --build",
     "lint": "eslint .",
@@ -26,12 +26,10 @@
     "test": "vitest --run --passWithNoTests"
   },
   "dependencies": {
-    "@piddie/chat-management": "workspace:*",
     "@shoelace-style/shoelace": "^2.19.1",
     "pinia": "3.0.1",
     "vitest": "3.0.7",
-    "vue": "^3.5.13",
-    "vue-router": "^4.5.0"
+    "vue": "^3.5.13"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.3",

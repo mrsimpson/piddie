@@ -3,7 +3,7 @@ import { ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useProjectStore } from "../stores/project";
 import type { Project } from "../types/project";
-import EditableText from "./ui/EditableText.vue";
+import { EditableText } from "@piddie/common-ui-vue";
 import ConfirmationDialog from "./ConfirmationDialog.vue";
 import "@shoelace-style/shoelace/dist/components/card/card.js";
 import "@shoelace-style/shoelace/dist/components/relative-time/relative-time.js";

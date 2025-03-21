@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { storeToRefs } from "pinia";
-import { useThemeStore } from "../../stores/theme";
+import { useThemeStore } from "../stores/theme";
 import "@shoelace-style/shoelace/dist/components/icon-button/icon-button.js";
 
 const themeStore = useThemeStore();

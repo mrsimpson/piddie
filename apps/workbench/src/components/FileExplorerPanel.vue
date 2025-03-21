@@ -3,7 +3,7 @@ import { ref, watch } from "vue";
 import type { SynchronizedFileSystem } from "@/types/file-system";
 import FileSystem from "@/components/FileSystem.vue";
 import SyncTargetSelector from "@/components/SyncTargetSelector.vue";
-import CollapsiblePanel from "@/components/ui/CollapsiblePanel.vue";
+import { CollapsiblePanel } from "@piddie/common-ui-vue";
 import "@shoelace-style/shoelace/dist/components/spinner/spinner.js";
 
 const props = defineProps<{
