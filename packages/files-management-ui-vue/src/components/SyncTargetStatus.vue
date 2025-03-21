@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { SyncTarget } from "@piddie/shared-types";
 import { ref, onMounted, onUnmounted } from "vue";
-import { handleUIError } from "../utils/error-handling";
+import { handleUIError } from "@piddie/common-ui-vue";
 import "@shoelace-style/shoelace/dist/components/icon/icon.js";
 
 const props = defineProps<{

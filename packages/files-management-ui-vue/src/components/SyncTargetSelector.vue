@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import type { SynchronizedFileSystem } from "@/types/file-system";
-import SyncTargetStatus from "@/components/SyncTargetStatus.vue";
+import type { SynchronizedFileSystem } from "../types/file-system";
+import SyncTargetStatus from "./SyncTargetStatus.vue";
 import "@shoelace-style/shoelace/dist/components/select/select.js";
 import "@shoelace-style/shoelace/dist/components/option/option.js";
 import { watch } from "vue";

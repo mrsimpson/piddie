@@ -2,12 +2,13 @@
 import { ref, onMounted, onBeforeUnmount, watch, provide, computed } from "vue";
 import { useRoute } from "vue-router";
 import { useProjectStore } from "@/stores/project";
-import { useFileSystemStore } from "@/stores/file-system";
+import { useFileSystemStore } from "@piddie/files-management-ui-vue";
 import { storeToRefs } from "pinia";
-import FileExplorerPanel from "@/components/FileExplorerPanel.vue";
+import { FileExplorerPanel } from "@piddie/files-management-ui-vue";
 import ChatPanel from "@/components/ChatPanel.vue";
 import CodeEditor from "@/components/CodeEditor.vue";
 import settingsManager from "@/stores/settings-db";
+import "@piddie/files-management-ui-vue/style";
 
 const route = useRoute();
 const projectStore = useProjectStore();

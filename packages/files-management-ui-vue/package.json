@@ -1,5 +1,5 @@
 {
-  "name": "@piddie/common-ui-vue",
+  "name": "@piddie/files-management-ui-vue",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -26,7 +26,12 @@
     "test": "vitest --run --passWithNoTests"
   },
   "dependencies": {
+    "@piddie/common-ui-vue": "workspace:*",
+    "@piddie/files-management": "workspace:*",
+    "@piddie/project-management": "workspace:*",
+    "@piddie/shared-types": "workspace:*",
     "@shoelace-style/shoelace": "^2.19.1",
+    "@webcontainer/api": "1.5.1-internal.6",
     "pinia": "3.0.1",
     "vitest": "3.0.7",
     "vue": "^3.5.13"

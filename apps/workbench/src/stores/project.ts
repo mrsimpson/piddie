@@ -3,7 +3,7 @@ import { defineStore } from "pinia";
 import type { Project } from "../types/project";
 import { createProjectManager } from "@piddie/project-management";
 import { useChatStore } from "./chat";
-import { useFileSystemStore } from "./file-system";
+import { useFileSystemStore } from "@piddie/files-management-ui-vue";
 import { storeToRefs } from "pinia";
 
 export const useProjectStore = defineStore("project", () => {

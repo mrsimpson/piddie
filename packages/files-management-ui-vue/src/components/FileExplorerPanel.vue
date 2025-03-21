@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
-import type { SynchronizedFileSystem } from "@/types/file-system";
-import FileSystem from "@/components/FileSystem.vue";
-import SyncTargetSelector from "@/components/SyncTargetSelector.vue";
+import type { SynchronizedFileSystem } from "../types/file-system";
+import FileSystem from "./FileSystem.vue";
+import SyncTargetSelector from "./SyncTargetSelector.vue";
 import { CollapsiblePanel } from "@piddie/common-ui-vue";
 import "@shoelace-style/shoelace/dist/components/spinner/spinner.js";
 

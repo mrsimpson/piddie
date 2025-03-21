@@ -2,5 +2,7 @@ import CollapsiblePanel from "./components/CollapsiblePanel.vue";
 import ThemeToggle from "./components/ThemeToggle.vue";
 import EditableText from "./components/EditableText.vue";
 
-// Export the components and store
-export { CollapsiblePanel, ThemeToggle, EditableText };
+import { handleUIError } from "./utils/error-handling";
+
+// Export it from the package
+export { CollapsiblePanel, ThemeToggle, EditableText, handleUIError };

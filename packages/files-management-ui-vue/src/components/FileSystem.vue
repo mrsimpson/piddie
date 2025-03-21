@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from "vue";
-import type { SynchronizedFileSystem } from "@/types/file-system";
+import type { SynchronizedFileSystem } from "../types/file-system";
 import {
   WATCHER_PRIORITIES,
   type FileSystem,
@@ -13,7 +13,7 @@ import {
   BrowserNativeSyncTarget,
   WebContainerSyncTarget
 } from "@piddie/files-management";
-import FileSystemExplorer from "@/components/FileSystemExplorer.vue";
+import FileSystemExplorer from "./FileSystemExplorer.vue";
 import "@shoelace-style/shoelace/dist/components/button/button.js";
 import "@shoelace-style/shoelace/dist/components/dialog/dialog.js";
 import "@shoelace-style/shoelace/dist/components/input/input.js";

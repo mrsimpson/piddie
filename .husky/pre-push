@@ -2,4 +2,4 @@
 # Ensure Typescript files have no errors before pushing
 # Ensure there is no linting or formatting errors before pushing
 # Force rebuild of UI packages and bypass cache for more reliable builds
-pnpm turbo run --parallel --no-cache lint format typecheck test
+pnpm turbo run --parallel lint format typecheck test
