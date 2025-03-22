@@ -2,9 +2,7 @@ import type { LlmProviderAdapter } from "./LlmProviderAdapter";
 import { LiteLlmAdapter } from "./LiteLlmAdapter";
 import { OllamaAdapter } from "./OllamaAdapter";
 import { MockAdapter } from "./MockAdapter";
-
-// Provider type
-export type ProviderType = "litellm" | "ollama" | "mock";
+import type { ProviderType } from "@piddie/shared-types";
 
 /**
  * Factory for creating LLM provider adapters

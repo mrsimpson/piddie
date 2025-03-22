@@ -1,7 +1,7 @@
 import { ref, reactive, onMounted } from "vue";
 import { defineStore } from "pinia";
-import settingsManager from "./settings-db";
-import { WorkbenchSettingKey } from "./settings-db";
+import { settingsManager } from "@piddie/settings";
+import { WorkbenchSettingKey } from "@piddie/settings";
 
 export const useLayoutStore = defineStore("layout", () => {
   // Reactive layout settings object

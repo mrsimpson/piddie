@@ -1,5 +1,5 @@
-import { BaseLlmProviderAdapter } from "./LlmProviderAdapter";
-import type { ModelInfo } from "../stores/settings-db";
+import { type ApiResponse, BaseLlmProviderAdapter } from "./LlmProviderAdapter";
+import type { ModelInfo } from "@piddie/settings";
 
 /**
  * LiteLLM (OpenAI like) provider adapter
@@ -39,7 +39,7 @@ export class LiteLlmAdapter extends BaseLlmProviderAdapter {
 
     // Only add Authorization header if API key is provided
     if (apiKey) {
-      headers.Authorization = `Bearer ${apiKey}`;
+      headers["Authorization"] = `Bearer ${apiKey}`;
     }
 
     console.log(`LiteLlmAdapter.fetchModels: Request headers:`, headers);
@@ -58,23 +58,22 @@ export class LiteLlmAdapter extends BaseLlmProviderAdapter {
     }
 
     const data = await response.json();
+
+    const responseData = data as ApiResponse;
+
     console.log(
-      `LiteLlmAdapter.fetchModels: Received ${data.data?.length || 0} models`
+      `LiteLlmAdapter.fetchModels: Received ${responseData.data?.length || 0} models`
     );
 
-    // Extract model information
-    const models: ModelInfo[] = data.data
-      .map((model: ModelInfo) => ({
+    const models: ModelInfo[] = responseData.data
+      .map((model) => ({
         id: model.id,
         name: model.id.replace(/^gpt-/, "GPT ").replace(/-/g, " "),
-        created: model.created
+        created: model.created ?? Date.now() // Provide current timestamp if created is undefined
       }))
-      .sort((a: ModelInfo, b: ModelInfo) => {
+      .sort((a, b) => {
         // Sort by creation date (newest first)
-        if (a.created && b.created) {
-          return b.created - a.created;
-        }
-        return a.id.localeCompare(b.id);
+        return b.created - a.created;
       });
 
     return models;

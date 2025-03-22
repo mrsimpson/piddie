@@ -1,5 +1,5 @@
 import { BaseLlmProviderAdapter } from "./LlmProviderAdapter";
-import type { ModelInfo } from "../stores/settings-db";
+import { type ModelInfo } from "@piddie/settings";
 
 /**
  * Interface for Ollama tag response
@@ -23,18 +23,18 @@ export class OllamaAdapter extends BaseLlmProviderAdapter {
   }
 
   getDefaultBaseUrl(): string {
-    return import.meta.env.VITE_OLLAMA_BASE_URL || "http://localhost:11434";
+    return "http://localhost:11434";
   }
 
   getDefaultModel(): string {
-    return "llama2";
+    return "llama3.1";
   }
 
-  requiresApiKey(): boolean {
+  override requiresApiKey(): boolean {
     return false;
   }
 
-  getBaseUrlHelpText(): string {
+  override getBaseUrlHelpText(): string {
     return "URL where Ollama is running. Default is http://localhost:11434.";
   }
 
@@ -63,17 +63,21 @@ export class OllamaAdapter extends BaseLlmProviderAdapter {
 
       const data = await response.json();
 
-      if (!data.models || !Array.isArray(data.models)) {
+      const responseData = data as {
+        models: OllamaTag | OllamaTag[];
+      };
+
+      if (!responseData.models || !Array.isArray(responseData.models)) {
         throw new Error(
           "Invalid response from Ollama API: missing models array"
         );
       }
 
       // Extract model information
-      const models: ModelInfo[] = data.models
+      const models: ModelInfo[] = responseData.models
         .map((model: OllamaTag) => {
           // Extract the base model name (remove tags)
-          const baseName = model.name.split(":")[0];
+          const baseName = model.name.split(":")[0] || model.name;
 
           // Format the name for display
           const displayName = baseName

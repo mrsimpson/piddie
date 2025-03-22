@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { storeToRefs } from "pinia";
-import { useProjectStore } from "../../../packages/project-management-ui-vue/src/stores/project";
+import { useProjectStore } from "@piddie/project-management-ui-vue";
 import { ThemeToggle } from "@piddie/common-ui-vue";
 import "@piddie/common-ui-vue/style";
 

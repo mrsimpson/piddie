@@ -1,5 +1,5 @@
 {
-  "name": "@piddie/llm-integration",
+  "name": "@piddie/settings",
   "version": "0.0.0-development",
   "type": "module",
   "main": "./src/index.ts",
@@ -12,20 +12,14 @@
     "lint:fix": "pnpm lint --fix",
     "format": "prettier --check .",
     "format:fix": "prettier --write .",
-    "test": "vitest --run",
+    "test": "vitest --run --passWithNoTests",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.6.1",
+    "@piddie/shared-types": "workspace:*",
     "@piddie/chat-management": "workspace:*",
     "@piddie/files-management": "workspace:*",
-    "@piddie/shared-types": "workspace:*",
-    "@piddie/settings": "workspace:*",
-    "dexie": "4.0.11",
-    "events": "^3.3.0",
-    "ollama": "0.5.14",
-    "openai": "^4.85.1",
-    "uuid": "11.1.0"
+    "dexie": "4.0.11"
   }
 }

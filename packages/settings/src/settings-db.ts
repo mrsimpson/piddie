@@ -1,5 +1,5 @@
 import Dexie from "dexie";
-import type { ProviderType } from "../adapters/LlmProviderFactory";
+import type { ProviderType } from "@piddie/shared-types";
 
 /**
  * Interface for LLM provider configuration
@@ -345,5 +345,4 @@ export class SettingsManager {
 }
 
 // Create a singleton instance of the settings manager
-const settingsManager = new SettingsManager();
-export default settingsManager;
+export const settingsManager = new SettingsManager();

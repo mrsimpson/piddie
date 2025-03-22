@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, watch } from "vue";
 import { useChatStore } from "@piddie/chat-management-ui-vue";
-import { useLlmStore } from "../stores/llm";
-import { useProjectStore } from "../../../../packages/project-management-ui-vue/src/stores/project";
+import { useLlmStore } from "@piddie/llm-integration-ui-vue";
+import { useProjectStore } from "@piddie/project-management-ui-vue";
 import { MessagesList, SimpleChatInput } from "@piddie/chat-management-ui-vue";
 import { CollapsiblePanel } from "@piddie/common-ui-vue";
-import LlmSettings from "./LlmSettings.vue";
+import { LlmSettings } from "@piddie/llm-integration-ui-vue";
 import "@piddie/chat-management-ui-vue/style";
+import "@piddie/llm-integration-ui-vue/style";
 import "@shoelace-style/shoelace/dist/components/card/card.js";
 import "@shoelace-style/shoelace/dist/components/input/input.js";
 import "@shoelace-style/shoelace/dist/components/button/button.js";

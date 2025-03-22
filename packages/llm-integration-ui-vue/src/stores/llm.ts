@@ -5,13 +5,13 @@ import { useFileSystemStore } from "@piddie/files-management-ui-vue";
 import { MessageStatus, type ToolCall } from "@piddie/chat-management";
 import { FileManagementMcpServer } from "@piddie/files-management";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import settingsManager from "./settings-db";
+import { settingsManager } from "@piddie/settings";
 import type {
   LlmProviderConfig as WorkbenchLlmConfig,
   ModelInfo
-} from "./settings-db";
-import { LlmProviderFactory } from "../adapters/LlmProviderFactory";
-import type { ProviderType } from "../adapters/LlmProviderFactory";
+} from "@piddie/settings";
+import { LlmProviderFactory } from "@piddie/llm-integration";
+import type { ProviderType } from "@piddie/shared-types";
 
 // Import from the llm-integration package
 import {

@@ -26,6 +26,7 @@
     "test": "vitest --run --passWithNoTests"
   },
   "dependencies": {
+    "@piddie/shared-types": "workspace:*",
     "@shoelace-style/shoelace": "^2.19.1",
     "pinia": "3.0.1",
     "vitest": "3.0.7",

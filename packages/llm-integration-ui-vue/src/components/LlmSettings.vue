@@ -2,8 +2,10 @@
 import { ref, onMounted, computed, watch, defineProps } from "vue";
 import { useLlmStore } from "../stores/llm";
 import { CollapsiblePanel } from "@piddie/common-ui-vue";
-import { LlmProviderFactory } from "../adapters/LlmProviderFactory";
-import type { ProviderType } from "../adapters/LlmProviderFactory";
+import { LlmProviderFactory } from "@piddie/llm-integration";
+import type { ProviderType } from "@piddie/shared-types";
+import type { LlmProviderConfig } from "@piddie/settings";
+
 import "@shoelace-style/shoelace/dist/components/input/input.js";
 import "@shoelace-style/shoelace/dist/components/button/button.js";
 import "@shoelace-style/shoelace/dist/components/select/select.js";
@@ -11,7 +13,6 @@ import "@shoelace-style/shoelace/dist/components/option/option.js";
 import "@shoelace-style/shoelace/dist/components/spinner/spinner.js";
 import "@shoelace-style/shoelace/dist/components/alert/alert.js";
 import "@shoelace-style/shoelace/dist/components/icon/icon.js";
-import type { LlmProviderConfig } from "@/stores/settings-db";
 
 const props = defineProps({
   embedded: {

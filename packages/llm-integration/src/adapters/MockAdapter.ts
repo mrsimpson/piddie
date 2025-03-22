@@ -1,5 +1,5 @@
 import { BaseLlmProviderAdapter } from "./LlmProviderAdapter";
-import type { ModelInfo } from "../stores/settings-db";
+import type { ModelInfo } from "@piddie/settings";
 
 /**
  * Mock provider adapter for development and testing
@@ -21,11 +21,11 @@ export class MockAdapter extends BaseLlmProviderAdapter {
     return "mock-model";
   }
 
-  requiresApiKey(): boolean {
+  override requiresApiKey(): boolean {
     return false;
   }
 
-  getBaseUrlHelpText(): string {
+  override getBaseUrlHelpText(): string {
     return "Not required for mock provider.";
   }
 
@@ -33,14 +33,12 @@ export class MockAdapter extends BaseLlmProviderAdapter {
     return [{ id: "mock-model", name: "Mock Model (Development)" }];
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async fetchModels(_baseUrl: string, _apiKey: string): Promise<ModelInfo[]> {
+  async fetchModels(): Promise<ModelInfo[]> {
     // Mock provider always returns the default models
     return this.getDefaultModels();
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async verifyConnection(_baseUrl: string, _apiKey: string): Promise<boolean> {
+  override async verifyConnection(): Promise<boolean> {
     // Mock provider is always available
     return true;
   }

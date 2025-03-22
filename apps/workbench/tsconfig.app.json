@@ -1,15 +1,6 @@
 {
   "extends": "@vue/tsconfig/tsconfig.dom.json",
-  "include": [
-    "env.d.ts",
-    "src/**/*",
-    "src/**/*.vue",
-    "../../packages/project-management-ui-vue/src/components/ProjectListItem.vue",
-    "../../packages/project-management-ui-vue/src/components/ProjectsList.vue",
-    "../../packages/project-management-ui-vue/src/stores/project.ts",
-    "../../packages/project-management-ui-vue/src/types/project.ts",
-    "../../packages/common-ui-vue/src/components/ConfirmationDialog.vue"
-  ],
+  "include": ["env.d.ts", "src/**/*", "src/**/*.vue"],
   "exclude": ["src/**/__tests__/*"],
   "compilerOptions": {
     "incremental": true,

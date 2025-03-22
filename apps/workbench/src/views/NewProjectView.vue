@@ -3,14 +3,16 @@ import { ref, computed } from "vue";
 import { useRouter } from "vue-router";
 import { useProjectStore } from "@piddie/project-management-ui-vue";
 import { useChatStore } from "@piddie/chat-management-ui-vue";
-import { useLlmStore } from "../stores/llm";
-import LlmSettings from "../components/LlmSettings.vue";
+import { useLlmStore } from "@piddie/llm-integration-ui-vue";
+import { LlmSettings } from "@piddie/llm-integration-ui-vue";
+import "@piddie/llm-integration-ui-vue/style";
 import "@shoelace-style/shoelace/dist/components/textarea/textarea.js";
 import "@shoelace-style/shoelace/dist/components/button/button.js";
 import "@shoelace-style/shoelace/dist/components/card/card.js";
 import "@shoelace-style/shoelace/dist/components/tooltip/tooltip.js";
 import "@shoelace-style/shoelace/dist/components/icon/icon.js";
 import "@shoelace-style/shoelace/dist/components/spinner/spinner.js";
+import type { ModelInfo } from "@piddie/settings";
 
 const router = useRouter();
 const projectStore = useProjectStore();
@@ -30,7 +32,7 @@ const selectedModelName = computed(() => {
 
   // Find the model in available models
   const modelInfo = llmStore.availableModels.find(
-    (m) => m.id === llmStore.config.defaultModel
+    (m: ModelInfo) => m.id === llmStore.config.defaultModel
   );
   return modelInfo ? modelInfo.name : llmStore.config.defaultModel;
 });
@@ -100,7 +102,7 @@ async function createProject() {
 
     // Start the LLM interaction in the background without awaiting it
     // This allows the navigation to happen immediately
-    llmStore.sendMessage(messageContent, chat.id).catch((error) => {
+    llmStore.sendMessage(messageContent, chat.id).catch((error: Error) => {
       console.error("Error sending message to LLM:", error);
       // We don't need to set errorMessage here since we've already navigated away
     });

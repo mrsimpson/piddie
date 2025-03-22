@@ -12,10 +12,10 @@ import type {
 } from "./types";
 import { EventEmitter } from "@piddie/shared-types";
 import type { ChatManager, Message } from "@piddie/chat-management";
+import { LlmProviderFactory } from "./adapters/LlmProviderFactory";
 
-/**
- * Interface for LLM adapter
- */
+export { LlmProviderFactory };
+
 export interface LlmAdapter {
   /**
    * Register an LLM provider

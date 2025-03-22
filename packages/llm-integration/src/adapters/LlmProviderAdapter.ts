@@ -1,4 +1,4 @@
-import type { ModelInfo } from "../stores/settings-db";
+import type { ModelInfo } from "@piddie/settings";
 
 /**
  * Interface for LLM provider adapters
@@ -62,6 +62,10 @@ export interface LlmProviderAdapter {
    * @param apiKey The API key for the provider
    */
   verifyConnection(baseUrl: string, apiKey: string): Promise<boolean>;
+}
+
+export interface ApiResponse {
+  data: ModelInfo[];
 }
 
 /**

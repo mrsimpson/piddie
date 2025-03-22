@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, watch, provide, computed } from "vue";
 import { useRoute } from "vue-router";
-import { useProjectStore } from "../../../../packages/project-management-ui-vue/src/stores/project";
+import { useProjectStore } from "@piddie/project-management-ui-vue";
 import { useFileSystemStore } from "@piddie/files-management-ui-vue";
 import { storeToRefs } from "pinia";
 import { FileExplorerPanel } from "@piddie/files-management-ui-vue";
 import ChatPanel from "@/components/ChatPanel.vue";
 import CodeEditor from "@/components/CodeEditor.vue";
-import settingsManager from "@/stores/settings-db";
+import { settingsManager } from "@piddie/settings";
 import "@piddie/files-management-ui-vue/style";
 
 const route = useRoute();
