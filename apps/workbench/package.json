@@ -15,9 +15,9 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.6.1",
-    "@piddie/common-ui-vue": "workspace:*",
     "@piddie/chat-management": "workspace:*",
     "@piddie/chat-management-ui-vue": "workspace:*",
+    "@piddie/common-ui-vue": "workspace:*",
     "@piddie/files-management": "workspace:*",
     "@piddie/files-management-ui-vue": "workspace:*",
     "@piddie/llm-integration": "workspace:*",
@@ -38,6 +38,7 @@
     "@vitejs/plugin-vue": "^5.2.3",
     "@vue/test-utils": "2.4.6",
     "@vue/tsconfig": "^0.7.0",
+    "type-fest": "4.37.0",
     "typescript": "~5.7.3",
     "vite": "^6.0.11",
     "vite-plugin-static-copy": "2.2.0",

@@ -31,6 +31,7 @@
     "build:clean": "turbo run clean:build",
     "dev": "echo 'Usage of the dev for all packages is discouraged: The build order seems to be wrong, thus some dependencies cannot be resolved'",
     "dev:anyway": "turbo run dev --concurrency=16",
+    "preview": "turbo run preview",
     "docs:dev": "vitepress dev docs --port 9000",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
