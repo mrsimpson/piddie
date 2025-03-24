@@ -3,21 +3,19 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "main": "./dist/index.umd.js",
+  "main": "./dist/index.es.js",
   "module": "./dist/index.es.js",
   "types": "./dist/index.d.ts",
   "style": "./dist/style.css",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.es.js",
-      "require": "./dist/index.umd.js"
+      "import": "./dist/index.es.js"
     },
     "./style": "./dist/style.css"
   },
   "scripts": {
     "dev": "NODE_ENV=production vite build --watch",
-    "run:demo": "NODE_ENV=development vite --port 900X",
     "build": "vue-tsc --declaration --emitDeclarationOnly && NODE_ENV=production vite build",
     "preview": "vite preview",
     "typecheck": "vue-tsc --build",
@@ -35,19 +33,24 @@
     "@piddie/llm-integration": "workspace:*",
     "@piddie/settings": "workspace:*",
     "@piddie/shared-types": "workspace:*",
-    "@shoelace-style/shoelace": "^2.19.1",
-    "pinia": "3.0.1",
-    "vitest": "3.0.7",
-    "vue": "^3.5.13"
+    "@shoelace-style/shoelace": "^2.19.1"
+  },
+  "peerDependencies": {
+    "pinia": "^3.0.0",
+    "vue": "^3.5.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.3",
     "@vue/test-utils": "2.4.6",
     "@vue/tsconfig": "^0.7.0",
+    "pinia": "3.0.1",
+    "type-fest": "4.10.3",
     "vite": "^6.0.11",
     "vite-plugin-dts": "4.5.3",
     "vite-plugin-static-copy": "2.2.0",
     "vite-plugin-vue-devtools": "^7.7.0",
-    "vue-tsc": "^2.2.0"
+    "vue": "^3.5.13",
+    "vue-tsc": "^2.2.0",
+    "vitest": "3.0.7"
   }
 }

@@ -35,6 +35,17 @@ export default defineConfig({
     }),
     VueDevTools()
   ],
+  build: {
+    sourcemap: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ["vue", "pinia", "vue-router"],
+          shoelace: ["@shoelace-style/shoelace"]
+        }
+      }
+    }
+  },
   resolve: {
     alias: [
       {
