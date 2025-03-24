@@ -1,8 +1,5 @@
 {
-  "extends": [
-    "@tsconfig/node22/tsconfig.json",
-    "@tsconfig/strictest/tsconfig.json"
-  ],
+  "extends": "@tsconfig/node22/tsconfig.json",
   "compilerOptions": {
     /* Basic Options */
     "incremental": true,
@@ -10,7 +7,8 @@
     "allowJs": true,
     "noEmit": true,
     "module": "ESNext",
-    "moduleResolution": "bundler",
+    "moduleResolution": "node",
+    "target": "ES2022",
     /* Strict Type-Checking Options */
     "noImplicitAny": true,
     "strictNullChecks": true,
@@ -22,6 +20,9 @@
     "resolveJsonModule": true,
     /* Experimental Options */
     "experimentalDecorators": true,
-    "emitDecoratorMetadata": false
+    "emitDecoratorMetadata": false,
+    /* Module Resolution Options */
+    "forceConsistentCasingInFileNames": true,
+    "preserveSymlinks": true
   }
 }

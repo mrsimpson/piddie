@@ -1,16 +1,17 @@
-import { ref, computed } from "vue";
+import { ref, computed, inject } from "vue";
 import { defineStore } from "pinia";
 import type { Project } from "@piddie/shared-types";
 import { createProjectManager } from "@piddie/project-management";
-import { useChatStore } from "@piddie/chat-management-ui-vue";
-import { useFileSystemStore } from "@piddie/files-management-ui-vue";
-import { storeToRefs } from "pinia";
+import type { useChatStore } from "@piddie/chat-management-ui-vue";
+import type { useFileSystemStore } from "@piddie/files-management-ui-vue";
+
+export type ChatStore = ReturnType<typeof useChatStore>;
+export type FileSystemStore = ReturnType<typeof useFileSystemStore>;
 
 export const useProjectStore = defineStore("project", () => {
   const projectManager = createProjectManager();
-  const chatStore = useChatStore();
-  const { currentChat } = storeToRefs(chatStore);
-  const fileSystemStore = useFileSystemStore();
+  const chatStore = inject<ChatStore>("chatStore");
+  const fileSystemStore = inject<FileSystemStore>("fileSystemStore");
   const currentProject = ref<Project | null>(null);
   const projects = ref<Project[]>([]);
   const isChatVisible = ref(false);
@@ -31,18 +32,18 @@ export const useProjectStore = defineStore("project", () => {
   }
 
   async function initializeProject(projectId: string) {
-    if (isInitializing.value) return;
+    if (isInitializing.value || !chatStore || !fileSystemStore) return;
 
     try {
       isInitializing.value = true;
 
-      // Check if the current chat is already associated with the project
+      // Check if the current chat is associated with the project
+      const currentChat = chatStore.currentChat;
       const currentChatIsForProject =
-        !!currentChat.value?.projectId &&
-        currentChat.value?.projectId === projectId;
+        !!currentChat?.projectId && currentChat?.projectId === projectId;
 
       // Only clean up chat if it's not already associated with the project
-      if (!!currentChat.value?.projectId && !currentChatIsForProject) {
+      if (!!currentChat?.projectId && !currentChatIsForProject) {
         await chatStore.cleanup();
       }
 
@@ -101,6 +102,8 @@ export const useProjectStore = defineStore("project", () => {
   }
 
   async function deleteProject(projectId: string) {
+    if (!chatStore || !fileSystemStore) return;
+
     // Check if we're deleting the current project
     const isDeletingCurrentProject = currentProject.value?.id === projectId;
 

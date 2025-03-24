@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from "vue";
 import { storeToRefs } from "pinia";
-import { MessagesList, SimpleChatInput } from "@piddie/chat-management-ui-vue";
+import {
+  MessagesList,
+  SimpleChatInput,
+  useChatStore
+} from "@piddie/chat-management-ui-vue";
 import {
   MessageStatus,
   type ChatCompletionRole
 } from "@piddie/chat-management";
-import { useChatStore } from "@piddie/chat-management-ui-vue";
+import "@piddie/chat-management-ui-vue/style";
 
 // Demo project ID
 const DEMO_PROJECT_ID = "demo-project-123";

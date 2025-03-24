@@ -4,7 +4,9 @@
   "compilerOptions": {
     "noEmit": false,
     "module": "ESNext",
-    "moduleResolution": "Bundler"
+    "moduleResolution": "node",
+    "outDir": "./dist",
+    "rootDir": "./src"
   },
   "exclude": ["**/*.test.ts", "**/*.spec.ts", "**/test/**"]
 }

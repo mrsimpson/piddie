@@ -28,7 +28,7 @@
   "type": "module",
   "scripts": {
     "build": "turbo run build",
-    "build:clean": "turbo run clean:build",
+    "build:clean": "turbo run build:clean",
     "dev": "echo 'Usage of the dev for all packages is discouraged: The build order seems to be wrong, thus some dependencies cannot be resolved'",
     "dev:anyway": "turbo run dev --concurrency=16",
     "preview": "turbo run preview",

@@ -47,7 +47,7 @@ export class OllamaAdapter extends BaseLlmProviderAdapter {
       // Make a request to the Ollama tags endpoint
       const url = `${baseUrl}/api/tags`;
 
-      const response = await fetch(url, {
+      const response: Response = await fetch(url, {
         method: "GET",
         headers: {
           "Content-Type": "application/json"

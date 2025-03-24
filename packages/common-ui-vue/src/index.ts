@@ -2,7 +2,7 @@ import CollapsiblePanel from "./components/CollapsiblePanel.vue";
 import ThemeToggle from "./components/ThemeToggle.vue";
 import EditableText from "./components/EditableText.vue";
 import ConfirmationDialog from "./components/ConfirmationDialog.vue";
-
+import { useThemeStore } from "./stores";
 import { handleUIError } from "./utils/error-handling";
 
 // Export it from the package
@@ -11,5 +11,6 @@ export {
   ThemeToggle,
   EditableText,
   ConfirmationDialog,
-  handleUIError
+  handleUIError,
+  useThemeStore
 };

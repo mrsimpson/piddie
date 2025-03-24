@@ -9,7 +9,7 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**", ".vite/**", "tsconfig.tsbuildinfo"]
     },
-    "clean:build": {
+    "build:clean": {
       "dependsOn": ["build"]
     },
     "dev": {

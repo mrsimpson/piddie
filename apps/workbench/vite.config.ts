@@ -14,6 +14,30 @@ const workspaceDeps = Object.keys(dependencies).filter(
   (dep) => dep.startsWith("@piddie/") && dependencies[dep] === "workspace:*"
 );
 
+// Create aliases for workspace packages and their style imports
+const workspaceAliases = workspaceDeps.flatMap((dep) => {
+  const basePath = `../../packages/${dep.replace("@piddie/", "")}`;
+  return [
+    {
+      find: new RegExp(`^${dep}$`),
+      replacement: fileURLToPath(
+        new URL(
+          `${basePath}/dist/index${
+            dep.replace("@piddie/", "").includes("-ui") ? ".es.js" : ".js"
+          }`,
+          import.meta.url
+        )
+      )
+    },
+    {
+      find: new RegExp(`^${dep}/style$`),
+      replacement: fileURLToPath(
+        new URL(`${basePath}/dist/style.css`, import.meta.url)
+      )
+    }
+  ];
+});
+
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
@@ -35,17 +59,6 @@ export default defineConfig({
     }),
     VueDevTools()
   ],
-  build: {
-    sourcemap: true,
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          vendor: ["vue", "pinia", "vue-router"],
-          shoelace: ["@shoelace-style/shoelace"]
-        }
-      }
-    }
-  },
   resolve: {
     alias: [
       {
@@ -56,16 +69,8 @@ export default defineConfig({
         find: /\/assets\/icons\/(.+)/,
         replacement: `${iconsPath}/$1`
       },
-      // Dynamically generate aliases for workspace packages
-      ...workspaceDeps.map((dep) => ({
-        find: dep,
-        replacement: fileURLToPath(
-          new URL(
-            `../../packages/${dep.replace("@piddie/", "")}/dist/index.js`,
-            import.meta.url
-          )
-        )
-      }))
+      // Add workspace package aliases
+      ...workspaceAliases
     ]
   },
   optimizeDeps: {
