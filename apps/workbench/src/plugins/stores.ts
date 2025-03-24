@@ -1,17 +1,23 @@
 import type { App } from "vue";
+import { createPinia } from "pinia";
 import { useChatStore } from "@piddie/chat-management-ui-vue";
 import { useFileSystemStore } from "@piddie/files-management-ui-vue";
 import { useThemeStore } from "@piddie/common-ui-vue";
 import { useLlmStore } from "@piddie/llm-integration-ui-vue";
 import { useLayoutStore } from "../stores/layout";
+import { useProjectStore } from "@piddie/project-management-ui-vue";
 
 export function installStores(app: App) {
-  // Create store instances
-  const chatStore = useChatStore();
-  const fileSystemStore = useFileSystemStore();
-  const themeStore = useThemeStore();
-  const llmStore = useLlmStore();
-  const layoutStore = useLayoutStore();
+  const pinia = createPinia();
+  app.use(pinia);
+
+  // Create store instances with explicit pinia instance
+  const chatStore = useChatStore(pinia);
+  const fileSystemStore = useFileSystemStore(pinia);
+  const themeStore = useThemeStore(pinia);
+  const llmStore = useLlmStore(pinia);
+  const layoutStore = useLayoutStore(pinia);
+  const projectStore = useProjectStore(pinia);
 
   // Provide all stores
   app.provide("chatStore", chatStore);
@@ -19,4 +25,17 @@ export function installStores(app: App) {
   app.provide("themeStore", themeStore);
   app.provide("llmStore", llmStore);
   app.provide("layoutStore", layoutStore);
+  app.provide("projectStore", projectStore);
+
+  return {
+    pinia,
+    stores: {
+      chatStore,
+      fileSystemStore,
+      themeStore,
+      llmStore,
+      layoutStore,
+      projectStore
+    }
+  };
 }

@@ -1,6 +1,9 @@
 {
   "extends": "./tsconfig.json",
-  "include": ["env.d.ts", "src/**/*.ts"],
+  "include": [
+    "env.d.ts",
+    "src/**/*.ts"
+  ],
   "compilerOptions": {
     "noEmit": false,
     "module": "ESNext",
@@ -8,5 +11,9 @@
     "outDir": "./dist",
     "rootDir": "./src"
   },
-  "exclude": ["**/*.test.ts", "**/*.spec.ts", "**/test/**"]
+  "exclude": [
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "**/test/**"
+  ]
 }
