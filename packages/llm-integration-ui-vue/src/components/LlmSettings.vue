@@ -145,7 +145,8 @@ watch(
 );
 
 // Load settings from store on mount
-onMounted(() => {
+onMounted(async () => {
+  await llmStore.initializeStore();
   apiKey.value = llmStore.config.apiKey;
   baseUrl.value = llmStore.config.baseUrl;
   provider.value = llmStore.config.provider || "litellm";

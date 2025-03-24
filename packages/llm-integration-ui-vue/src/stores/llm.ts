@@ -1,4 +1,4 @@
-import { ref, reactive, onMounted, watch } from "vue";
+import { ref, reactive, onMounted, watch, computed } from "vue";
 import { defineStore } from "pinia";
 import { useChatStore } from "@piddie/chat-management-ui-vue";
 import { useFileSystemStore } from "@piddie/files-management-ui-vue";
@@ -125,8 +125,9 @@ export const useLlmStore = defineStore("llm", () => {
       }
     }
   );
-  // Load settings from database on store initialization
-  onMounted(async () => {
+
+  // Initialize store function to replace onMounted logic
+  async function initializeStore() {
     try {
       isLoading.value = true;
 
@@ -168,7 +169,7 @@ export const useLlmStore = defineStore("llm", () => {
     } finally {
       isLoading.value = false;
     }
-  });
+  }
 
   /**
    * Verifies the connection to the LLM provider API and retrieves available models
@@ -435,7 +436,7 @@ export const useLlmStore = defineStore("llm", () => {
                       (tc) =>
                         tc.function.name === functionName &&
                         JSON.stringify(tc.function.arguments) ===
-                          JSON.stringify(functionArgs)
+                        JSON.stringify(functionArgs)
                     );
 
                     if (existingIndex === -1) {
@@ -542,7 +543,7 @@ export const useLlmStore = defineStore("llm", () => {
                       (tc) =>
                         tc.function.name === functionName &&
                         JSON.stringify(tc.function.arguments) ===
-                          JSON.stringify(functionArgs)
+                        JSON.stringify(functionArgs)
                     );
 
                     if (existingIndex === -1) {
@@ -581,7 +582,7 @@ export const useLlmStore = defineStore("llm", () => {
                   (tc) =>
                     tc.function.name === functionName &&
                     JSON.stringify(tc.function.arguments) ===
-                      JSON.stringify(toolCall.function.arguments)
+                    JSON.stringify(toolCall.function.arguments)
                 );
 
                 if (existingIndex === -1) {
@@ -771,13 +772,17 @@ export const useLlmStore = defineStore("llm", () => {
     isLoading,
     isVerifying,
     workbenchConfig,
-    config: workbenchConfig, // Expose workbenchConfig as config for backward compatibility
+    config: computed(() => ({
+      ...workbenchConfig,
+      availableModels: availableModels.value
+    })),
     availableModels,
     verifyConnection,
     updateConfig,
     resetConfig,
     sendMessage,
     cancelStreaming,
-    getStoredProviderConfig
+    getStoredProviderConfig,
+    initializeStore
   };
 });

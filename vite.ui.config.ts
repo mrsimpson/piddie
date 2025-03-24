@@ -13,7 +13,14 @@ export function createLibConfig(options: LibraryOptions): UserConfig {
 
   return defineConfig({
     plugins: [
-      vue(),
+      vue({
+        template: {
+          compilerOptions: {
+            // Tell Vue to ignore all components that start with 'sl-'
+            isCustomElement: (tag: string) => tag.startsWith("sl-")
+          }
+        }
+      }),
       dts({
         rollupTypes: true,
         tsconfigPath: "./tsconfig.app.json",
