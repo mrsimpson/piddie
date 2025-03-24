@@ -1,4 +1,4 @@
-import { ref, reactive, onMounted } from "vue";
+import { ref, reactive } from "vue";
 import { defineStore } from "pinia";
 import { settingsManager } from "@piddie/settings";
 import { WorkbenchSettingKey } from "@piddie/settings";
@@ -15,8 +15,8 @@ export const useLayoutStore = defineStore("layout", () => {
   const isLoading = ref(true);
   const error = ref<Error | null>(null);
 
-  // Load settings from database on store initialization
-  onMounted(async () => {
+  // Initialize store function
+  async function initializeStore() {
     try {
       console.log("Layout store: Starting to load settings");
       isLoading.value = true;
@@ -47,7 +47,7 @@ export const useLayoutStore = defineStore("layout", () => {
         isLoading.value
       );
     }
-  });
+  }
 
   /**
    * Updates the layout settings
@@ -107,6 +107,7 @@ export const useLayoutStore = defineStore("layout", () => {
     layout,
     isLoading,
     error,
+    initializeStore,
     updateLayoutSettings
   };
 });

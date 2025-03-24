@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "NODE_ENV=production vite build --watch --port 9002",
+    "dev": "PORT=9002 vite build --watch",
     "build": "vue-tsc --declaration --emitDeclarationOnly && NODE_ENV=production vite build",
     "build:clean": "find . -name '*.buildinfo' -o -name '*.tsbuildinfo' -delete  && rimraf ./dist",
     "preview": "vite preview",

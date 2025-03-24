@@ -1,17 +1,15 @@
-import { ref, computed, inject } from "vue";
-import { defineStore } from "pinia";
+import { ref, computed } from "vue";
+import { defineStore, getActivePinia } from "pinia";
 import type { Project } from "@piddie/shared-types";
 import { createProjectManager } from "@piddie/project-management";
-import type { useChatStore } from "@piddie/chat-management-ui-vue";
-import type { useFileSystemStore } from "@piddie/files-management-ui-vue";
+import { useChatStore } from "@piddie/chat-management-ui-vue";
+import { useFileSystemStore } from "@piddie/files-management-ui-vue";
 
 export type ChatStore = ReturnType<typeof useChatStore>;
 export type FileSystemStore = ReturnType<typeof useFileSystemStore>;
 
 export const useProjectStore = defineStore("project", () => {
   const projectManager = createProjectManager();
-  const chatStore = inject<ChatStore>("chatStore");
-  const fileSystemStore = inject<FileSystemStore>("fileSystemStore");
   const currentProject = ref<Project | null>(null);
   const projects = ref<Project[]>([]);
   const isChatVisible = ref(false);
@@ -32,7 +30,10 @@ export const useProjectStore = defineStore("project", () => {
   }
 
   async function initializeProject(projectId: string) {
-    if (isInitializing.value || !chatStore || !fileSystemStore) return;
+    if (isInitializing.value) return;
+
+    const chatStore = useChatStore(getActivePinia());
+    const fileSystemStore = useFileSystemStore(getActivePinia());
 
     try {
       isInitializing.value = true;
@@ -102,7 +103,8 @@ export const useProjectStore = defineStore("project", () => {
   }
 
   async function deleteProject(projectId: string) {
-    if (!chatStore || !fileSystemStore) return;
+    const chatStore = useChatStore();
+    const fileSystemStore = useFileSystemStore();
 
     // Check if we're deleting the current project
     const isDeletingCurrentProject = currentProject.value?.id === projectId;

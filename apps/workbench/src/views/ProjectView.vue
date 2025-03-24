@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, watch, provide, computed } from "vue";
+import {
+  ref,
+  onMounted,
+  onBeforeUnmount,
+  watch,
+  provide,
+  computed,
+  shallowRef
+} from "vue";
 import { useRoute } from "vue-router";
 import { useProjectStore } from "@piddie/project-management-ui-vue";
 import { useFileSystemStore } from "@piddie/files-management-ui-vue";
@@ -18,6 +26,12 @@ const error = ref<Error | null>(null);
 const projectId = ref<string | null>(null);
 const isFileExplorerCollapsed = ref(false);
 const isChatPanelCollapsed = ref(false);
+
+// Create a reactive reference for the sync manager
+const syncManagerRef = shallowRef(fileSystemStore.syncManager);
+
+// Provide the sync manager reference
+provide("syncManager", syncManagerRef);
 
 // Panel sizing
 const fileExplorerWidth = ref(250);
@@ -111,8 +125,8 @@ async function initializeFromRoute() {
       error.value = null;
       await projectStore.setCurrentProject(projectId.value);
 
-      // Provide sync manager to child components
-      provide("syncManager", fileSystemStore.syncManager);
+      // Update the sync manager reference
+      syncManagerRef.value = fileSystemStore.syncManager;
     } catch (err) {
       console.error("Failed to initialize project:", err);
       error.value = err as Error;
