@@ -1,6 +1,5 @@
 import { createRouter, createWebHistory } from "vue-router";
 import type { RouteRecordRaw } from "vue-router";
-import ProjectsList from "../../../packages/project-management-ui-vue/src/components/ProjectsList.vue";
 
 const routes: RouteRecordRaw[] = [
   {
@@ -10,21 +9,21 @@ const routes: RouteRecordRaw[] = [
   {
     path: "/projects",
     components: {
-      sidepanelLeft: ProjectsList,
+      sidepanelLeft: () => import("./views/ProjectsListView.vue"),
       default: () => import("./views/ProjectsListView.vue")
     }
   },
   {
     path: "/projects/new",
     components: {
-      sidepanelLeft: ProjectsList,
+      sidepanelLeft: () => import("./views/ProjectsListView.vue"),
       default: () => import("./views/NewProjectView.vue")
     }
   },
   {
     path: "/projects/:id",
     components: {
-      sidepanelLeft: ProjectsList,
+      sidepanelLeft: () => import("./views/ProjectsListView.vue"),
       default: () => import("./views/ProjectView.vue")
     },
     props: {

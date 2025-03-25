@@ -1,7 +1,5 @@
 <script setup lang="ts">
 import { ref } from "vue";
-import { useRoute, useRouter } from "vue-router";
-import { useProjectStore } from "../stores/project";
 import type { Project } from "@piddie/shared-types";
 import { EditableText } from "@piddie/common-ui-vue";
 import { ConfirmationDialog } from "@piddie/common-ui-vue";
@@ -9,50 +7,47 @@ import "@shoelace-style/shoelace/dist/components/card/card.js";
 import "@shoelace-style/shoelace/dist/components/relative-time/relative-time.js";
 import "@shoelace-style/shoelace/dist/components/icon-button/icon-button.js";
 
-const router = useRouter();
-
 const props = defineProps<{
   project: Project;
+  isActive: boolean;
 }>();
 
-const route = useRoute();
-const projectStore = useProjectStore();
+const emit = defineEmits<{
+  navigate: [projectId: string];
+  rename: [projectId: string, newName: string];
+  delete: [projectId: string];
+}>();
+
 const showDeleteConfirmation = ref(false);
 
-async function handleNameChange(newName: string) {
-  await projectStore.renameProject(props.project.id, newName);
+function handleNameChange(newName: string) {
+  emit("rename", props.project.id, newName);
 }
 
 function handleDelete() {
   showDeleteConfirmation.value = true;
 }
 
-async function handleConfirmDelete() {
-  await projectStore.deleteProject(props.project.id);
+function handleConfirmDelete() {
+  emit("delete", props.project.id);
   showDeleteConfirmation.value = false;
-
-  // Explicitly refresh the project list
-  await projectStore.loadProjects();
-
-  router.push("/projects/new");
 }
 
 function handleCancelDelete() {
   showDeleteConfirmation.value = false;
 }
+
+function handleNavigate() {
+  emit("navigate", props.project.id);
+}
 </script>
 
 <template>
-  <router-link
-    :to="`/projects/${project.id}`"
-    class="project-link"
-    custom
-    v-slot="{ navigate }"
-  >
+  <div class="project-link">
     <sl-card
       class="project-card"
-      :class="{ active: route.params.id === project.id }"
-      @click="navigate"
+      :class="{ active: isActive }"
+      @click="handleNavigate"
     >
       <div class="project-content">
         <div class="project-header">
@@ -69,7 +64,7 @@ function handleCancelDelete() {
         </div>
       </div>
     </sl-card>
-  </router-link>
+  </div>
 
   <ConfirmationDialog
     v-if="showDeleteConfirmation"

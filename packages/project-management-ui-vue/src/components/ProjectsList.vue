@@ -11,16 +11,21 @@ import { useRouter, useRoute } from "vue-router";
 const projectStore = useProjectStore();
 const { projects } = storeToRefs(projectStore);
 const router = useRouter();
-const route = useRoute();
 const isCollapsed = ref(false);
+
+const props = defineProps<{
+  currentPath?: string;
+  activeProjectId?: string;
+}>();
 
 const emit = defineEmits<{
   collapse: [isCollapsed: boolean];
+  createProject: [];
+  refreshProjects: [];
+  navigateToProject: [projectId: string];
+  renameProject: [projectId: string, newName: string];
+  deleteProject: [projectId: string];
 }>();
-
-const createNewProject = async () => {
-  await router.push("/projects/new");
-};
 
 // Handle panel collapse
 function handleCollapse(collapsed: boolean) {
@@ -30,16 +35,30 @@ function handleCollapse(collapsed: boolean) {
 
 // Load projects when component is mounted
 onMounted(() => {
-  projectStore.loadProjects();
+  emit("refreshProjects");
 });
 
-// Refresh project list when route changes
+// Refresh project list when path changes
 watch(
-  () => route.path,
+  () => props.currentPath,
   () => {
-    projectStore.loadProjects();
+    if (props.currentPath) {
+      emit("refreshProjects");
+    }
   }
 );
+
+function handleProjectNavigate(projectId: string) {
+  emit("navigateToProject", projectId);
+}
+
+function handleProjectRename(projectId: string, newName: string) {
+  emit("renameProject", projectId, newName);
+}
+
+function handleProjectDelete(projectId: string) {
+  emit("deleteProject", projectId);
+}
 </script>
 
 <template>
@@ -47,7 +66,7 @@ watch(
     <CollapsiblePanel @collapse="handleCollapse" expand-icon="card-list">
       <template #header>
         <div class="header">
-          <sl-button variant="primary" size="small" @click="createNewProject">
+          <sl-button variant="primary" size="small" @click="$emit('createProject')">
             <sl-icon slot="prefix" name="plus-circle"></sl-icon>
             Start New Chat
           </sl-button>
@@ -60,6 +79,10 @@ watch(
             v-for="project in projects"
             :key="project.id"
             :project="project"
+            :is-active="project.id === activeProjectId"
+            @navigate="handleProjectNavigate"
+            @rename="handleProjectRename"
+            @delete="handleProjectDelete"
           />
         </div>
       </template>

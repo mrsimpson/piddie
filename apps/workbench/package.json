@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --port 9999",
     "build": "vue-tsc --build && vite build",
+    "build:preview": "cd ../.. && pnpm build && cd - && pnpm preview",
     "preview": "vite preview",
     "build-only": "vite build",
     "typecheck": "vue-tsc --build",

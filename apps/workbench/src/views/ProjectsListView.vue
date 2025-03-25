@@ -1,24 +1,49 @@
 <script setup lang="ts">
-import { onMounted } from "vue";
-import { useRouter } from "vue-router";
-import { storeToRefs } from "pinia";
+import { useRouter, useRoute } from "vue-router";
 import { useProjectStore } from "@piddie/project-management-ui-vue";
 import { ProjectsList } from "@piddie/project-management-ui-vue";
 
 const router = useRouter();
+const route = useRoute();
 const projectStore = useProjectStore();
 
-// @ts-expect-error - Known type mismatch with Pinia stores exported from the ui-lib-package
-const { currentProject } = storeToRefs(projectStore);
+function handleCreateProject() {
+  router.push("/projects/new");
+}
 
-onMounted(() => {
-  // If there's a current project, navigate to it
-  if (currentProject.value) {
-    router.replace(`/projects/${currentProject.value.id}`);
-  }
-});
+function handleRefreshProjects() {
+  projectStore.loadProjects();
+}
+
+function handleCollapse(collapsed: boolean) {
+  // Handle collapse if needed
+}
+
+async function handleNavigateToProject(projectId: string) {
+  await router.push(`/projects/${projectId}`);
+}
+
+async function handleRenameProject(projectId: string, newName: string) {
+  await projectStore.renameProject(projectId, newName);
+  await projectStore.loadProjects();
+}
+
+async function handleDeleteProject(projectId: string) {
+  await projectStore.deleteProject(projectId);
+  await projectStore.loadProjects();
+  await router.push("/projects/new");
+}
 </script>
 
 <template>
-  <ProjectsList />
+  <ProjectsList
+    :current-path="route.path"
+    :active-project-id="route.params.id as string"
+    @create-project="handleCreateProject"
+    @refresh-projects="handleRefreshProjects"
+    @collapse="handleCollapse"
+    @navigate-to-project="handleNavigateToProject"
+    @rename-project="handleRenameProject"
+    @delete-project="handleDeleteProject"
+  />
 </template>

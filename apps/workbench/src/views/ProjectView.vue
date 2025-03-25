@@ -17,6 +17,7 @@ import ChatPanel from "@/components/ChatPanel.vue";
 import CodeEditor from "@/components/CodeEditor.vue";
 import { settingsManager } from "@piddie/settings";
 import "@piddie/files-management-ui-vue/style";
+import "@piddie/project-management-ui-vue/style";
 
 const route = useRoute();
 const projectStore = useProjectStore();
