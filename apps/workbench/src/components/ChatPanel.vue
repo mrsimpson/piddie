@@ -62,8 +62,8 @@ watch(
   async (newProjectId) => {
     if (newProjectId) {
       // Try to load the chat associated with this project
-      const chats = await chatStore.listChats();
-      const projectChat = chats.find((chat) => chat.projectId === newProjectId);
+      const projectChats = await chatStore.listProjectChats(newProjectId, 1);
+      const projectChat = projectChats[0]; // Get the most recent chat for this project
 
       if (projectChat) {
         // Load existing chat if found
