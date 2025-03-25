@@ -10,12 +10,7 @@
       "outputs": ["dist/**", ".vite/**", "tsconfig.tsbuildinfo"]
     },
     "build:clean": {
-      "dependsOn": ["build"]
-    },
-    "dev": {
-      "dependsOn": ["^build"],
-      "cache": false,
-      "persistent": true
+      "cache": false
     },
     "preview": {
       "dependsOn": ["build"],
