@@ -86,11 +86,20 @@ export const useLlmStore = defineStore("llm", () => {
       isLoading.value = true;
       const loadedConfig = await settingsManager.getLlmConfig();
       const selectedProvider = await settingsManager.getSelectedProvider();
-      Object.assign(workbenchConfig, loadedConfig, { provider: selectedProvider });
-      if (loadedConfig.availableModels && Array.isArray(loadedConfig.availableModels) && loadedConfig.availableModels.length > 0) {
+      Object.assign(workbenchConfig, loadedConfig, {
+        provider: selectedProvider
+      });
+      if (
+        loadedConfig.availableModels &&
+        Array.isArray(loadedConfig.availableModels) &&
+        loadedConfig.availableModels.length > 0
+      ) {
         availableModels.value = [...loadedConfig.availableModels];
       }
-      llmAdapter = createLlmAdapter(getLlmProviderConfig(), chatStore.chatManager);
+      llmAdapter = createLlmAdapter(
+        getLlmProviderConfig(),
+        chatStore.chatManager
+      );
       if (fileManagementMcpServer.value) {
         await llmAdapter.registerMcpServer(
           fileManagementMcpServer.value as unknown as McpServer,
@@ -383,10 +392,13 @@ export const useLlmStore = defineStore("llm", () => {
       );
 
       // Persist the user message in the background
-      const persistedUserMessage = await chatStore.persistEphemeralMessage(userMessage.id, {
-        content,
-        status: MessageStatus.SENT
-      });
+      const persistedUserMessage = await chatStore.persistEphemeralMessage(
+        userMessage.id,
+        {
+          content,
+          status: MessageStatus.SENT
+        }
+      );
 
       // Get the model name to use as the username for the assistant message
       const modelName =
@@ -468,7 +480,7 @@ export const useLlmStore = defineStore("llm", () => {
                       (tc) =>
                         tc.function.name === functionName &&
                         JSON.stringify(tc.function.arguments) ===
-                        JSON.stringify(functionArgs)
+                          JSON.stringify(functionArgs)
                     );
 
                     if (existingIndex === -1) {
@@ -575,7 +587,7 @@ export const useLlmStore = defineStore("llm", () => {
                       (tc) =>
                         tc.function.name === functionName &&
                         JSON.stringify(tc.function.arguments) ===
-                        JSON.stringify(functionArgs)
+                          JSON.stringify(functionArgs)
                     );
 
                     if (existingIndex === -1) {
@@ -614,7 +626,7 @@ export const useLlmStore = defineStore("llm", () => {
                   (tc) =>
                     tc.function.name === functionName &&
                     JSON.stringify(tc.function.arguments) ===
-                    JSON.stringify(toolCall.function.arguments)
+                      JSON.stringify(toolCall.function.arguments)
                 );
 
                 if (existingIndex === -1) {

@@ -66,7 +66,11 @@ function handleProjectDelete(projectId: string) {
     <CollapsiblePanel @collapse="handleCollapse" expand-icon="card-list">
       <template #header>
         <div class="header">
-          <sl-button variant="primary" size="small" @click="$emit('createProject')">
+          <sl-button
+            variant="primary"
+            size="small"
+            @click="$emit('createProject')"
+          >
             <sl-icon slot="prefix" name="plus-circle"></sl-icon>
             Start New Chat
           </sl-button>

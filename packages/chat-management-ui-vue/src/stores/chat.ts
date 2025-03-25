@@ -204,7 +204,10 @@ export const useChatStore = defineStore("chat", () => {
     if (message) {
       // Create a new Map to trigger reactivity
       const updatedMessage = { ...message, status };
-      temporaryMessages.value = new Map(temporaryMessages.value).set(messageId, updatedMessage);
+      temporaryMessages.value = new Map(temporaryMessages.value).set(
+        messageId,
+        updatedMessage
+      );
       return;
     }
 
@@ -222,7 +225,10 @@ export const useChatStore = defineStore("chat", () => {
     if (tempMessage) {
       // Create a new Map to trigger reactivity
       const updatedMessage = { ...tempMessage, tool_calls: toolCalls };
-      temporaryMessages.value = new Map(temporaryMessages.value).set(messageId, updatedMessage);
+      temporaryMessages.value = new Map(temporaryMessages.value).set(
+        messageId,
+        updatedMessage
+      );
       return;
     }
 
@@ -245,7 +251,10 @@ export const useChatStore = defineStore("chat", () => {
     if (message) {
       // Create a new Map to trigger reactivity
       const updatedMessage = { ...message, content };
-      temporaryMessages.value = new Map(temporaryMessages.value).set(messageId, updatedMessage);
+      temporaryMessages.value = new Map(temporaryMessages.value).set(
+        messageId,
+        updatedMessage
+      );
       return;
     }
 
