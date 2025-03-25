@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "PORT=9002 vite build --watch",
-    "build": "vue-tsc --declaration --emitDeclarationOnly && NODE_ENV=production vite build",
+    "build": "vue-tsc --declaration --emitDeclarationOnly && vite build",
     "build:clean": "find . -name '*.buildinfo' -o -name '*.tsbuildinfo' -delete  && rimraf ./dist",
     "preview": "vite preview",
     "typecheck": "vue-tsc --build",

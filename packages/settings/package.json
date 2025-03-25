@@ -21,5 +21,8 @@
     "@piddie/chat-management": "workspace:*",
     "@piddie/files-management": "workspace:*",
     "dexie": "4.0.11"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0"
   }
 }

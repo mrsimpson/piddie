@@ -40,7 +40,7 @@ jobs:
       - name: Build packages
         run: pnpm build
 
-      - name: Typecheck packages
+      - name: Lint and format all packages
         run: pnpm lint-format
 
   typecheck:
