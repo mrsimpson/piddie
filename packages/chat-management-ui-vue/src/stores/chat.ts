@@ -191,15 +191,6 @@ export const useChatStore = defineStore("chat", () => {
     // Remove from temporary messages
     temporaryMessages.value.delete(messageId);
 
-    // // Add to messages list
-    // const index = messages.value.findIndex((m) => m.id === messageId);
-    // if (index !== -1) {
-    //   // Replace the temporary message with the persisted one
-    //   messages.value.splice(index, 1, message);
-    // } else {
-    //   // Add the message if it wasn't in the list
-    //   messages.value.push(message);
-
     // Reload the chat to ensure all messages are properly loaded
     if (currentChat.value && currentChat.value.id === message.chatId) {
       await loadChat(message.chatId);
@@ -208,14 +199,30 @@ export const useChatStore = defineStore("chat", () => {
     return message;
   }
 
+  function updateMessageStatus(messageId: string, status: MessageStatus) {
+    const message = temporaryMessages.value.get(messageId);
+    if (message) {
+      // Create a new Map to trigger reactivity
+      const updatedMessage = { ...message, status };
+      temporaryMessages.value = new Map(temporaryMessages.value).set(messageId, updatedMessage);
+      return;
+    }
+
+    // If not a temporary message, update in the database
+    if (currentChat.value) {
+      chatManager.updateMessageStatus(currentChat.value.id, messageId, status);
+    }
+  }
+
   async function updateMessageToolCalls(
     messageId: string,
     toolCalls: ToolCall[]
   ) {
     const tempMessage = temporaryMessages.value.get(messageId);
     if (tempMessage) {
-      tempMessage.tool_calls = toolCalls;
-      temporaryMessages.value.set(messageId, { ...tempMessage });
+      // Create a new Map to trigger reactivity
+      const updatedMessage = { ...tempMessage, tool_calls: toolCalls };
+      temporaryMessages.value = new Map(temporaryMessages.value).set(messageId, updatedMessage);
       return;
     }
 
@@ -236,8 +243,9 @@ export const useChatStore = defineStore("chat", () => {
   function updateMessageContent(messageId: string, content: string) {
     const message = temporaryMessages.value.get(messageId);
     if (message) {
-      message.content = content;
-      temporaryMessages.value.set(messageId, { ...message });
+      // Create a new Map to trigger reactivity
+      const updatedMessage = { ...message, content };
+      temporaryMessages.value = new Map(temporaryMessages.value).set(messageId, updatedMessage);
       return;
     }
 
@@ -248,23 +256,6 @@ export const useChatStore = defineStore("chat", () => {
         messageId,
         content
       );
-    }
-  }
-
-  /**
-   * Update a message's status
-   */
-  function updateMessageStatus(messageId: string, status: MessageStatus) {
-    const message = temporaryMessages.value.get(messageId);
-    if (message) {
-      message.status = status;
-      temporaryMessages.value.set(messageId, { ...message });
-      return;
-    }
-
-    // If not a temporary message, update in the database
-    if (currentChat.value) {
-      chatManager.updateMessageStatus(currentChat.value.id, messageId, status);
     }
   }
 
