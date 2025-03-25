@@ -81,30 +81,29 @@ export const useLlmStore = defineStore("llm", () => {
     };
   };
 
-  function initializeStore(): () => Promise<void> {
-    return async () => {
-      try {
-        isLoading.value = true;
-        const loadedConfig = await settingsManager.getLlmConfig();
-        const selectedProvider = await settingsManager.getSelectedProvider();
-        Object.assign(workbenchConfig, loadedConfig, { provider: selectedProvider });
-        if (loadedConfig.availableModels && Array.isArray(loadedConfig.availableModels) && loadedConfig.availableModels.length > 0) {
-          availableModels.value = [...loadedConfig.availableModels];
-        }
-        llmAdapter = createLlmAdapter(getLlmProviderConfig(), chatStore.chatManager);
-        if (fileManagementMcpServer.value) {
-          await llmAdapter.registerMcpServer(
-            fileManagementMcpServer.value as unknown as McpServer,
-            "file_management"
-          );
-        }
-      } catch (err) {
-        console.error("Error initializing LLM store:", err);
-        error.value = err instanceof Error ? err : new Error(String(err));
-      } finally {
-        isLoading.value = false;
+  async function initializeStore(): Promise<void> {
+    try {
+      isLoading.value = true;
+      const loadedConfig = await settingsManager.getLlmConfig();
+      const selectedProvider = await settingsManager.getSelectedProvider();
+      Object.assign(workbenchConfig, loadedConfig, { provider: selectedProvider });
+      if (loadedConfig.availableModels && Array.isArray(loadedConfig.availableModels) && loadedConfig.availableModels.length > 0) {
+        availableModels.value = [...loadedConfig.availableModels];
       }
-    };
+      llmAdapter = createLlmAdapter(getLlmProviderConfig(), chatStore.chatManager);
+      if (fileManagementMcpServer.value) {
+        await llmAdapter.registerMcpServer(
+          fileManagementMcpServer.value as unknown as McpServer,
+          "file_management"
+        );
+      }
+    } catch (err) {
+      console.error("Error initializing LLM store:", err);
+      error.value = err instanceof Error ? err : new Error(String(err));
+      throw err; // Re-throw to let the plugin handle initialization failures
+    } finally {
+      isLoading.value = false;
+    }
   }
 
   // LLM adapter instance

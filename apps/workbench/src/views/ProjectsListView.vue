@@ -2,7 +2,7 @@
 import { useRouter, useRoute } from "vue-router";
 import { useProjectStore } from "@piddie/project-management-ui-vue";
 import { ProjectsList } from "@piddie/project-management-ui-vue";
-
+import "@piddie/project-management-ui-vue/style";
 const router = useRouter();
 const route = useRoute();
 const projectStore = useProjectStore();

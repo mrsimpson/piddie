@@ -27,11 +27,21 @@ export async function installStores(app: App) {
   app.provide("layoutStore", layoutStore);
   app.provide("projectStore", projectStore);
 
-  // Initialize stores in the correct order
-  await Promise.all([
-    layoutStore.initializeStore(),
-    llmStore.initializeStore()
-  ]);
+  try {
+    // Initialize stores in the correct order
+    // First wait for file system to be ready
+    await fileSystemStore.initialized;
+
+    // Then initialize stores that require initialization
+    await Promise.all([
+      layoutStore.initializeStore(),
+      llmStore.initializeStore()
+    ]);
+
+    console.log("All stores initialized successfully");
+  } catch (error) {
+    console.error("Error initializing stores:", error);
+  }
 
   return {
     pinia,

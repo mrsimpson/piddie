@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useProjectStore } from "@piddie/project-management-ui-vue";
 import { useChatStore } from "@piddie/chat-management-ui-vue";
@@ -22,6 +22,7 @@ const projectPrompt = ref("");
 const errorMessage = ref("");
 const showSettings = ref(false);
 const isCreating = ref(false);
+const isInitializing = ref(true);
 
 // Computed property to check if a model is selected
 const isModelSelected = computed(() => !!llmStore.config.defaultModel);
@@ -57,6 +58,34 @@ const samplePrompts = [
       "Let's build a weather dashboard that shows current conditions and forecasts. Use the OpenWeather API and add charts for temperature trends."
   }
 ];
+
+// Initialize LLM store and verify connection on mount
+onMounted(async () => {
+  try {
+    isInitializing.value = true;
+    await llmStore.initializeStore();
+
+    // If we have an API key and provider set, verify the connection
+    if (llmStore.config.apiKey && llmStore.config.provider !== "mock") {
+      await llmStore.verifyConnection();
+    }
+
+    // If no model is selected but we have available models, select the first one
+    if (!llmStore.config.defaultModel && llmStore.availableModels.length > 0) {
+      await llmStore.updateConfig({
+        ...llmStore.config,
+        defaultModel: llmStore.availableModels[0].id,
+        selectedModel: llmStore.availableModels[0].id
+      });
+    }
+  } catch (error) {
+    console.error("Error initializing LLM store:", error);
+    errorMessage.value =
+      "Failed to initialize LLM settings. Please configure the model settings.";
+  } finally {
+    isInitializing.value = false;
+  }
+});
 
 async function createProject() {
   if (!projectPrompt.value.trim()) {
@@ -127,7 +156,11 @@ function toggleSettings() {
 
 <template>
   <div class="new-project">
-    <div class="prompt-container">
+    <div v-if="isInitializing" class="loading-state">
+      <sl-spinner></sl-spinner>
+      <p>Initializing LLM settings...</p>
+    </div>
+    <div v-else class="prompt-container">
       <sl-textarea
         v-model="projectPrompt"
         placeholder="What would you like to build?"
@@ -331,5 +364,15 @@ sl-button::part(base) {
 sl-button sl-spinner {
   margin-right: 0.5rem;
   font-size: 1rem;
+}
+
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  color: var(--sl-color-neutral-500);
+  gap: 1rem;
 }
 </style>
