@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 import { EventEmitter } from "@piddie/shared-types";
 import type { ChatCompletionRole } from "openai/resources/chat";
 import { BaseLlmClient, ToolSupportStatus } from "./BaseLlmClient";
@@ -151,7 +152,7 @@ export class OllamaClient extends BaseLlmClient {
     }
 
     // Use fetch API to send the request
-    const response = await fetch(
+    const response = (await fetch(
       `${this.config.baseUrl || "http://localhost:11434"}/api/chat`,
       {
         method: "POST",
@@ -160,7 +161,7 @@ export class OllamaClient extends BaseLlmClient {
         },
         body: JSON.stringify(payload)
       }
-    );
+    )) as Response;
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
@@ -425,7 +426,7 @@ export class OllamaClient extends BaseLlmClient {
       };
 
       // Make a direct API call to check tool support
-      const response = await fetch(
+      const response = (await fetch(
         `${this.config.baseUrl || "http://localhost:11434"}/api/chat`,
         {
           method: "POST",
@@ -439,7 +440,7 @@ export class OllamaClient extends BaseLlmClient {
             stream: false // Important: don't stream for this check
           })
         }
-      );
+      )) as Response;
 
       if (!response.ok) {
         return false;

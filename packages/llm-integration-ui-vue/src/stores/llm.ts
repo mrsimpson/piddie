@@ -392,13 +392,10 @@ export const useLlmStore = defineStore("llm", () => {
       );
 
       // Persist the user message in the background
-      const persistedUserMessage = await chatStore.persistEphemeralMessage(
-        userMessage.id,
-        {
-          content,
-          status: MessageStatus.SENT
-        }
-      );
+      chatStore.persistEphemeralMessage(userMessage.id, {
+        content,
+        status: MessageStatus.SENT
+      });
 
       // Get the model name to use as the username for the assistant message
       const modelName =
