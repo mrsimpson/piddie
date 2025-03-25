@@ -1,4 +1,4 @@
-import { ref, reactive, onMounted, watch, computed } from "vue";
+import { ref, reactive, onMounted, watch } from "vue";
 import { defineStore } from "pinia";
 import { useChatStore } from "@piddie/chat-management-ui-vue";
 import { useFileSystemStore } from "@piddie/files-management-ui-vue";
@@ -60,7 +60,6 @@ export const useLlmStore = defineStore("llm", () => {
       description = "Mock LLM Provider";
     }
 
-    // Log the config being created for debugging
     console.log("Creating LLM provider config:", {
       name,
       description,
@@ -81,6 +80,32 @@ export const useLlmStore = defineStore("llm", () => {
       provider: workbenchConfig.provider || "litellm"
     };
   };
+
+  function initializeStore(): () => Promise<void> {
+    return async () => {
+      try {
+        isLoading.value = true;
+        const loadedConfig = await settingsManager.getLlmConfig();
+        const selectedProvider = await settingsManager.getSelectedProvider();
+        Object.assign(workbenchConfig, loadedConfig, { provider: selectedProvider });
+        if (loadedConfig.availableModels && Array.isArray(loadedConfig.availableModels) && loadedConfig.availableModels.length > 0) {
+          availableModels.value = [...loadedConfig.availableModels];
+        }
+        llmAdapter = createLlmAdapter(getLlmProviderConfig(), chatStore.chatManager);
+        if (fileManagementMcpServer.value) {
+          await llmAdapter.registerMcpServer(
+            fileManagementMcpServer.value as unknown as McpServer,
+            "file_management"
+          );
+        }
+      } catch (err) {
+        console.error("Error initializing LLM store:", err);
+        error.value = err instanceof Error ? err : new Error(String(err));
+      } finally {
+        isLoading.value = false;
+      }
+    };
+  }
 
   // LLM adapter instance
   let llmAdapter = createLlmAdapter(
@@ -125,9 +150,8 @@ export const useLlmStore = defineStore("llm", () => {
       }
     }
   );
-
-  // Initialize store function to replace onMounted logic
-  async function initializeStore() {
+  // Load settings from database on store initialization
+  onMounted(async () => {
     try {
       isLoading.value = true;
 
@@ -169,7 +193,7 @@ export const useLlmStore = defineStore("llm", () => {
     } finally {
       isLoading.value = false;
     }
-  }
+  });
 
   /**
    * Verifies the connection to the LLM provider API and retrieves available models
@@ -348,13 +372,22 @@ export const useLlmStore = defineStore("llm", () => {
       isProcessing.value = true;
       isStreaming.value = useStreaming;
 
-      // Create the user message directly in the database
+      // Create an ephemeral user message first for immediate visibility
       const userMessage = await chatStore.addMessage(
         chatId,
         content,
         "user",
-        "Developer"
+        "Developer",
+        undefined,
+        MessageStatus.SENT,
+        true // isEphemeral
       );
+
+      // Persist the user message in the background
+      const persistedUserMessage = await chatStore.persistEphemeralMessage(userMessage.id, {
+        content,
+        status: MessageStatus.SENT
+      });
 
       // Get the model name to use as the username for the assistant message
       const modelName =
@@ -772,10 +805,7 @@ export const useLlmStore = defineStore("llm", () => {
     isLoading,
     isVerifying,
     workbenchConfig,
-    config: computed(() => ({
-      ...workbenchConfig,
-      availableModels: availableModels.value
-    })),
+    config: workbenchConfig, // Expose workbenchConfig as config for backward compatibility
     availableModels,
     verifyConnection,
     updateConfig,
