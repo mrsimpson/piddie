@@ -4,6 +4,7 @@
   "exclude": ["src/**/__tests__/*"],
   "compilerOptions": {
     "incremental": true,
+    "sourceMap": true,
     "paths": {
       "@/*": ["./src/*"]
     }

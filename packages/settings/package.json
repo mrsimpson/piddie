@@ -1,0 +1,28 @@
+{
+  "name": "@piddie/settings",
+  "version": "0.0.0-development",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "build:clean": "find . -name '*.buildinfo' -o -name '*.tsbuildinfo' -delete  && rimraf ./dist",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "lint": "eslint .",
+    "lint:fix": "pnpm lint --fix",
+    "format": "prettier --check .",
+    "format:fix": "prettier --write .",
+    "test": "vitest --run --passWithNoTests",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@piddie/shared-types": "workspace:*",
+    "@piddie/chat-management": "workspace:*",
+    "@piddie/files-management": "workspace:*",
+    "dexie": "4.0.11"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0"
+  }
+}

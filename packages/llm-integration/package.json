@@ -6,7 +6,7 @@
   "types": "./src/index.ts",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "clean:build": "rimraf ./dist",
+    "build:clean": "find . -name '*.buildinfo' -o -name '*.tsbuildinfo' -delete  && rimraf ./dist",
     "dev": "tsc -p tsconfig.build.json --watch",
     "lint": "eslint .",
     "lint:fix": "pnpm lint --fix",
@@ -21,6 +21,7 @@
     "@piddie/chat-management": "workspace:*",
     "@piddie/files-management": "workspace:*",
     "@piddie/shared-types": "workspace:*",
+    "@piddie/settings": "workspace:*",
     "dexie": "4.0.11",
     "events": "^3.3.0",
     "ollama": "0.5.14",

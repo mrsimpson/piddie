@@ -1,0 +1,35 @@
+{
+  "name": "@piddie/demo-chat-management",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "PORT=9002 vite build --watch",
+    "build": "vue-tsc --declaration --emitDeclarationOnly && vite build",
+    "build:clean": "find . -name '*.buildinfo' -o -name '*.tsbuildinfo' -delete  && rimraf ./dist",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --build",
+    "lint": "eslint .",
+    "format": "prettier --write src/",
+    "test": "vitest --run --passWithNoTests"
+  },
+  "dependencies": {
+    "@piddie/chat-management": "workspace:*",
+    "@piddie/chat-management-ui-vue": "workspace:*",
+    "@shoelace-style/shoelace": "^2.19.1",
+    "pinia": "3.0.1",
+    "vitest": "3.0.7",
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.3",
+    "@vue/test-utils": "2.4.6",
+    "@vue/tsconfig": "^0.7.0",
+    "vite": "^6.0.11",
+    "vite-plugin-dts": "4.5.3",
+    "vite-plugin-static-copy": "2.2.0",
+    "vite-plugin-vue-devtools": "^7.7.0",
+    "vue-tsc": "^2.2.0"
+  }
+}

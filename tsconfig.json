@@ -1,6 +1,6 @@
 {
   "extends": "./tsconfig.base.json",
-  "include": ["**/*", ".*.js", "src", "env.d.ts"],
+  "include": ["**/*", ".*.js", "src", "env.d.ts", "**/env.d.ts"],
   "compilerOptions": {
     "types": ["vitest/globals"],
     "outDir": "dist",

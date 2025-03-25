@@ -1,23 +1,38 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, watch, provide, computed } from "vue";
+import {
+  ref,
+  onMounted,
+  onBeforeUnmount,
+  watch,
+  provide,
+  computed,
+  shallowRef
+} from "vue";
 import { useRoute } from "vue-router";
-import { useProjectStore } from "@/stores/project";
-import { useFileSystemStore } from "@/stores/file-system";
+import { useProjectStore } from "@piddie/project-management-ui-vue";
+import { useFileSystemStore } from "@piddie/files-management-ui-vue";
 import { storeToRefs } from "pinia";
-import FileExplorerPanel from "@/components/FileExplorerPanel.vue";
+import { FileExplorerPanel } from "@piddie/files-management-ui-vue";
 import ChatPanel from "@/components/ChatPanel.vue";
 import CodeEditor from "@/components/CodeEditor.vue";
-import settingsManager from "@/stores/settings-db";
+import { settingsManager } from "@piddie/settings";
+import "@piddie/files-management-ui-vue/style";
+import "@piddie/project-management-ui-vue/style";
 
 const route = useRoute();
 const projectStore = useProjectStore();
 const fileSystemStore = useFileSystemStore();
-const { currentProject } = storeToRefs(projectStore);
 const error = ref<Error | null>(null);
 
 const projectId = ref<string | null>(null);
 const isFileExplorerCollapsed = ref(false);
 const isChatPanelCollapsed = ref(false);
+
+// Create a reactive reference for the sync manager
+const syncManagerRef = shallowRef(fileSystemStore.syncManager);
+
+// Provide the sync manager reference
+provide("syncManager", syncManagerRef);
 
 // Panel sizing
 const fileExplorerWidth = ref(250);
@@ -111,8 +126,8 @@ async function initializeFromRoute() {
       error.value = null;
       await projectStore.setCurrentProject(projectId.value);
 
-      // Provide sync manager to child components
-      provide("syncManager", fileSystemStore.syncManager);
+      // Update the sync manager reference
+      syncManagerRef.value = fileSystemStore.syncManager;
     } catch (err) {
       console.error("Failed to initialize project:", err);
       error.value = err as Error;

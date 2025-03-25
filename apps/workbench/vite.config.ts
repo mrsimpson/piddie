@@ -3,8 +3,40 @@ import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 import VueDevTools from "vite-plugin-vue-devtools";
 import { viteStaticCopy } from "vite-plugin-static-copy";
+import type { PackageJson } from "type-fest";
+import pkg from "./package.json" with { type: "json" };
 
 const iconsPath = "node_modules/@shoelace-style/shoelace/dist/assets/icons";
+
+// Get all @piddie workspace dependencies
+const dependencies = (pkg as PackageJson).dependencies ?? {};
+const workspaceDeps = Object.keys(dependencies).filter(
+  (dep) => dep.startsWith("@piddie/") && dependencies[dep] === "workspace:*"
+);
+
+// Create aliases for workspace packages and their style imports
+const workspaceAliases = workspaceDeps.flatMap((dep) => {
+  const basePath = `../../packages/${dep.replace("@piddie/", "")}`;
+  return [
+    {
+      find: new RegExp(`^${dep}$`),
+      replacement: fileURLToPath(
+        new URL(
+          `${basePath}/dist/index${
+            dep.replace("@piddie/", "").includes("-ui") ? ".es.js" : ".js"
+          }`,
+          import.meta.url
+        )
+      )
+    },
+    {
+      find: new RegExp(`^${dep}/style$`),
+      replacement: fileURLToPath(
+        new URL(`${basePath}/dist/style.css`, import.meta.url)
+      )
+    }
+  ];
+});
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -28,29 +60,29 @@ export default defineConfig({
     VueDevTools()
   ],
   resolve: {
-    alias: {
-      "@": fileURLToPath(new URL("./src", import.meta.url)),
-      "@piddie/project-management": fileURLToPath(
-        new URL("../project-management/src/index.ts", import.meta.url)
-      ),
-      "@piddie/files-management": fileURLToPath(
-        new URL("../files-management/src/index.ts", import.meta.url)
-      ),
-      "@piddie/shared-types": fileURLToPath(
-        new URL("../shared-types/src/index.ts", import.meta.url)
-      )
-    }
-  },
-  optimizeDeps: {
-    include: [
-      "@piddie/project-management",
-      "@piddie/files-management",
-      "@piddie/shared-types"
+    alias: [
+      {
+        find: "@",
+        replacement: fileURLToPath(new URL("./src", import.meta.url))
+      },
+      {
+        find: /\/assets\/icons\/(.+)/,
+        replacement: `${iconsPath}/$1`
+      },
+      // Add workspace package aliases
+      ...workspaceAliases
     ]
   },
-  build: {
-    commonjsOptions: {
-      include: [/node_modules/, /packages/]
+  optimizeDeps: {
+    exclude: workspaceDeps
+  },
+  server: {
+    headers: {
+      "Cross-Origin-Embedder-Policy": "require-corp",
+      "Cross-Origin-Opener-Policy": "same-origin"
     }
+  },
+  build: {
+    sourcemap: true
   }
 });

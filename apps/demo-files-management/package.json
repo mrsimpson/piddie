@@ -1,0 +1,41 @@
+{
+  "name": "@piddie/demo-files-management",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 9001",
+    "build": "run-p typecheck \"build-only {@}\" --",
+    "preview": "vite preview",
+    "build-only": "vite build",
+    "typecheck": "vue-tsc --build",
+    "lint": "eslint .",
+    "format": "prettier --write src/"
+  },
+  "dependencies": {
+    "@piddie/files-management": "workspace:*",
+    "@piddie/shared-types": "workspace:*",
+    "@shoelace-style/shoelace": "^2.19.1",
+    "@webcontainer/api": "1.5.1-internal.6",
+    "uuid": "11.1.0",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@tsconfig/node22": "^22.0.0",
+    "@types/node": "^22.10.7",
+    "@types/wicg-file-system-access": "2023.10.5",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "@vue/eslint-config-prettier": "^10.1.0",
+    "@vue/eslint-config-typescript": "^14.3.0",
+    "@vue/tsconfig": "^0.7.0",
+    "eslint": "^9.18.0",
+    "eslint-plugin-vue": "^9.32.0",
+    "jiti": "^2.4.2",
+    "npm-run-all2": "^7.0.2",
+    "prettier": "^3.4.2",
+    "typescript": "~5.7.3",
+    "vite": "^6.0.11",
+    "vite-plugin-vue-devtools": "^7.7.0",
+    "vue-tsc": "^2.2.0"
+  }
+}

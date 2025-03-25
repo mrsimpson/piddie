@@ -13,7 +13,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "clean:build": "rimraf ./dist",
+    "build:clean": "find . -name '*.buildinfo' -o -name '*.tsbuildinfo' -delete  && rimraf ./dist",
     "dev": "tsc -p tsconfig.build.json --watch",
     "lint": "eslint .",
     "lint:fix": "pnpm lint --fix",

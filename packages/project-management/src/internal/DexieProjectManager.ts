@@ -1,5 +1,6 @@
 import Dexie, { type Table } from "dexie";
-import type { Project, ProjectManager } from "../types";
+import type { Project } from "@piddie/shared-types";
+import type { ProjectManager } from "../types";
 import type { ChatManager } from "@piddie/chat-management";
 import { generateProjectId } from "../utils/generateProjectId";
 

@@ -6,9 +6,10 @@
   "scripts": {
     "dev": "vite --port 9999",
     "build": "vue-tsc --build && vite build",
+    "build:preview": "cd ../.. && pnpm build && cd - && pnpm preview",
     "preview": "vite preview",
     "build-only": "vite build",
-    "type-check": "vue-tsc --build",
+    "typecheck": "vue-tsc --build",
     "lint": "eslint .",
     "format": "prettier --write src/",
     "test": "vitest --run --passWithNoTests"
@@ -16,9 +17,15 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.6.1",
     "@piddie/chat-management": "workspace:*",
+    "@piddie/chat-management-ui-vue": "workspace:*",
+    "@piddie/common-ui-vue": "workspace:*",
     "@piddie/files-management": "workspace:*",
+    "@piddie/files-management-ui-vue": "workspace:*",
     "@piddie/llm-integration": "workspace:*",
+    "@piddie/llm-integration-ui-vue": "workspace:*",
     "@piddie/project-management": "workspace:*",
+    "@piddie/project-management-ui-vue": "workspace:*",
+    "@piddie/settings": "workspace:*",
     "@piddie/shared-types": "workspace:*",
     "@shoelace-style/shoelace": "^2.19.1",
     "@webcontainer/api": "1.5.1-internal.6",
@@ -29,9 +36,10 @@
     "vue-router": "^4.5.0"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^4.2.3",
+    "@vitejs/plugin-vue": "^5.2.3",
     "@vue/test-utils": "2.4.6",
     "@vue/tsconfig": "^0.7.0",
+    "type-fest": "4.37.0",
     "typescript": "~5.7.3",
     "vite": "^6.0.11",
     "vite-plugin-static-copy": "2.2.0",

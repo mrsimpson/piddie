@@ -102,7 +102,7 @@ export class McpHost {
         const toolsResult = await connection.client.listTools();
         if (toolsResult && toolsResult.tools) {
           // Convert to our Tool interface
-          const tools = toolsResult.tools.map((tool) => ({
+          const tools = toolsResult.tools.map((tool: Tool) => ({
             name: tool.name,
             description: tool.description || undefined,
             inputSchema: {

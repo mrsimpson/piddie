@@ -1,7 +1,14 @@
 {
   "extends": "./tsconfig.json",
+  "include": ["env.d.ts", "src/**/*.ts"],
   "compilerOptions": {
     "incremental": false,
-    "noEmit": false
-  }
+    "noEmit": false,
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+  },
+  "exclude": ["**/*.test.ts", "**/*.spec.ts", "**/test/**"]
 }

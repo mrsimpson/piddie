@@ -7,7 +7,8 @@ import { dirname, resolve } from "path";
 // Get __dirname equivalent for ES modules
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-export default [
+/** @type {import('@typescript-eslint/utils').TSESLint.FlatConfig[]} */
+const config = [
   js.configs.recommended,
   ...configs.recommended,
   prettier,
@@ -22,6 +23,9 @@ export default [
           resolve(__dirname, "./docs/.vitepress/tsconfig.json"),
           resolve(__dirname, "./packages/*/tsconfig.json")
         ]
+      },
+      globals: {
+        console: true
       }
     }
   },
@@ -35,9 +39,13 @@ export default [
   {
     // Config for JavaScript files - no TypeScript parsing
     files: ["**/*.{js,jsx}"],
-    ...js.configs.recommended
+    ...js.configs.recommended,
+    languageOptions: {
+      globals: {
+        console: true
+      }
+    }
   },
-
   {
     ignores: [
       "**/node_modules/**",
@@ -46,7 +54,10 @@ export default [
       "pnpm-lock.yaml",
       "/packages/**",
       "docs/.vitepress/cache/**",
-      "cline"
+      "cline",
+      "**/*.d.ts" // Ignore declaration files
     ]
   }
 ];
+
+export default config;
