@@ -13,10 +13,12 @@ const props = defineProps<{
   currentPath: string;
   loading: boolean;
   error: Error | null;
+  selectedFile?: string | null;
 }>();
 
 const emit = defineEmits<{
   (e: "navigate", path: string): void;
+  (e: "select-file", item: FileSystemItem): void;
 }>();
 
 // Expose the handleFileChanges method to parent components
@@ -92,6 +94,14 @@ function formatSize(size: number): string {
 function formatDate(timestamp: number): string {
   return new Date(timestamp).toLocaleString();
 }
+
+function handleItemClick(item: FileSystemItem) {
+  if (item.type === "directory") {
+    navigateTo(item.path);
+  } else {
+    emit("select-file", item);
+  }
+}
 </script>
 
 <template>
@@ -126,12 +136,12 @@ function formatDate(timestamp: number): string {
         v-for="item in sortedItems"
         :key="item.path"
         class="file-item"
-        @click="item.type === 'directory' ? navigateTo(item.path) : null"
+        @click="handleItemClick(item)"
       >
         <sl-icon
           :name="item.type === 'directory' ? 'folder' : 'file-earmark'"
         />
-        <span class="name">{{ item.path }}</span>
+        <span class="name">{{ item.path.split("/").pop() }}</span>
         <span class="date">{{ formatDate(item.lastModified) }}</span>
       </div>
     </div>

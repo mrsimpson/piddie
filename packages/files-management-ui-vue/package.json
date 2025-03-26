@@ -29,11 +29,20 @@
     "@piddie/common-ui-vue": "workspace:*",
     "@piddie/files-management": "workspace:*",
     "@piddie/shared-types": "workspace:*",
+    "@piddie/settings": "workspace:*",
     "@shoelace-style/shoelace": "^2.19.1",
     "@webcontainer/api": "1.5.1-internal.6",
     "pinia": "3.0.1",
     "vitest": "3.0.7",
-    "vue": "^3.5.13"
+    "vue": "^3.5.13",
+    "codemirror": "^6.0.1",
+    "@codemirror/state": "^6.0.0",
+    "@codemirror/view": "^6.0.0",
+    "@codemirror/commands": "^6.0.0",
+    "@codemirror/language": "^6.0.0",
+    "@codemirror/lang-javascript": "^6.0.0",
+    "@codemirror/theme-one-dark": "^6.0.0",
+    "vue-codemirror": "^6.1.1"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.3",

@@ -11,10 +11,8 @@ import {
 import { useRoute } from "vue-router";
 import { useProjectStore } from "@piddie/project-management-ui-vue";
 import { useFileSystemStore } from "@piddie/files-management-ui-vue";
-import { storeToRefs } from "pinia";
-import { FileExplorerPanel } from "@piddie/files-management-ui-vue";
+import { FilesPanel } from "@piddie/files-management-ui-vue";
 import ChatPanel from "@/components/ChatPanel.vue";
-import CodeEditor from "@/components/CodeEditor.vue";
 import { settingsManager } from "@piddie/settings";
 import "@piddie/files-management-ui-vue/style";
 import "@piddie/project-management-ui-vue/style";
@@ -303,23 +301,15 @@ function handleMouseUp() {
           width: isFileExplorerCollapsed ? '40px' : `${fileExplorerWidth}px`
         }"
       >
-        <FileExplorerPanel
+        <FilesPanel
           :systems="fileSystemStore.systems"
           :error="error"
           :initial-collapsed="isFileExplorerCollapsed"
           @collapse="onFileExplorerCollapse"
         />
       </div>
-
-      <!-- Resizer between left panel and main panel -->
-      <div
-        class="resizer left-panel-resizer"
-        @mousedown="startResizingLeftPanel"
-      ></div>
     </div>
-    <div class="main-panel">
-      <CodeEditor />
-    </div>
+    <div class="main-panel"></div>
   </div>
 </template>
 
@@ -330,6 +320,8 @@ function handleMouseUp() {
   grid-template-areas: "left main";
   overflow: hidden;
   transition: grid-template-columns 0.3s ease;
+  height: 100vh;
+  width: 100%;
 }
 
 .left-panel {
@@ -373,6 +365,9 @@ function handleMouseUp() {
   grid-area: main;
   overflow: hidden;
   width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 /* When a panel is collapsed, ensure it takes minimal space */

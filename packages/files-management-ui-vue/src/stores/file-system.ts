@@ -364,6 +364,44 @@ export const useFileSystemStore = defineStore("file-system", () => {
     }
   }
 
+  const selectedFile = ref<{
+    path: string;
+    content: string;
+    system: SynchronizedFileSystem | null;
+  } | null>(null);
+
+  async function selectFile(path: string, system: SynchronizedFileSystem) {
+    try {
+      const content = await system.fileSystem.readFile(path);
+      selectedFile.value = {
+        path,
+        content,
+        system
+      };
+    } catch (error) {
+      console.error("Failed to read file:", error);
+      selectedFile.value = null;
+    }
+  }
+
+  function clearSelectedFile() {
+    selectedFile.value = null;
+  }
+
+  async function saveSelectedFile(content: string) {
+    if (!selectedFile.value || !selectedFile.value.system) {
+      throw new Error("No file selected");
+    }
+
+    await selectedFile.value.system.fileSystem.writeFile(
+      selectedFile.value.path,
+      content
+    );
+
+    // Update the stored content
+    selectedFile.value.content = content;
+  }
+
   return {
     syncManager,
     systems,
@@ -374,6 +412,10 @@ export const useFileSystemStore = defineStore("file-system", () => {
     resetStoreState,
     initialized,
     getBrowserFileSystem,
-    cleanupProjectFileSystem
+    cleanupProjectFileSystem,
+    selectedFile,
+    selectFile,
+    clearSelectedFile,
+    saveSelectedFile
   };
 });

@@ -88,45 +88,24 @@ function handleCollapse(isCollapsed: boolean) {
 <style scoped>
 .file-explorer {
   height: 100%;
-  display: flex;
-  flex-direction: column;
+  overflow-y: auto;
 }
 
 .file-explorer-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--sl-spacing-medium);
-  padding: var(--sl-spacing-x-small);
+  gap: var(--sl-spacing-x-small);
 }
 
-.file-explorer-header span {
-  font-weight: var(--sl-font-weight-semibold);
+.loading-container,
+.error-message,
+.info-message {
+  padding: var(--sl-spacing-medium);
+  text-align: center;
+  color: var(--sl-color-neutral-600);
 }
 
 .error-message {
   color: var(--sl-color-danger-600);
-  padding: var(--sl-spacing-medium);
-  text-align: center;
-}
-
-.info-message {
-  color: var(--sl-color-neutral-600);
-  padding: var(--sl-spacing-medium);
-  text-align: center;
-}
-
-.loading-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--sl-spacing-medium);
-  padding: var(--sl-spacing-medium);
-  color: var(--sl-color-neutral-600);
-}
-
-.loading-container sl-spinner {
-  font-size: 2rem;
 }
 </style>
