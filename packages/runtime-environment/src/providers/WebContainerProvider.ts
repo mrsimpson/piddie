@@ -1,5 +1,5 @@
 import {
-  WebContainerProvider as IWebContainerProvider,
+  RuntimeEnvironmentProvider as IWebContainerProvider,
   CommandResult,
   CommandOptions
 } from "../types";

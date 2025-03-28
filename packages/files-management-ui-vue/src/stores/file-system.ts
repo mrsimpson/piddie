@@ -204,6 +204,12 @@ export const useFileSystemStore = defineStore("file-system", () => {
         await resetStoreState();
       }
 
+      // Reset any existing WebContainer to ensure clean state
+      if (webContainerService.hasContainer()) {
+        console.log("Resetting existing WebContainer from service");
+        await webContainerService.reset();
+      }
+
       // Reset systems array before initialization
       systems.value = [];
 
@@ -224,34 +230,43 @@ export const useFileSystemStore = defineStore("file-system", () => {
       // Add the browser file system as a sync target
       await addSyncTarget(browserFs, "browser", "Browser Storage", true);
 
-      // Use a WebContainer if provided or available from service
+      // Get or create a WebContainer
+      let containerInstance: WebContainer;
       if (webContainer) {
-        try {
-          console.log("Using provided WebContainer instance");
-          // Register the WebContainer with the service
-          if (!webContainerService.hasContainer()) {
-            webContainerService.setContainer(webContainer);
-          }
-
-          const webContainerFs = new WebContainerFileSystem(webContainer);
-          await webContainerFs.initialize();
-          await addSyncTarget(
-            webContainerFs,
-            "webcontainer",
-            "WebContainer",
-            false
-          );
-          console.log("WebContainer target added");
-        } catch (webContainerError) {
-          console.error(
-            "Failed to initialize WebContainer:",
-            webContainerError
-          );
-        }
+        console.log("Using provided WebContainer instance");
+        containerInstance = webContainer;
       } else {
-        console.warn(
-          "No WebContainer provided, running without WebContainer file system"
+        try {
+          console.log("No WebContainer provided, creating new one");
+          containerInstance = await webContainerService.createContainer();
+        } catch (containerErr) {
+          console.error("Failed to create WebContainer:", containerErr);
+          throw containerErr;
+        }
+      }
+
+      // Register the WebContainer with the service if needed
+      if (!webContainerService.hasContainer()) {
+        webContainerService.setContainer(containerInstance);
+      }
+
+      try {
+        console.log("Initializing WebContainer file system");
+        const webContainerFs = new WebContainerFileSystem(containerInstance);
+        await webContainerFs.initialize();
+        await addSyncTarget(
+          webContainerFs,
+          "webcontainer",
+          "WebContainer",
+          false
         );
+        console.log("WebContainer target added");
+      } catch (webContainerError) {
+        console.error(
+          "Failed to initialize WebContainer file system:",
+          webContainerError
+        );
+        // Don't stop initialization completely if WebContainer file system fails
       }
 
       initialized.value = true;
