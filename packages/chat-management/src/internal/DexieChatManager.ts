@@ -85,7 +85,8 @@ export class DexieChatManager implements ChatManager {
     content: string,
     role: ChatCompletionRole,
     username = "",
-    parentId?: string
+    parentId?: string,
+    created?: Date
   ): Promise<Message> {
     const chat = await this.db.chats.get(chatId);
     if (!chat) {
@@ -97,7 +98,7 @@ export class DexieChatManager implements ChatManager {
       chatId,
       content,
       role,
-      created: new Date(),
+      created: created || new Date(),
       status: MessageStatus.SENT,
       username,
       parentId

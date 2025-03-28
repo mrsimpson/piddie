@@ -164,7 +164,8 @@ export const useChatStore = defineStore("chat", () => {
       updates?.content || tempMessage.content,
       tempMessage.role,
       tempMessage.username || tempMessage.role,
-      tempMessage.parentId
+      tempMessage.parentId,
+      tempMessage.created
     );
 
     // Apply status update if needed

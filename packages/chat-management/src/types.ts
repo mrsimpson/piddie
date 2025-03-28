@@ -69,13 +69,15 @@ export interface ChatManager {
    * @param role The role of the sender
    * @param username Human identifiable name of the sender
    * @param parentId Optional ID of the parent message (for replies)
+   *
    */
   addMessage(
     chatId: string,
     content: string,
     role: ChatCompletionRole,
     username: string,
-    parentId?: string
+    parentId?: string,
+    created?: Date
   ): Promise<Message>;
 
   /**
