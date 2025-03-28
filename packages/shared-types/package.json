@@ -16,6 +16,6 @@
     "typecheck": "tsc"
   },
   "dependencies": {
-    "@webcontainer/api": "1.5.1-internal.6"
+    "@webcontainer/api": "1.5.3"
   }
 }

@@ -6,6 +6,7 @@ import {
   WebContainerFileSystem,
   BrowserSyncTarget,
   WebContainerSyncTarget,
+  webContainerService,
   type FileSystem
 } from "@piddie/files-management";
 import type { SynchronizedFileSystem } from "../types/file-system";
@@ -14,8 +15,6 @@ import { WATCHER_PRIORITIES } from "@piddie/shared-types";
 import { WebContainer } from "@webcontainer/api";
 import type { Project } from "@piddie/shared-types";
 import type { SyncTarget } from "@piddie/shared-types";
-
-let webContainer: WebContainer | null = null;
 
 /**
  * This store serves as API to the files-management package.
@@ -188,7 +187,15 @@ export const useFileSystemStore = defineStore("file-system", () => {
     }
   }
 
-  async function initializeForProject(project: Project) {
+  /**
+   * Initialize file systems for a project using an existing WebContainer
+   * @param project The project to initialize for
+   * @param webContainer Optional existing WebContainer to use
+   */
+  async function initializeForProject(
+    project: Project,
+    webContainer?: WebContainer
+  ) {
     try {
       console.log(`Initializing file systems for project: ${project.id}`);
 
@@ -217,27 +224,34 @@ export const useFileSystemStore = defineStore("file-system", () => {
       // Add the browser file system as a sync target
       await addSyncTarget(browserFs, "browser", "Browser Storage", true);
 
-      // Always create a new WebContainer for the project
-      try {
-        console.log("Booting WebContainer...");
-        webContainer = await WebContainer.boot();
-        console.log("WebContainer booted, mounting...");
-        await webContainer.mount({});
-        console.log("WebContainer mounted");
+      // Use a WebContainer if provided or available from service
+      if (webContainer) {
+        try {
+          console.log("Using provided WebContainer instance");
+          // Register the WebContainer with the service
+          if (!webContainerService.hasContainer()) {
+            webContainerService.setContainer(webContainer);
+          }
 
-        const webContainerFs = new WebContainerFileSystem(webContainer);
-        await webContainerFs.initialize();
-        await addSyncTarget(
-          webContainerFs,
-          "webcontainer",
-          "WebContainer",
-          false
+          const webContainerFs = new WebContainerFileSystem(webContainer);
+          await webContainerFs.initialize();
+          await addSyncTarget(
+            webContainerFs,
+            "webcontainer",
+            "WebContainer",
+            false
+          );
+          console.log("WebContainer target added");
+        } catch (webContainerError) {
+          console.error(
+            "Failed to initialize WebContainer:",
+            webContainerError
+          );
+        }
+      } else {
+        console.warn(
+          "No WebContainer provided, running without WebContainer file system"
         );
-        console.log("WebContainer target added");
-      } catch (webContainerError) {
-        console.error("Failed to initialize WebContainer:", webContainerError);
-        // Continue without WebContainer - mark as not initialized but don't fail completely
-        webContainer = null;
       }
 
       initialized.value = true;
@@ -279,13 +293,6 @@ export const useFileSystemStore = defineStore("file-system", () => {
       if (syncManager) {
         await syncManager.dispose();
         syncManager = new FileSyncManager(); // Create fresh instance
-      }
-
-      // Ensure webcontainer is fully torn down before nulling
-      if (webContainer) {
-        console.log("Tearing down WebContainer");
-        await webContainer.teardown();
-        webContainer = null;
       }
 
       // Reset systems before setting initialized to false
@@ -331,6 +338,18 @@ export const useFileSystemStore = defineStore("file-system", () => {
       systems.value.find(
         (system) => system.fileSystem instanceof BrowserFileSystem
       )?.fileSystem ?? null
+    );
+  }
+
+  /**
+   * Gets the WebContainer file system if available
+   * @returns The WebContainer file system or null if not available
+   */
+  function getWebContainerFileSystem(): WebContainerFileSystem | null {
+    return (
+      (systems.value.find(
+        (system) => system.fileSystem instanceof WebContainerFileSystem
+      )?.fileSystem as WebContainerFileSystem) || null
     );
   }
 
@@ -412,6 +431,7 @@ export const useFileSystemStore = defineStore("file-system", () => {
     resetStoreState,
     initialized,
     getBrowserFileSystem,
+    getWebContainerFileSystem,
     cleanupProjectFileSystem,
     selectedFile,
     selectFile,

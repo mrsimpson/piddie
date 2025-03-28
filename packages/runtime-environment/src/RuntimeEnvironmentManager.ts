@@ -7,6 +7,8 @@ import {
   RuntimeEnvironmentFactory,
   RuntimeType
 } from "./factory/RuntimeEnvironmentFactory";
+import { WebContainer } from "@webcontainer/api";
+import { WebContainerProvider } from "./providers/WebContainerProvider";
 
 /**
  * Manages the runtime environment for executing commands
@@ -28,6 +30,18 @@ export class RuntimeEnvironmentManager {
     } else {
       this.provider = RuntimeEnvironmentFactory.createProvider(runtimeType);
     }
+  }
+
+  /**
+   * Creates a RuntimeEnvironmentManager with an existing WebContainer instance
+   * @param webContainer The WebContainer instance to use
+   * @returns A new RuntimeEnvironmentManager using the provided WebContainer
+   */
+  public static withWebContainer(
+    webContainer: WebContainer
+  ): RuntimeEnvironmentManager {
+    const provider = new WebContainerProvider(webContainer);
+    return new RuntimeEnvironmentManager(provider);
   }
 
   /**

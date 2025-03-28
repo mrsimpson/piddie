@@ -16,7 +16,7 @@
     "@piddie/files-management": "workspace:*",
     "@piddie/shared-types": "workspace:*",
     "@shoelace-style/shoelace": "^2.19.1",
-    "@webcontainer/api": "1.5.1-internal.6",
+    "@webcontainer/api": "1.5.3",
     "uuid": "11.1.0",
     "vue": "^3.5.13"
   },
