@@ -35,9 +35,6 @@ function handleSidePanelCollapse(collapsed: boolean) {
       'projects-list-collapsed': isProjectsListCollapsed
     }"
   >
-    <div class="theme-toggle">
-      <ThemeToggle />
-    </div>
     <div class="app-layout">
       <router-view
         name="sidepanelLeft"
@@ -46,6 +43,9 @@ function handleSidePanelCollapse(collapsed: boolean) {
       />
       <div class="main-content">
         <router-view />
+      </div>
+      <div class="side-panel-right">
+        <ThemeToggle />
       </div>
     </div>
   </div>
@@ -56,11 +56,13 @@ function handleSidePanelCollapse(collapsed: boolean) {
   background: var(--sl-color-neutral-0);
   color: var(--sl-color-neutral-900);
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 .app-layout {
   display: flex;
-  min-height: 100vh;
+  flex: 1;
 }
 
 .side-panel {
@@ -74,14 +76,16 @@ function handleSidePanelCollapse(collapsed: boolean) {
 
 .main-content {
   flex: 1;
-  height: 100vh;
+  height: 100%;
   overflow-y: auto;
 }
 
-.theme-toggle {
-  position: fixed;
-  top: 1rem;
-  right: 1rem;
-  z-index: 100;
+.side-panel-right {
+  width: 50px;
+  display: flex;
+  justify-content: center;
+  padding-top: 1rem;
+  background-color: var(--sl-color-neutral-0);
+  border-left: 1px solid var(--sl-color-neutral-200);
 }
 </style>

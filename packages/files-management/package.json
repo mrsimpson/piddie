@@ -20,7 +20,7 @@
     "@isomorphic-git/lightning-fs": "4.6.0",
     "@modelcontextprotocol/sdk": "1.6.1",
     "@piddie/shared-types": "workspace:*",
-    "@webcontainer/api": "1.5.1-internal.6",
+    "@webcontainer/api": "1.5.3",
     "ignore": "^7.0.3",
     "native-file-system-adapter": "3.0.1",
     "uuid": "11.1.0",

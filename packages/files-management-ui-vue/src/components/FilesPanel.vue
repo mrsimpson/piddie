@@ -98,6 +98,7 @@ function handleCollapse(isCollapsed: boolean) {
     :initial-collapsed="props.initialCollapsed"
     @collapse="handleCollapse"
     expand-icon="folder"
+    direction="left"
   >
     <template #header>
       <div class="panel-header">

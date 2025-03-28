@@ -5,6 +5,30 @@ import {
   RuntimeType
 } from "../factory/RuntimeEnvironmentFactory";
 import { CommandResult, RuntimeEnvironmentProvider } from "../types";
+import { WebContainer } from "@webcontainer/api";
+import { WebContainerProvider } from "../providers/WebContainerProvider";
+
+// Mock the WebContainerProvider
+vi.mock("../providers/WebContainerProvider", () => {
+  return {
+    WebContainerProvider: vi
+      .fn()
+      .mockImplementation((container: WebContainer | undefined) => {
+        return {
+          container: container,
+          isInitialized: !!container,
+          initialize: vi.fn().mockResolvedValue(undefined),
+          isReady: vi.fn().mockReturnValue(true),
+          executeCommand: vi.fn().mockResolvedValue({
+            exitCode: 0,
+            stdout: "mocked output",
+            stderr: "",
+            success: true
+          })
+        };
+      })
+  };
+});
 
 // Create a mock provider for testing
 class MockRuntimeProvider implements RuntimeEnvironmentProvider {
@@ -65,6 +89,8 @@ describe("RuntimeEnvironmentManager", () => {
       RuntimeType.WEB_CONTAINER,
       MockRuntimeProvider as any
     );
+
+    vi.clearAllMocks();
   });
 
   test("should create manager with default provider", () => {
@@ -144,5 +170,25 @@ describe("RuntimeEnvironmentManager", () => {
     expect(manager.isReady()).toBe(false);
     await manager.initialize();
     expect(manager.isReady()).toBe(true);
+  });
+
+  test("should create a manager with an existing WebContainer instance", async () => {
+    // Create a mock WebContainer
+    const mockWebContainer = {} as WebContainer;
+
+    // Create a manager with the WebContainer
+    const manager =
+      RuntimeEnvironmentManager.withWebContainer(mockWebContainer);
+
+    // Verify that WebContainerProvider was constructed with our container
+    expect(WebContainerProvider).toHaveBeenCalledWith(mockWebContainer);
+
+    // Verify that the manager is ready
+    expect(manager.isReady()).toBe(true);
+
+    // Execute a command and verify it works
+    const result = await manager.executeCommand("test command");
+    expect(result.success).toBe(true);
+    expect(result.stdout).toBe("mocked output");
   });
 });

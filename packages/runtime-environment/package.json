@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@piddie/shared-types": "workspace:*",
-    "@webcontainer/api": "^1.1.0"
+    "@webcontainer/api": "1.5.3"
   },
   "devDependencies": {
     "vitest": "^0.29.2"

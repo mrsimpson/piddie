@@ -5,13 +5,13 @@ export * from "./factory/RuntimeEnvironmentFactory";
 export { WebContainerProvider as WebContainerProviderImpl } from "./providers/WebContainerProvider";
 
 import {
-    RuntimeEnvironmentFactory,
-    RuntimeType
+  RuntimeEnvironmentFactory,
+  RuntimeType
 } from "./factory/RuntimeEnvironmentFactory";
 import { WebContainerProvider } from "./providers/WebContainerProvider";
 
 // Register the WebContainerProvider implementation
 RuntimeEnvironmentFactory.registerProvider(
-    RuntimeType.WEB_CONTAINER,
-    WebContainerProvider
+  RuntimeType.WEB_CONTAINER,
+  WebContainerProvider
 );

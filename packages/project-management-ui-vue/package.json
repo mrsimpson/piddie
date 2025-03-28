@@ -33,11 +33,11 @@
     "@piddie/files-management-ui-vue": "workspace:*",
     "@shoelace-style/shoelace": "^2.19.1",
     "pinia": "3.0.1",
-    "vitest": "3.0.7",
     "vue": "^3.5.13",
     "vue-router": "^4.5.0"
   },
   "devDependencies": {
+    "vitest": "3.0.7",
     "@vitejs/plugin-vue": "^5.2.3",
     "@vue/test-utils": "2.4.6",
     "@vue/tsconfig": "^0.7.0",
