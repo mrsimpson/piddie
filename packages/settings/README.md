@@ -1,38 +1,81 @@
-# Project Management Package
+# Settings Package
 
 ## Overview
 
-Manages project lifecycle and metadata, coordinating between file system and chat context components.
+Provides persistent application settings management using IndexedDB for browser-based storage. The package manages two main types of settings:
+
+1. Workbench UI settings (layout, panel dimensions)
+2. LLM (Language Model) configuration settings
+
+## Architecture
+
+```mermaid
+graph TD
+    A[Settings Manager] --> B[IndexedDB]
+    A --> C[Workbench Settings]
+    A --> D[LLM Config]
+    E[Vue Components] --> A
+    F[Layout Store] --> A
+    G[LLM Store] --> A
+```
 
 ## Core Components
 
-### Project Manager
+### SettingsManager
 
-- **Responsibilities**:
-  - Create and delete projects
-  - Manage project metadata
-  - Coordinate file system roots
-  - Link chat contexts to projects
+Single source of truth for application settings, providing:
 
-## Key Design Decisions
+- Typed settings access and updates
+- Default values
+- Migration handling
+- Data serialization
 
-- Lightweight coordination of other components
-- No direct file or chat management
-- Simple metadata storage
-- Clear component boundaries
+```typescript
+// Usage example
+import { settingsManager } from "@piddie/settings";
 
-## External Relationships
+// Get settings
+const config = await settingsManager.getLlmConfig();
+const layout = await settingsManager.getWorkbenchSetting(
+  WorkbenchSettingKey.FILE_EXPLORER_WIDTH
+);
 
-- References file system roots
-- Links to chat contexts
-- Provides project info to workbench
+// Update settings
+await settingsManager.updateWorkbenchSetting(
+  WorkbenchSettingKey.FILE_EXPLORER_WIDTH,
+  250
+);
+```
+
+## Settings Schema
+
+### Workbench Settings
+
+- File explorer width/collapse state
+- Chat panel width/collapse state
+- Selected LLM provider
+- LLM configuration
+
+### LLM Configuration
+
+- API key
+- Base URL
+- Default/selected model
+- Provider type
+- Available models
 
 ## Usage
 
-```typescript
-// Example of project creation
-const project = await projectManager.createProject("My New Project");
+The package exports a singleton `settingsManager` instance that should be used throughout the application:
 
-// Opening existing project
-const existingProject = await projectManager.openProject(projectId);
+```typescript
+import { settingsManager } from "@piddie/settings";
 ```
+
+## Design Decisions
+
+1. Uses IndexedDB for persistent storage
+2. Single manager instance for consistent state
+3. Type-safe settings access
+4. Automatic migration handling
+5. Default values for all settings

@@ -14,7 +14,8 @@ import { useFileSystemStore } from "@piddie/files-management-ui-vue";
 import { FilesPanel } from "@piddie/files-management-ui-vue";
 import ChatPanel from "@/components/ChatPanel.vue";
 import RuntimePanel from "@/components/RuntimePanel.vue";
-import { settingsManager } from "@piddie/settings";
+import { ResizablePanel } from "@piddie/common-ui-vue";
+import { settingsManager, WorkbenchSettingKey } from "@piddie/settings";
 import { WebContainer } from "@webcontainer/api";
 import {
   WebContainerFileSystem,
@@ -35,6 +36,11 @@ const isFileExplorerCollapsed = ref(false);
 const isChatPanelCollapsed = ref(false);
 const isRuntimePanelCollapsed = ref(false);
 
+// Panel widths
+const fileExplorerWidth = ref(250);
+const chatPanelWidth = ref(300);
+const runtimePanelWidth = ref(500);
+
 // WebContainer related refs
 const webContainerInstance = ref<WebContainer | null>(null);
 const containerFileSystem = ref<WebContainerFileSystem | null>(null);
@@ -52,114 +58,33 @@ provide("webContainer", webContainerInstance);
 provide("fileSystem", containerFileSystem);
 provide("runtimeManager", runtimeManager);
 
-// Panel sizing
-const fileExplorerWidth = ref(250);
-const chatPanelWidth = ref(300);
-const runtimePanelWidth = ref(500);
-const isResizingChat = ref(false);
-const isResizingFiles = ref(false);
-const isResizingRuntime = ref(false);
-const startX = ref(0);
-const startWidth = ref(0);
+// Determine which panel should fill available space
+const filesPanel = {
+  shouldFillSpace: computed(
+    () => isRuntimePanelCollapsed.value && !isFileExplorerCollapsed.value
+  )
+};
 
-// Load runtime panel settings from localStorage
-function loadRuntimePanelSettings() {
-  try {
-    const widthStr = localStorage.getItem("runtimePanelWidth");
-    const collapsedStr = localStorage.getItem("isRuntimePanelCollapsed");
+const runtimePanel = {
+  shouldFillSpace: computed(() => !isRuntimePanelCollapsed.value)
+};
 
-    if (widthStr) {
-      runtimePanelWidth.value = parseInt(widthStr, 10);
+async function initializeFromRoute() {
+  projectId.value = route.params.id as string;
+  if (projectId.value) {
+    try {
+      error.value = null;
+      await projectStore.setCurrentProject(projectId.value);
+
+      // Initialize WebContainer for this project
+      await initializeWebContainer();
+
+      // Update the sync manager reference
+      syncManagerRef.value = fileSystemStore.syncManager;
+    } catch (err) {
+      console.error("Failed to initialize project:", err);
+      error.value = err as Error;
     }
-
-    if (collapsedStr) {
-      isRuntimePanelCollapsed.value = collapsedStr === "true";
-    }
-  } catch (err) {
-    console.error(
-      "Failed to load runtime panel settings from localStorage:",
-      err
-    );
-  }
-}
-
-// Save runtime panel settings to localStorage
-function saveRuntimePanelSettings() {
-  try {
-    localStorage.setItem(
-      "runtimePanelWidth",
-      runtimePanelWidth.value.toString()
-    );
-    localStorage.setItem(
-      "isRuntimePanelCollapsed",
-      isRuntimePanelCollapsed.value.toString()
-    );
-  } catch (err) {
-    console.error(
-      "Failed to save runtime panel settings to localStorage:",
-      err
-    );
-  }
-}
-
-// Load panel widths from settings
-async function loadPanelWidths() {
-  try {
-    console.group("ProjectView: Load Panel Widths");
-    const settings = await settingsManager.getWorkbenchSettings();
-    console.log("Loaded settings:", settings);
-
-    fileExplorerWidth.value = settings.fileExplorerWidth as number;
-    chatPanelWidth.value = settings.chatPanelWidth as number;
-    isFileExplorerCollapsed.value = settings.isFileExplorerCollapsed as boolean;
-    isChatPanelCollapsed.value = settings.isChatPanelCollapsed as boolean;
-
-    // Load runtime panel settings from localStorage
-    loadRuntimePanelSettings();
-
-    console.log("Applied panel widths:", {
-      fileExplorerWidth: fileExplorerWidth.value,
-      chatPanelWidth: chatPanelWidth.value,
-      runtimePanelWidth: runtimePanelWidth.value,
-      isFileExplorerCollapsed: isFileExplorerCollapsed.value,
-      isChatPanelCollapsed: isChatPanelCollapsed.value,
-      isRuntimePanelCollapsed: isRuntimePanelCollapsed.value
-    });
-    console.groupEnd();
-  } catch (err) {
-    console.error("Failed to load panel widths:", err);
-    console.groupEnd();
-  }
-}
-
-// Save panel widths to settings
-async function savePanelWidths() {
-  try {
-    console.group("ProjectView: Save Panel Widths");
-    console.log("Saving panel widths:", {
-      fileExplorerWidth: fileExplorerWidth.value,
-      chatPanelWidth: chatPanelWidth.value,
-      runtimePanelWidth: runtimePanelWidth.value,
-      isFileExplorerCollapsed: isFileExplorerCollapsed.value,
-      isChatPanelCollapsed: isChatPanelCollapsed.value,
-      isRuntimePanelCollapsed: isRuntimePanelCollapsed.value
-    });
-
-    await settingsManager.updateWorkbenchSettings({
-      fileExplorerWidth: fileExplorerWidth.value,
-      chatPanelWidth: chatPanelWidth.value,
-      isFileExplorerCollapsed: isFileExplorerCollapsed.value,
-      isChatPanelCollapsed: isChatPanelCollapsed.value
-    });
-
-    // Save runtime panel settings to localStorage
-    saveRuntimePanelSettings();
-
-    console.log("Panel widths saved successfully");
-    console.groupEnd();
-  } catch (err) {
-    console.error("Failed to save panel widths:", err);
-    console.groupEnd();
   }
 }
 
@@ -209,64 +134,9 @@ async function initializeWebContainer() {
   }
 }
 
-// Debounce function to avoid too many saves
-let saveTimeout: number | null = null;
-function debouncedSavePanelWidths() {
-  if (saveTimeout) {
-    clearTimeout(saveTimeout);
-  }
-  saveTimeout = window.setTimeout(() => {
-    savePanelWidths();
-    saveTimeout = null;
-  }, 500);
-}
-
-async function initializeFromRoute() {
-  projectId.value = route.params.id as string;
-  if (projectId.value) {
-    try {
-      error.value = null;
-      await projectStore.setCurrentProject(projectId.value);
-
-      // Initialize WebContainer for this project
-      await initializeWebContainer();
-
-      // Update the sync manager reference
-      syncManagerRef.value = fileSystemStore.syncManager;
-    } catch (err) {
-      console.error("Failed to initialize project:", err);
-      error.value = err as Error;
-    }
-  }
-}
-
 // Initialize when the component is mounted
 onMounted(async () => {
-  await loadPanelWidths();
   await initializeFromRoute();
-
-  // Add event listeners for resizing
-  document.addEventListener("mousemove", handleMouseMove);
-  document.addEventListener("mouseup", handleMouseUp);
-});
-
-onBeforeUnmount(async () => {
-  // Clean up resources when the component is unmounted
-  // This will be called when navigating away from the project view entirely,
-  // but not when switching between projects (which is handled by the file system store)
-
-  // Save panel widths before unmounting
-  await savePanelWidths();
-
-  // Remove event listeners
-  document.removeEventListener("mousemove", handleMouseMove);
-  document.removeEventListener("mouseup", handleMouseUp);
-
-  // Clear any pending save
-  if (saveTimeout) {
-    clearTimeout(saveTimeout);
-    saveTimeout = null;
-  }
 });
 
 // Watch for route changes
@@ -281,101 +151,29 @@ watch(
   }
 );
 
-// Watch for panel width changes and save them
+// Watch for changes in RuntimePanel collapse state
 watch(
-  [
-    fileExplorerWidth,
-    chatPanelWidth,
-    runtimePanelWidth,
-    isFileExplorerCollapsed,
-    isChatPanelCollapsed,
-    isRuntimePanelCollapsed
-  ],
-  () => {
-    debouncedSavePanelWidths();
+  () => isRuntimePanelCollapsed.value,
+  (collapsed) => {
+    // When runtime panel is collapsed, we need to update the width of files panel
+    // to ensure it takes the full available space
+    if (collapsed && !isFileExplorerCollapsed.value) {
+      console.log("Runtime panel collapsed, adjusting layout...");
+    }
   }
 );
 
 // Handle panel collapse events
 function onFileExplorerCollapse(collapsed: boolean) {
   isFileExplorerCollapsed.value = collapsed;
-  if (collapsed) {
-    // Store the width before collapsing
-    fileExplorerWidth.value = fileExplorerWidth.value || 250;
-  }
-  debouncedSavePanelWidths();
 }
 
 function onChatPanelCollapse(collapsed: boolean) {
   isChatPanelCollapsed.value = collapsed;
-  if (collapsed) {
-    // Store the width before collapsing
-    chatPanelWidth.value = chatPanelWidth.value || 300;
-  }
-  debouncedSavePanelWidths();
 }
 
 function onRuntimePanelCollapse(collapsed: boolean) {
   isRuntimePanelCollapsed.value = collapsed;
-  if (collapsed) {
-    // Store the width before collapsing
-    runtimePanelWidth.value = runtimePanelWidth.value || 500;
-  }
-  debouncedSavePanelWidths();
-}
-
-// Resizing functions
-function startResizingChat(e: MouseEvent) {
-  if (isChatPanelCollapsed.value) return;
-
-  isResizingChat.value = true;
-  startX.value = e.clientX;
-  startWidth.value = chatPanelWidth.value;
-  e.preventDefault();
-}
-
-function startResizingFiles(e: MouseEvent) {
-  if (isFileExplorerCollapsed.value) return;
-
-  isResizingFiles.value = true;
-  startX.value = e.clientX;
-  startWidth.value = fileExplorerWidth.value;
-  e.preventDefault();
-}
-
-function startResizingRuntime(e: MouseEvent) {
-  if (isRuntimePanelCollapsed.value) return;
-
-  isResizingRuntime.value = true;
-  startX.value = e.clientX;
-  startWidth.value = runtimePanelWidth.value;
-  e.preventDefault();
-}
-
-function handleMouseMove(e: MouseEvent) {
-  if (isResizingChat.value) {
-    const delta = e.clientX - startX.value;
-    chatPanelWidth.value = Math.max(100, startWidth.value + delta);
-  } else if (isResizingFiles.value) {
-    const delta = e.clientX - startX.value;
-    fileExplorerWidth.value = Math.max(100, startWidth.value + delta);
-  } else if (isResizingRuntime.value) {
-    const delta = e.clientX - startX.value;
-    runtimePanelWidth.value = Math.max(100, startWidth.value + delta);
-  }
-}
-
-function handleMouseUp() {
-  if (
-    isResizingChat.value ||
-    isResizingFiles.value ||
-    isResizingRuntime.value
-  ) {
-    debouncedSavePanelWidths();
-  }
-  isResizingChat.value = false;
-  isResizingFiles.value = false;
-  isResizingRuntime.value = false;
 }
 </script>
 
@@ -383,45 +181,29 @@ function handleMouseUp() {
   <div class="project-view">
     <div class="panels-container">
       <!-- Chat Panel -->
-      <div
-        class="panel-wrapper chat-panel-wrapper"
-        :class="{ collapsed: isChatPanelCollapsed }"
-        :style="{
-          width: isChatPanelCollapsed ? '40px' : `${chatPanelWidth}px`
-        }"
+      <ResizablePanel
+        v-model:width="chatPanelWidth"
+        v-model:collapsed="isChatPanelCollapsed"
+        direction="left"
+        :min-width="100"
+        :settings-width-key="WorkbenchSettingKey.CHAT_PANEL_WIDTH"
+        :settings-collapsed-key="WorkbenchSettingKey.IS_CHAT_PANEL_COLLAPSED"
       >
         <ChatPanel
           :initial-collapsed="isChatPanelCollapsed"
           @collapse="onChatPanelCollapse"
         />
-      </div>
-
-      <!-- Resizer between chat and files panel -->
-      <div
-        class="resizer chat-files-resizer"
-        :class="{ hidden: isChatPanelCollapsed }"
-        @mousedown="startResizingChat"
-      ></div>
+      </ResizablePanel>
 
       <!-- Files Panel -->
-      <div
-        class="panel-wrapper files-panel-wrapper"
-        :class="{
-          collapsed: isFileExplorerCollapsed,
-          'runtime-collapsed': isRuntimePanelCollapsed
-        }"
-        :style="{
-          width: isFileExplorerCollapsed
-            ? '40px'
-            : isRuntimePanelCollapsed
-              ? 'auto'
-              : `${fileExplorerWidth}px`,
-          flex: isFileExplorerCollapsed
-            ? '0 0 40px'
-            : isRuntimePanelCollapsed
-              ? '1 1 auto'
-              : '0 0 auto'
-        }"
+      <ResizablePanel
+        v-model:width="fileExplorerWidth"
+        v-model:collapsed="isFileExplorerCollapsed"
+        direction="left"
+        :min-width="100"
+        :settings-width-key="WorkbenchSettingKey.FILE_EXPLORER_WIDTH"
+        :settings-collapsed-key="WorkbenchSettingKey.IS_FILE_EXPLORER_COLLAPSED"
+        :fill-available="filesPanel.shouldFillSpace.value"
       >
         <FilesPanel
           :systems="fileSystemStore.systems"
@@ -429,29 +211,23 @@ function handleMouseUp() {
           :initial-collapsed="isFileExplorerCollapsed"
           @collapse="onFileExplorerCollapse"
         />
-      </div>
-
-      <!-- Resizer between files and runtime panel -->
-      <div
-        class="resizer files-runtime-resizer"
-        :class="{ hidden: isFileExplorerCollapsed }"
-        @mousedown="startResizingFiles"
-      ></div>
+      </ResizablePanel>
 
       <!-- Runtime Panel -->
-      <div
-        class="panel-wrapper runtime-panel-wrapper"
-        :class="{ collapsed: isRuntimePanelCollapsed }"
-        :style="{
-          width: isRuntimePanelCollapsed ? '40px' : `${runtimePanelWidth}px`,
-          flex: isRuntimePanelCollapsed ? '0 0 40px' : '1 1 auto'
-        }"
+      <ResizablePanel
+        v-model:width="runtimePanelWidth"
+        v-model:collapsed="isRuntimePanelCollapsed"
+        direction="left"
+        :min-width="100"
+        :settings-width-key="WorkbenchSettingKey.RUNTIME_PANEL_WIDTH"
+        :settings-collapsed-key="WorkbenchSettingKey.IS_RUNTIME_PANEL_COLLAPSED"
+        :fill-available="runtimePanel.shouldFillSpace.value"
       >
         <RuntimePanel
           :initial-collapsed="isRuntimePanelCollapsed"
           @collapse="onRuntimePanelCollapse"
         />
-      </div>
+      </ResizablePanel>
     </div>
   </div>
 </template>
@@ -470,52 +246,11 @@ function handleMouseUp() {
   flex-direction: row;
   height: 100%;
   width: 100%;
-}
-
-.panel-wrapper {
-  height: 100%;
   overflow: hidden;
 }
 
-.panel-wrapper.collapsed {
-  flex: 0 0 40px !important;
-  width: 40px !important;
-  min-width: 40px !important;
-}
-
-.chat-panel-wrapper {
-  flex: 0 0 auto;
-}
-
-.files-panel-wrapper {
-  flex: 0 0 auto;
-}
-
-.files-panel-wrapper.runtime-collapsed:not(.collapsed) {
+/* Ensure the Runtime panel takes up all available space by default */
+.panels-container > :last-child {
   flex: 1 1 auto !important;
-}
-
-.runtime-panel-wrapper {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-/* Resizer styles */
-.resizer {
-  width: 1px;
-  height: 100%;
-  background-color: transparent;
-  cursor: col-resize;
-  transition: background-color 0.2s;
-  z-index: 10;
-}
-
-.resizer:hover,
-.resizer:active {
-  background-color: var(--sl-color-primary-200);
-}
-
-.resizer.hidden {
-  display: none;
 }
 </style>

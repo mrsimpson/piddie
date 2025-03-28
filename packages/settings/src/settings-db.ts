@@ -39,6 +39,8 @@ export enum WorkbenchSettingKey {
   CHAT_PANEL_WIDTH = "chatPanelWidth",
   IS_FILE_EXPLORER_COLLAPSED = "isFileExplorerCollapsed",
   IS_CHAT_PANEL_COLLAPSED = "isChatPanelCollapsed",
+  RUNTIME_PANEL_WIDTH = "runtimePanelWidth",
+  IS_RUNTIME_PANEL_COLLAPSED = "isRuntimePanelCollapsed",
   SELECTED_PROVIDER = "selectedProvider",
   LLM_CONFIG = "llmConfig"
 }
@@ -165,6 +167,8 @@ export const DEFAULT_WORKBENCH_SETTINGS = {
   [WorkbenchSettingKey.CHAT_PANEL_WIDTH]: 300,
   [WorkbenchSettingKey.IS_FILE_EXPLORER_COLLAPSED]: false,
   [WorkbenchSettingKey.IS_CHAT_PANEL_COLLAPSED]: false,
+  [WorkbenchSettingKey.RUNTIME_PANEL_WIDTH]: 500,
+  [WorkbenchSettingKey.IS_RUNTIME_PANEL_COLLAPSED]: false,
   [WorkbenchSettingKey.SELECTED_PROVIDER]: "litellm",
   [WorkbenchSettingKey.LLM_CONFIG]: DEFAULT_LLM_CONFIG
 };
