@@ -15,7 +15,7 @@ export class RuntimeEnvironmentFactory {
   private static providerImplementations: Record<
     RuntimeType,
     new () => RuntimeEnvironmentProvider
-  > = {} as any;
+  > = {} as Record<RuntimeType, new () => RuntimeEnvironmentProvider>;
 
   /**
    * Register a provider implementation for a runtime type

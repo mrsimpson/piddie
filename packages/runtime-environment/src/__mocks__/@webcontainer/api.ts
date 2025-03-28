@@ -36,7 +36,7 @@ export class WebContainer {
   private _isBooted = false;
   private _commandResponses: Map<string, { exitCode: number; stdout: string }> =
     new Map();
-  private _eventListeners: Map<string, Array<(...args: any[]) => void>> =
+  private _eventListeners: Map<string, Array<(...args: unknown[]) => void>> =
     new Map();
 
   // Singleton pattern for the mock
@@ -87,12 +87,12 @@ export class WebContainer {
     return new MockProcess(response.exitCode, response.stdout);
   }
 
-  public async mount(files: any): Promise<void> {
+  public async mount(): Promise<void> {
     // Mock implementation does nothing
     return Promise.resolve();
   }
 
-  public on(event: string, callback: (...args: any[]) => void): void {
+  public on(event: string, callback: (...args: unknown[]) => void): void {
     if (!this._eventListeners.has(event)) {
       this._eventListeners.set(event, []);
     }
@@ -100,7 +100,7 @@ export class WebContainer {
     this._eventListeners.get(event)!.push(callback);
   }
 
-  private _triggerEvent(event: string, ...args: any[]): void {
+  private _triggerEvent(event: string, ...args: unknown[]): void {
     const listeners = this._eventListeners.get(event) || [];
     for (const listener of listeners) {
       listener(...args);

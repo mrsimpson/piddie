@@ -171,45 +171,36 @@ async function initializeWebContainer() {
   try {
     console.log("Initializing WebContainer for project:", projectId.value);
 
-    // Reset WebContainer service if it has a container
+    // Initialize file system store - this will handle WebContainer creation/setup
+    console.log("Initializing file system store for project");
+    await fileSystemStore.initializeForProject({
+      id: projectId.value as string,
+      name: projectStore.currentProject?.name || "Unknown Project",
+      created: projectStore.currentProject?.created || new Date(),
+      lastAccessed: projectStore.currentProject?.lastAccessed || new Date(),
+      chatId: projectStore.currentProject?.chatId || ""
+    });
+
+    // Get references to WebContainer and WebContainerFileSystem if available
     if (webContainerService.hasContainer()) {
-      console.log("Resetting existing WebContainer");
-      await webContainerService.reset();
+      webContainerInstance.value = webContainerService.getContainer();
+      containerFileSystem.value = fileSystemStore.getWebContainerFileSystem();
+
+      // Initialize the RuntimeEnvironmentManager with the container
+      console.log("Setting up RuntimeEnvironmentManager");
+      runtimeManager.value = RuntimeEnvironmentManager.withWebContainer(
+        webContainerInstance.value as any
+      );
+
+      if (runtimeManager.value) {
+        await runtimeManager.value.initialize();
+        console.log("RuntimeEnvironmentManager initialized successfully");
+      }
+    } else {
+      console.warn("No WebContainer available after initialization");
+      containerError.value = new Error("WebContainer initialization failed");
     }
 
-    // Always create a new WebContainer using the service
-    console.log("Creating new WebContainer");
-    const container = await webContainerService.createContainer();
-    webContainerInstance.value = container;
-
-    // Initialize the file system with the container
-    containerFileSystem.value = new WebContainerFileSystem(container);
-
-    // Initialize the file system store with our WebContainer
-    console.log("Initializing file system store with WebContainer");
-    await fileSystemStore.initializeForProject(
-      {
-        id: projectId.value as string
-      },
-      container
-    );
-
-    // Initialize the RuntimeEnvironmentManager with the same container
-    console.log("Initializing RuntimeEnvironmentManager");
-    runtimeManager.value =
-      RuntimeEnvironmentManager.withWebContainer(container);
-
-    // Make sure to initialize the runtime manager
-    if (runtimeManager.value) {
-      console.log("Initializing RuntimeEnvironmentManager...");
-      await runtimeManager.value.initialize();
-      console.log("RuntimeEnvironmentManager initialized successfully!");
-    }
-
-    console.log(
-      "WebContainer initialized successfully for project:",
-      projectId.value
-    );
     containerInitializing.value = false;
   } catch (err) {
     console.error("Failed to initialize WebContainer:", err);

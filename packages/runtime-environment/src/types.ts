@@ -51,10 +51,3 @@ export interface RuntimeEnvironmentProvider {
    */
   isReady(): boolean;
 }
-
-/**
- * WebContainer-specific runtime environment provider
- */
-export interface WebContainerProvider extends RuntimeEnvironmentProvider {
-  // WebContainer-specific methods could be added here if needed
-}

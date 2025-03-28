@@ -1,4 +1,4 @@
-import { inject, ref } from "vue";
+import { inject } from "vue";
 import type { Ref } from "vue";
 import type { WebContainer } from "@webcontainer/api";
 import type { WebContainerFileSystem } from "@piddie/files-management";
