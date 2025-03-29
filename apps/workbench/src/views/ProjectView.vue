@@ -188,6 +188,7 @@ function onRuntimePanelCollapse(collapsed: boolean) {
         :min-width="100"
         :settings-width-key="WorkbenchSettingKey.CHAT_PANEL_WIDTH"
         :settings-collapsed-key="WorkbenchSettingKey.IS_CHAT_PANEL_COLLAPSED"
+        :fill-available="isFileExplorerCollapsed && isRuntimePanelCollapsed"
       >
         <ChatPanel
           :initial-collapsed="isChatPanelCollapsed"
