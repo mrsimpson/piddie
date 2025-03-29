@@ -1,7 +1,9 @@
 import {
   RuntimeEnvironmentProvider,
   CommandResult,
-  CommandOptions
+  CommandOptions,
+  RuntimeEnvironment,
+  ExecuteCommandRequest
 } from "./types";
 import {
   RuntimeEnvironmentFactory,
@@ -13,7 +15,7 @@ import { WebContainerProvider } from "./providers/WebContainerProvider";
 /**
  * Manages the runtime environment for executing commands
  */
-export class RuntimeEnvironmentManager {
+export class RuntimeEnvironmentManager implements RuntimeEnvironment {
   private provider: RuntimeEnvironmentProvider;
 
   /**
@@ -53,19 +55,27 @@ export class RuntimeEnvironmentManager {
 
   /**
    * Executes a command in the runtime environment
-   * @param command The command to execute
-   * @param options Command execution options
+   * Implementation for the RuntimeEnvironment interface
+   * @param requestOrCommand The command execution request or command string
+   * @param options Command execution options (when first param is a string)
    * @returns Result of the command execution
    */
   public async executeCommand(
-    command: string,
+    requestOrCommand: ExecuteCommandRequest | string,
     options?: CommandOptions
   ): Promise<CommandResult> {
     if (!this.provider.isReady()) {
       await this.initialize();
     }
 
-    return await this.provider.executeCommand(command, options);
+    if (typeof requestOrCommand === "string") {
+      return await this.provider.executeCommand(requestOrCommand, options);
+    } else {
+      return await this.provider.executeCommand(
+        requestOrCommand.command,
+        requestOrCommand.options
+      );
+    }
   }
 
   /**

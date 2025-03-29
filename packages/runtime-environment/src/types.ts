@@ -51,3 +51,25 @@ export interface RuntimeEnvironmentProvider {
    */
   isReady(): boolean;
 }
+
+/**
+ * Command execution request interface for the RuntimeEnvironment
+ */
+export interface ExecuteCommandRequest {
+  /** The command to execute */
+  command: string;
+  /** Options for command execution */
+  options?: CommandOptions;
+}
+
+/**
+ * Core interface for runtime environment operations
+ */
+export interface RuntimeEnvironment {
+  /**
+   * Executes a command in the runtime environment
+   * @param request The command execution request
+   * @returns Promise resolving to the command result
+   */
+  executeCommand(request: ExecuteCommandRequest): Promise<CommandResult>;
+}
