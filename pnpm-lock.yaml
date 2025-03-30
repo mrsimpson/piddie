@@ -629,6 +629,9 @@ importers:
       '@piddie/llm-integration':
         specifier: workspace:*
         version: link:../llm-integration
+      '@piddie/runtime-environment':
+        specifier: workspace:*
+        version: link:../runtime-environment
       '@piddie/settings':
         specifier: workspace:*
         version: link:../settings

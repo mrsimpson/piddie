@@ -24,7 +24,7 @@ interface Tool {
 
 /**
  * Orchestrator for LLM interactions
- * Manages LLM providers and MCP servers
+ * Manages LLM providers and integrates the McpHost
  */
 export class Orchestrator implements LlmAdapter {
   private llmProviders: Map<string, LlmProviderConfig> = new Map();
@@ -48,7 +48,6 @@ export class Orchestrator implements LlmAdapter {
 
   /**
    * Registers an LLM provider with the orchestrator
-   * @param name The name of the provider
    * @param config The provider configuration
    */
   registerLlmProvider(config: LlmProviderConfig): void {
@@ -57,7 +56,7 @@ export class Orchestrator implements LlmAdapter {
 
   /**
    * Gets an LLM provider by name
-   * @param name The name of the provider
+   * @param provider The name of the provider
    * @returns The provider configuration or undefined if not found
    */
   getLlmProvider(provider: string): LlmProviderConfig | undefined {
@@ -131,6 +130,14 @@ export class Orchestrator implements LlmAdapter {
   }
 
   /**
+   * Get the McpHost instance
+   * @returns The McpHost instance
+   */
+  getMcpHost(): McpHost {
+    return this.mcpHost;
+  }
+
+  /**
    * Checks if the current LLM provider supports function calling/tools
    * @param providerName The name of the provider to check
    * @returns A promise that resolves to true if tools are supported, false otherwise
@@ -156,8 +163,7 @@ export class Orchestrator implements LlmAdapter {
 
     if (this.toolsBuffer === null) {
       try {
-        this.toolsBuffer =
-          (await this.mcpHost.listTools()) as unknown as Tool[];
+        this.toolsBuffer = await this.mcpHost.listTools();
       } catch (error) {
         console.error("Error listing tools:", error);
         this.toolsBuffer = [];
@@ -331,7 +337,7 @@ export class Orchestrator implements LlmAdapter {
   }
 
   /**
-   * Execute a tool call
+   * Execute a tool call by delegating to the McpHost
    * @param toolCall The tool call to execute
    * @returns The result of the tool call
    */
@@ -355,14 +361,21 @@ export class Orchestrator implements LlmAdapter {
           ? JSON.parse(toolCall.function.arguments)
           : toolCall.function.arguments;
 
-      // Call the tool via McpHost
-      const result = await this.mcpHost.callTool(toolName, toolArgs);
+      // Delegate tool execution to the McpHost
+      const result = await this.mcpHost.executeToolCall(toolName, toolArgs);
       console.log(
         `[Orchestrator] Tool call executed successfully: ${toolName}`,
         result
       );
 
-      return result;
+      // Return the result directly or format an error message if present
+      if (result.error) {
+        return {
+          error: result.error
+        };
+      }
+      
+      return result.result;
     } catch (error) {
       console.error("[Orchestrator] Error executing tool call:", error);
       return {

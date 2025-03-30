@@ -18,7 +18,8 @@ import {
   createLlmAdapter,
   type LlmStreamChunk,
   type LlmProviderConfig,
-  type LlmMessage
+  type LlmMessage,
+  Orchestrator
 } from "@piddie/llm-integration";
 
 export const useLlmStore = defineStore("llm", () => {
@@ -32,9 +33,15 @@ export const useLlmStore = defineStore("llm", () => {
   const isVerifying = ref(false);
   const connectionStatus = ref<"none" | "success" | "error">("none");
   const availableModels = ref<ModelInfo[]>([]);
-  const fileManagementMcpServer = ref<FileManagementMcpServer | null>(null);
 
-  // Create a wrapper for the file system store that implements the FileSystemStore interface
+  // References to the MCP servers for lifecycle management
+  const fileManagementMcpServer = ref<FileManagementMcpServer | null>(null);
+  const runtimeEnvironmentManager = ref<any>(null);
+  const runtimeEnvironmentMcpServer = ref<any>(null);
+
+  // LLM adapter and orchestrator references
+  let llmAdapter: ReturnType<typeof createLlmAdapter>;
+  let orchestrator: Orchestrator | null = null;
 
   // Reactive configuration object for workbench
   const workbenchConfig = reactive<WorkbenchLlmConfig>({
@@ -96,16 +103,18 @@ export const useLlmStore = defineStore("llm", () => {
       ) {
         availableModels.value = [...loadedConfig.availableModels];
       }
+
+      // Create the LLM adapter
       llmAdapter = createLlmAdapter(
         getLlmProviderConfig(),
         chatStore.chatManager
       );
-      if (fileManagementMcpServer.value) {
-        await llmAdapter.registerMcpServer(
-          fileManagementMcpServer.value as unknown as McpServer,
-          "file_management"
-        );
-      }
+
+      // Get the Orchestrator from the LLM adapter to access its McpHost
+      orchestrator = llmAdapter as unknown as Orchestrator;
+
+      // Register MCP servers with the McpHost
+      await registerMcpServers();
     } catch (err) {
       console.error("Error initializing LLM store:", err);
       error.value = err instanceof Error ? err : new Error(String(err));
@@ -115,25 +124,67 @@ export const useLlmStore = defineStore("llm", () => {
     }
   }
 
-  // LLM adapter instance
-  let llmAdapter = createLlmAdapter(
+  // Create initial LLM adapter instance
+  llmAdapter = createLlmAdapter(
     getLlmProviderConfig(),
     chatStore.chatManager
   );
+
+  // Attempt to get the Orchestrator for McpHost access
+  orchestrator = llmAdapter as unknown as Orchestrator;
+
+  /**
+   * Register all MCP servers with the McpHost
+   */
+  async function registerMcpServers(): Promise<void> {
+    if (!orchestrator) {
+      console.error("Cannot register MCP servers: Orchestrator not available");
+      return;
+    }
+
+    const mcpHost = orchestrator.getMcpHost();
+
+    // Register the file management MCP server if available
+    if (fileManagementMcpServer.value) {
+      try {
+        await mcpHost.registerLocalServer(
+          fileManagementMcpServer.value as unknown as McpServer,
+          "file_management"
+        );
+        console.log("File management MCP server registered successfully");
+      } catch (error) {
+        console.error("Failed to register file management MCP server:", error);
+      }
+    }
+
+    // Register the runtime environment MCP server if available
+    if (runtimeEnvironmentMcpServer.value) {
+      try {
+        await mcpHost.registerLocalServer(
+          runtimeEnvironmentMcpServer.value as unknown as McpServer,
+          "runtime_environment"
+        );
+        console.log("Runtime environment MCP server registered successfully");
+      } catch (error) {
+        console.error("Failed to register runtime environment MCP server:", error);
+      }
+    }
+  }
 
   // Watch for file system initialization and register the MCP server
   watch(
     () => fileSystemStoreInstance.initialized,
     async (initialized) => {
       if (initialized) {
-        // Create and register the file management MCP server
+        // Create the file management MCP server
         fileManagementMcpServer.value = new FileManagementMcpServer(
           fileSystemStoreInstance.getBrowserFileSystem()
         );
-        // Register the MCP server with the LLM adapter
-        if (fileManagementMcpServer.value && llmAdapter) {
+
+        // Register the server with the McpHost
+        if (orchestrator) {
           try {
-            await llmAdapter.registerMcpServer(
+            await orchestrator.getMcpHost().registerLocalServer(
               fileManagementMcpServer.value as unknown as McpServer,
               "file_management"
             );
@@ -149,6 +200,43 @@ export const useLlmStore = defineStore("llm", () => {
     }
   );
 
+  // Initialize the runtime environment manager and register its MCP server
+  async function initializeRuntimeEnvironment(): Promise<void> {
+    try {
+      // Dynamically import the runtime environment components
+      const { RuntimeEnvironmentManager, RuntimeEnvironmentMCPServer } = await import("@piddie/runtime-environment");
+
+      // Create a RuntimeEnvironmentManager
+      runtimeEnvironmentManager.value = new RuntimeEnvironmentManager();
+
+      // Initialize the manager
+      await runtimeEnvironmentManager.value.initialize();
+
+      // Create an MCP server for the runtime environment
+      runtimeEnvironmentMcpServer.value = new RuntimeEnvironmentMCPServer(
+        runtimeEnvironmentManager.value
+      );
+
+      // Register the MCP server with the McpHost if the Orchestrator is available
+      if (orchestrator) {
+        try {
+          await orchestrator.getMcpHost().registerLocalServer(
+            runtimeEnvironmentMcpServer.value as unknown as McpServer,
+            "runtime_environment"
+          );
+          console.log("Runtime environment MCP server registered successfully");
+        } catch (error) {
+          console.error(
+            "Failed to register runtime environment MCP server:",
+            error
+          );
+        }
+      }
+    } catch (error) {
+      console.error("Failed to initialize runtime environment:", error);
+    }
+  }
+
   // Update the file system when it changes
   watch(
     () => fileSystemStoreInstance.getBrowserFileSystem(),
@@ -158,6 +246,7 @@ export const useLlmStore = defineStore("llm", () => {
       }
     }
   );
+
   // Load settings from database on store initialization
   onMounted(async () => {
     try {
@@ -188,13 +277,14 @@ export const useLlmStore = defineStore("llm", () => {
         chatStore.chatManager
       );
 
-      // Re-register the file management MCP server if it exists
-      if (fileManagementMcpServer.value) {
-        llmAdapter.registerMcpServer(
-          fileManagementMcpServer.value as unknown as McpServer,
-          "file_management"
-        );
-      }
+      // Get the Orchestrator for McpHost access
+      orchestrator = llmAdapter as unknown as Orchestrator;
+
+      // Register MCP servers with the new adapter
+      await registerMcpServers();
+
+      // Initialize the runtime environment
+      await initializeRuntimeEnvironment();
     } catch (err) {
       console.error("Error loading LLM settings:", err);
       error.value = err instanceof Error ? err : new Error(String(err));
@@ -245,13 +335,17 @@ export const useLlmStore = defineStore("llm", () => {
 
       connectionStatus.value = "success";
 
-      // Re-register the MCP server if it exists
-      if (fileManagementMcpServer.value) {
-        llmAdapter.registerMcpServer(
-          fileManagementMcpServer.value as unknown as McpServer,
-          "file_management"
-        );
-      }
+      // Re-initialize the adapter with the new configuration
+      llmAdapter = createLlmAdapter(
+        getLlmProviderConfig(),
+        chatStore.chatManager
+      );
+
+      // Get the Orchestrator for McpHost access
+      orchestrator = llmAdapter as unknown as Orchestrator;
+
+      // Re-register MCP servers with the new adapter
+      await registerMcpServers();
 
       return true;
     } catch (err) {
@@ -305,13 +399,11 @@ export const useLlmStore = defineStore("llm", () => {
         chatStore.chatManager
       );
 
-      // Re-register the file management MCP server if it exists
-      if (fileManagementMcpServer.value) {
-        llmAdapter.registerMcpServer(
-          fileManagementMcpServer.value as unknown as McpServer,
-          "file_management"
-        );
-      }
+      // Get the Orchestrator for McpHost access
+      orchestrator = llmAdapter as unknown as Orchestrator;
+
+      // Re-register MCP servers with the new adapter
+      await registerMcpServers();
 
       return true;
     } catch (err) {
@@ -341,13 +433,11 @@ export const useLlmStore = defineStore("llm", () => {
         chatStore.chatManager
       );
 
-      // Re-register the file management MCP server if it exists
-      if (fileManagementMcpServer.value) {
-        llmAdapter.registerMcpServer(
-          fileManagementMcpServer.value as unknown as McpServer,
-          "file_management"
-        );
-      }
+      // Get the Orchestrator for McpHost access
+      orchestrator = llmAdapter as unknown as Orchestrator;
+
+      // Re-register MCP servers with the new adapter
+      await registerMcpServers();
 
       return true;
     } catch (err) {
@@ -477,7 +567,7 @@ export const useLlmStore = defineStore("llm", () => {
                       (tc) =>
                         tc.function.name === functionName &&
                         JSON.stringify(tc.function.arguments) ===
-                          JSON.stringify(functionArgs)
+                        JSON.stringify(functionArgs)
                     );
 
                     if (existingIndex === -1) {
@@ -584,7 +674,7 @@ export const useLlmStore = defineStore("llm", () => {
                       (tc) =>
                         tc.function.name === functionName &&
                         JSON.stringify(tc.function.arguments) ===
-                          JSON.stringify(functionArgs)
+                        JSON.stringify(functionArgs)
                     );
 
                     if (existingIndex === -1) {
@@ -623,7 +713,7 @@ export const useLlmStore = defineStore("llm", () => {
                   (tc) =>
                     tc.function.name === functionName &&
                     JSON.stringify(tc.function.arguments) ===
-                      JSON.stringify(toolCall.function.arguments)
+                    JSON.stringify(toolCall.function.arguments)
                 );
 
                 if (existingIndex === -1) {
@@ -821,6 +911,7 @@ export const useLlmStore = defineStore("llm", () => {
     sendMessage,
     cancelStreaming,
     getStoredProviderConfig,
-    initializeStore
+    initializeStore,
+    initializeRuntimeEnvironment
   };
 });
