@@ -13,8 +13,10 @@ import type {
 import { EventEmitter } from "@piddie/shared-types";
 import type { ChatManager, Message } from "@piddie/chat-management";
 import { LlmProviderFactory } from "./adapters/LlmProviderFactory";
+import { McpHost } from "./mcp/McpHost";
 
 export { LlmProviderFactory };
+export { McpHost };
 
 export interface LlmAdapter {
   /**

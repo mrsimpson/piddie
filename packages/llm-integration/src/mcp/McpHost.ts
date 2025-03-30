@@ -14,6 +14,7 @@ interface Tool {
 
 /**
  * MCP host for managing connections to MCP servers
+ * This is the central registry for all MCP servers in the application
  */
 export class McpHost {
   /**
@@ -32,15 +33,21 @@ export class McpHost {
    * Register a local server with in-memory transport
    * @param server The server to register
    * @param name The name of the server
+   * @returns A promise that resolves when the server is registered
    */
   async registerLocalServer(server: McpServer, name: string): Promise<void> {
     try {
+      // If a server with this name already exists, unregister it first
+      if (this.connections.has(name)) {
+        this.unregisterServer(name);
+      }
+
       // Create transport pair
       const transports = InMemoryTransport.createLinkedPair();
       const clientTransport = transports[0];
       const serverTransport = transports[1];
 
-      // Connect server to transport (assuming server has a connect method)
+      // Connect server to transport
       await server.connect(serverTransport);
 
       // Create and connect client
@@ -63,15 +70,21 @@ export class McpHost {
   /**
    * Unregister a server by name
    * @param name The name of the server
-   * @returns The server or undefined if not found
+   * @returns True if the server was unregistered, false if not found
    */
   unregisterServer(name: string): boolean {
     const connection = this.connections.get(name);
     if (connection) {
-      connection.client.close();
-      connection.server?.close();
-      console.log(`[McpHost] Unregistered server: ${name}`);
-      return this.connections.delete(name);
+      try {
+        connection.client.close();
+        connection.server?.close();
+        console.log(`[McpHost] Unregistered server: ${name}`);
+        return this.connections.delete(name);
+      } catch (error) {
+        console.error(`[McpHost] Error unregistering server ${name}:`, error);
+        // Still try to remove from connections even if close failed
+        return this.connections.delete(name);
+      }
     }
     return false;
   }
@@ -95,8 +108,6 @@ export class McpHost {
     const allTools: Tool[] = [];
 
     // Collect tools from all connections
-
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     for (const [_, connection] of this.connections) {
       try {
         const toolsResult = await connection.client.listTools();
@@ -134,8 +145,6 @@ export class McpHost {
     params: Record<string, unknown>
   ): Promise<unknown> {
     // Try each connection until we find one that can handle the tool
-
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     for (const [_, connection] of this.connections) {
       try {
         const result = await connection.client.callTool({
@@ -159,5 +168,30 @@ export class McpHost {
     }
 
     throw new Error(`Tool ${name} not found in any connection`);
+  }
+
+  /**
+   * Execute a tool call with standard error handling
+   * By providing a wrapper for the MCP server tool, consumers don't need to care about the actual server
+   * and can treat all tools as if they were provided through a single point of contact
+   * @param toolName The name of the tool to call
+   * @param args The arguments for the tool
+   * @returns Result of the tool call with additional error information if applicable
+   */
+  async executeToolCall(
+    toolName: string,
+    args: Record<string, unknown>
+  ): Promise<{ result: unknown; error?: string }> {
+    try {
+      const result = await this.callTool(toolName, args);
+      return { result };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`[McpHost] Error executing tool call ${toolName}:`, error);
+      return {
+        result: null,
+        error: errorMessage
+      };
+    }
   }
 }

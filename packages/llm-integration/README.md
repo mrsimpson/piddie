@@ -27,7 +27,130 @@ The central component that:
 
 - Enhances requests with context and tools using the ModelContextProtocol (MCP) SDK.
 - Processes response streams.
-- Implements MCP host functionality.
+- Coordinates with the McpHost for tool execution.
+
+#### MCP Architecture
+
+The MCP architecture follows these key principles:
+
+1. **McpHost as Central Registry**: The McpHost (`McpHost.ts`) acts as the central registry for all MCP servers, providing a unified interface for server registration and tool execution.
+
+2. **Delegation Pattern**: The Orchestrator delegates all tool execution to the McpHost, avoiding direct server interaction.
+
+3. **Unified Tool Registry**: All available tools are registered and accessed through the McpHost, providing a single source of truth.
+
+```mermaid
+graph TD
+    subgraph "LLM Integration"
+        O[Orchestrator]
+        LC[LLM Client]
+        MCH[McpHost]
+    end
+
+    subgraph "MCP Servers"
+        FS[File Management MCP Server]
+        RE[Runtime Environment MCP Server]
+        OMS[Other MCP Servers...]
+    end
+
+    subgraph "External"
+        LLM[LLM Provider]
+    end
+
+    O --> LC
+    LC --> LLM
+    O --> MCH
+    MCH --> FS
+    MCH --> RE
+    MCH --> OMS
+```
+
+#### MCP Host-Client-Server Interaction Flow
+
+The interaction between components follows this refined pattern:
+
+1. **Registration Phase**:
+   - Each MCP server is registered with the McpHost
+   - The McpHost maintains the registry of all available servers and their tools
+   - The Orchestrator interacts exclusively with the McpHost for tool discovery and execution
+
+2. **Request Phase**:
+   - User sends a message that might require tool execution
+   - Orchestrator requests available tools from the McpHost
+   - Orchestrator enhances the message with tool definitions
+   - Enhanced message is sent to the LLM
+
+3. **Response and Tool Execution Phase**:
+   - LLM generates a response that includes tool calls
+   - Orchestrator detects tool calls in the response
+   - Orchestrator forwards tool execution requests to the McpHost
+   - McpHost routes each request to the appropriate MCP server
+   - Results of the operations are returned to the Orchestrator
+
+4. **Result Integration Phase**:
+   - Orchestrator formats a response that includes both the LLM's text and the operation results
+   - Final response is returned to the user
+
+#### MCP Tool Interaction Pattern
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant ChatUI as Chat UI
+    participant LlmStore as LLM Store
+    participant Orchestrator
+    participant McpHost
+    participant LLM
+    participant MCPServer as MCP Server
+    participant ChatStore as Chat Store
+
+    User->>ChatUI: Send message requiring tool use
+    Note over ChatUI,LlmStore: Same initial flow as chat messages
+
+    LlmStore->>Orchestrator: processMessageStream
+
+    Note right of Orchestrator: Tool Discovery
+    Orchestrator->>McpHost: getAvailableTools()
+    McpHost->>McpHost: Collect tools from registered servers
+    McpHost-->>Orchestrator: Return available tools
+    
+    Orchestrator->>Orchestrator: Enhance message with tool definitions
+    Orchestrator->>Orchestrator: Add system prompt with tool usage instructions
+    Orchestrator->>LLM: Send enhanced request with tool definitions
+
+    LLM-->>Orchestrator: Response with tool call
+
+    Note right of Orchestrator: Tool Execution Phase
+    Orchestrator->>Orchestrator: Parse tool call from response
+    Orchestrator->>McpHost: executeToolCall(toolName, arguments)
+    McpHost->>McpHost: Identify target MCP server for tool
+    McpHost->>MCPServer: Execute tool call with arguments
+    MCPServer-->>McpHost: Return tool execution result
+    McpHost-->>Orchestrator: Return tool execution result
+
+    Orchestrator-->>LlmStore: Emit chunk with tool call
+    LlmStore->>ChatStore: updateMessageToolCalls
+    ChatStore-->>ChatUI: Display tool call in UI
+
+    Note right of Orchestrator: Result Integration Phase
+    Orchestrator-->>LlmStore: Continue with response text
+    LlmStore->>ChatStore: updateMessageContent
+    ChatStore-->>ChatUI: Update message content
+
+    Note over LlmStore,ChatStore: Final persistence same as chat messages
+
+    ChatUI-->>User: Display complete response with tool calls
+```
+
+#### Registering MCP Servers
+
+When registering MCP servers with the system, components should:
+
+1. Create the MCP server instance with necessary dependencies
+2. Register the server with the McpHost using `mcpHost.registerLocalServer(server, name)`
+3. Avoid direct interaction with the server for tool execution
+
+This architecture provides clean separation of concerns, centralized management of MCP servers, and a unified interface for tool execution.
 
 #### System Prompt and Tool Definition
 
@@ -128,54 +251,6 @@ sequenceDiagram
     ChatUI-->>User: Display complete response
 ```
 
-#### MCP Tool Interaction Pattern
-
-The Model Context Protocol (MCP) enables the LLM to interact with various tools and services through a standardized interface. The Orchestrator acts as an MCP Host that coordinates these interactions.
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant ChatUI as Chat UI
-    participant LlmStore as LLM Store
-    participant Orchestrator as Orchestrator (MCP Host)
-    participant LLM
-    participant MCPServer as MCP Server
-    participant ChatStore as Chat Store
-
-    User->>ChatUI: Send message requiring tool use
-    Note over ChatUI,LlmStore: Same initial flow as chat messages
-
-    LlmStore->>Orchestrator: processMessageStream
-
-    Note right of Orchestrator: MCP Host Initialization
-    Orchestrator->>Orchestrator: Collect available tools from registered MCP servers
-    Orchestrator->>Orchestrator: Enhance message with tool definitions
-    Orchestrator->>Orchestrator: Add system prompt with tool usage instructions
-
-    Orchestrator->>LLM: Send enhanced request with tool definitions
-
-    LLM-->>Orchestrator: Response with tool call
-
-    Note right of Orchestrator: Tool Execution Phase
-    Orchestrator->>Orchestrator: Parse tool call from response
-    Orchestrator->>Orchestrator: Identify target MCP server for tool
-    Orchestrator->>MCPServer: Execute tool call with arguments
-    MCPServer-->>Orchestrator: Return tool execution result
-
-    Orchestrator-->>LlmStore: Emit chunk with tool call
-    LlmStore->>ChatStore: updateMessageToolCalls
-    ChatStore-->>ChatUI: Display tool call in UI
-
-    Note right of Orchestrator: Result Integration Phase
-    Orchestrator-->>LlmStore: Continue with response text
-    LlmStore->>ChatStore: updateMessageContent
-    ChatStore-->>ChatUI: Update message content
-
-    Note over LlmStore,ChatStore: Final persistence same as chat messages
-
-    ChatUI-->>User: Display complete response with tool calls
-```
-
 #### File System Operations via MCP
 
 File operations are a specific implementation of the MCP tool interaction pattern. The Orchestrator interacts with the Files Management MCP Server, which delegates operations to the Files Management component.
@@ -220,33 +295,6 @@ The Files Management MCP Server provides a standardized interface for file opera
 When the LLM needs to perform a file operation, it generates a tool call with the appropriate tool name and arguments. The Orchestrator routes this call to the Files Management MCP Server, which delegates the operation to the Files Management component. The component then performs the actual file system operation using the Browser File System API and returns the result.
 
 This architecture provides a clean separation of concerns and allows the LLM to interact with the file system in a controlled and secure manner.
-
-#### MCP Host-Client-Server Interaction Flow
-
-For file operations (e.g., writing files), the interaction follows this sequence:
-
-1. **Initialization Phase**:
-
-   - The Orchestrator (MCP Host) receives the BrowserFileSystem instance from the workbench
-   - Tool definitions are registered with the LLM client
-   - System prompt is configured to instruct the LLM about available tools
-
-2. **Request Phase**:
-
-   - User sends a message requesting a file operation
-   - Orchestrator enhances the message with context and tool definitions
-   - Enhanced message is sent to the LLM
-
-3. **Response and Tool Execution Phase**:
-
-   - LLM generates a response that includes a tool call (e.g., write_file)
-   - Orchestrator detects the tool call in the response
-   - Orchestrator executes the file operation using the BrowserFileSystem
-   - Results of the operation are captured
-
-4. **Result Integration Phase**:
-   - Orchestrator formats a new response that includes both the LLM's text and the operation results
-   - Final response is returned to the user
 
 ### 4. Main Entry Point (`index.ts`)
 
