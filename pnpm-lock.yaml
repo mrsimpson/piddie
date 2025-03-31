@@ -230,6 +230,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: 1.6.1
         version: 1.6.1
+      '@piddie/actions':
+        specifier: workspace:*
+        version: link:../../packages/actions
       '@piddie/chat-management':
         specifier: workspace:*
         version: link:../../packages/chat-management
@@ -355,6 +358,18 @@ importers:
       vue-tsc:
         specifier: ^2.2.0
         version: 2.2.0(typescript@5.8.2)
+
+  packages/actions:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: 1.6.1
+        version: 1.6.1
+      dexie:
+        specifier: 4.0.11
+        version: 4.0.11
+      zod:
+        specifier: 3.24.2
+        version: 3.24.2
 
   packages/chat-management:
     dependencies:
@@ -578,6 +593,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: 1.6.1
         version: 1.6.1
+      '@piddie/actions':
+        specifier: workspace:*
+        version: link:../actions
       '@piddie/chat-management':
         specifier: workspace:*
         version: link:../chat-management
@@ -611,6 +629,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: 1.6.1
         version: 1.6.1
+      '@piddie/actions':
+        specifier: workspace:*
+        version: link:../actions
       '@piddie/chat-management':
         specifier: workspace:*
         version: link:../chat-management
@@ -629,9 +650,6 @@ importers:
       '@piddie/llm-integration':
         specifier: workspace:*
         version: link:../llm-integration
-      '@piddie/runtime-environment':
-        specifier: workspace:*
-        version: link:../runtime-environment
       '@piddie/settings':
         specifier: workspace:*
         version: link:../settings
@@ -754,6 +772,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: 1.6.1
         version: 1.6.1
+      '@piddie/files-management':
+        specifier: workspace:*
+        version: link:../files-management
       '@piddie/shared-types':
         specifier: workspace:*
         version: link:../shared-types

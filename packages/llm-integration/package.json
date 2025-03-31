@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.6.1",
+    "@piddie/actions": "workspace:*",
     "@piddie/chat-management": "workspace:*",
     "@piddie/files-management": "workspace:*",
     "@piddie/shared-types": "workspace:*",

@@ -1,26 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref } from "vue";
 import { storeToRefs } from "pinia";
 import { useProjectStore } from "@piddie/project-management-ui-vue";
 import { ThemeToggle } from "@piddie/common-ui-vue";
 import "@piddie/common-ui-vue/style";
 
+const projectStore = useProjectStore();
 const isProjectsListCollapsed = ref(false);
-const isChatVisible = ref(false);
-
-onMounted(() => {
-  const projectStore = useProjectStore();
-  console.log("Project store:", projectStore);
-
-  try {
-    // @ts-expect-error - Known type mismatch with Pinia stores exported from the ui-lib-package
-    const { isChatVisible: visibleFromStore } = storeToRefs(projectStore);
-    console.log("isChatVisible:", visibleFromStore);
-    isChatVisible.value = visibleFromStore.value;
-  } catch (error) {
-    console.error("Error accessing store:", error);
-  }
-});
 
 function handleSidePanelCollapse(collapsed: boolean) {
   isProjectsListCollapsed.value = collapsed;

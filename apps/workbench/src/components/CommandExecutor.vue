@@ -1,14 +1,20 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
-import { useContainerServices } from "../composables/useContainerServices";
+import { useResourceService } from "../composables/useResourceService";
 
 const command = ref("");
 const output = ref("");
 const isLoading = ref(false);
-const { executeCommand } = useContainerServices();
+
+const resourceService = useResourceService();
 
 async function runCommand() {
   if (!command.value.trim()) {
+    return;
+  }
+
+  if (!resourceService.getRuntimeEnvironmentManager()) {
+    output.value = "Error: Runtime environment not available";
     return;
   }
 
@@ -16,7 +22,9 @@ async function runCommand() {
   output.value = "Executing command...";
 
   try {
-    const result = await executeCommand(command.value);
+    const result = await resourceService
+      .getRuntimeEnvironmentManager()!
+      .executeCommand(command.value);
 
     if (!result) {
       output.value = "Error: Runtime environment not available";

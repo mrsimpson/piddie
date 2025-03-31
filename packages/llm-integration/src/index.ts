@@ -13,10 +13,9 @@ import type {
 import { EventEmitter } from "@piddie/shared-types";
 import type { ChatManager, Message } from "@piddie/chat-management";
 import { LlmProviderFactory } from "./adapters/LlmProviderFactory";
-import { McpHost } from "./mcp/McpHost";
+import { ActionsManager } from "@piddie/actions";
 
 export { LlmProviderFactory };
-export { McpHost };
 
 export interface LlmAdapter {
   /**
@@ -147,6 +146,11 @@ export function createLlmAdapter(
 
   if (!chatManager) {
     throw new Error("Chat manager is required");
+  }
+
+  const actionsManager = ActionsManager.getInstance();
+  if (!actionsManager) {
+    console.warn("ActionsManager not available, tools may not work");
   }
 
   const adapter = new Orchestrator(client, chatManager);

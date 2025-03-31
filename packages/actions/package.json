@@ -1,8 +1,16 @@
 {
-  "name": "@piddie/runtime-environment",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "name": "@piddie/actions",
+  "description": "Actions provide interactions with the environment",
+  "version": "0.0.0-development",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "build:clean": "find . -name '*.buildinfo' -o -name '*.tsbuildinfo' -delete  && rimraf ./dist",
@@ -11,18 +19,13 @@
     "lint:fix": "pnpm lint --fix",
     "format": "prettier --check .",
     "format:fix": "prettier --write .",
-    "test": "vitest --run --passWithNoTests",
+    "test": "vitest --run",
     "test:watch": "vitest",
-    "typecheck": "tsc"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.6.1",
-    "@piddie/files-management": "workspace:*",
-    "@piddie/shared-types": "workspace:*",
-    "@webcontainer/api": "1.5.3",
+    "dexie": "4.0.11",
     "zod": "3.24.2"
-  },
-  "devDependencies": {
-    "vitest": "^0.29.2"
   }
 }

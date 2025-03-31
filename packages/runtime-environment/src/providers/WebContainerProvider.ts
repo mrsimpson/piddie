@@ -1,16 +1,19 @@
 import {
-  RuntimeEnvironmentProvider as IWebContainerProvider,
+  RuntimeEnvironmentProvider,
   CommandResult,
   CommandOptions
 } from "../types";
 import { WebContainer } from "@webcontainer/api";
+import { WebContainerFileSystem } from "@piddie/files-management";
+import type { FileSystem } from "@piddie/shared-types";
 
 /**
  * Implementation of the WebContainer runtime environment provider
  */
-export class WebContainerProvider implements IWebContainerProvider {
+export class WebContainerProvider implements RuntimeEnvironmentProvider {
   private isInitialized = false;
   private container: WebContainer | null = null;
+  private fileSystem: WebContainerFileSystem | null = null;
 
   /**
    * Creates a new WebContainerProvider
@@ -19,8 +22,19 @@ export class WebContainerProvider implements IWebContainerProvider {
   constructor(existingContainer?: WebContainer) {
     if (existingContainer) {
       this.container = existingContainer;
+      this.fileSystem = new WebContainerFileSystem(existingContainer);
       this.isInitialized = true;
     }
+  }
+
+  /**
+   * Get the file system associated with this runtime environment
+   */
+  public getFileSystem(): FileSystem {
+    if (!this.fileSystem) {
+      throw new Error("WebContainer file system is not initialized");
+    }
+    return this.fileSystem;
   }
 
   /**
@@ -35,6 +49,7 @@ export class WebContainerProvider implements IWebContainerProvider {
     try {
       // Create new container instance
       this.container = await WebContainer.boot();
+      this.fileSystem = new WebContainerFileSystem(this.container);
       this.isInitialized = true;
     } catch (error: unknown) {
       console.error("Failed to initialize web container:", error);
@@ -104,5 +119,14 @@ export class WebContainerProvider implements IWebContainerProvider {
         success: false
       };
     }
+  }
+
+  /**
+   * Disposes of the web container and its resources
+   */
+  public async dispose(): Promise<void> {
+    this.container?.teardown()
+    this.container = null;
+    this.isInitialized = false;
   }
 }
