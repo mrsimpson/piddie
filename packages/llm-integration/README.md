@@ -2,7 +2,7 @@
 
 ## Overview
 
-Core orchestrator for LLM interactions, coordinating between different components to enhance LLM requests and managing interactions with the `litellm-proxy`.
+Core orchestrator for LLM interactions, coordinating between different components to enhance LLM requests and managing interactions with the `litellm-proxy`. Focuses on LLM communication while delegating tool execution to the Actions package.
 
 ## Components and Responsibilities
 
@@ -27,24 +27,29 @@ The central component that:
 
 - Enhances requests with context and tools using the ModelContextProtocol (MCP) SDK.
 - Processes response streams.
-- Coordinates with the McpHost for tool execution.
+- Delegates tool discovery and execution to the ActionsManager.
 
 #### MCP Architecture
 
 The MCP architecture follows these key principles:
 
-1. **McpHost as Central Registry**: The McpHost (`McpHost.ts`) acts as the central registry for all MCP servers, providing a unified interface for server registration and tool execution.
+1. **Separation of Concerns**: The Orchestrator focuses on LLM communication, while the ActionsManager handles tool registration and execution.
 
-2. **Delegation Pattern**: The Orchestrator delegates all tool execution to the McpHost, avoiding direct server interaction.
+2. **Delegation Pattern**: The Orchestrator delegates all tool operations to the ActionsManager, avoiding direct MCP server interaction.
 
-3. **Unified Tool Registry**: All available tools are registered and accessed through the McpHost, providing a single source of truth.
+3. **Unified Tool Registry**: All available tools are registered and accessed through the ActionsManager, providing a single source of truth.
 
 ```mermaid
 graph TD
+    subgraph "Actions Package"
+        AM[ActionsManager]
+        MCH[McpHost]
+        AM --> MCH
+    end
+
     subgraph "LLM Integration"
         O[Orchestrator]
         LC[LLM Client]
-        MCH[McpHost]
     end
 
     subgraph "MCP Servers"
@@ -59,7 +64,7 @@ graph TD
 
     O --> LC
     LC --> LLM
-    O --> MCH
+    O --> AM
     MCH --> FS
     MCH --> RE
     MCH --> OMS
@@ -67,24 +72,23 @@ graph TD
 
 #### MCP Host-Client-Server Interaction Flow
 
-The interaction between components follows this refined pattern:
+The interaction between components follows this pattern:
 
-1. **Registration Phase**:
-   - Each MCP server is registered with the McpHost
-   - The McpHost maintains the registry of all available servers and their tools
-   - The Orchestrator interacts exclusively with the McpHost for tool discovery and execution
+1. **Initialization Phase**:
+   - The ActionsManager initializes the McpHost and registers all MCP servers
+   - The Orchestrator references the ActionsManager for tool discovery and execution
 
 2. **Request Phase**:
    - User sends a message that might require tool execution
-   - Orchestrator requests available tools from the McpHost
+   - Orchestrator requests available tools from the ActionsManager
    - Orchestrator enhances the message with tool definitions
    - Enhanced message is sent to the LLM
 
 3. **Response and Tool Execution Phase**:
    - LLM generates a response that includes tool calls
    - Orchestrator detects tool calls in the response
-   - Orchestrator forwards tool execution requests to the McpHost
-   - McpHost routes each request to the appropriate MCP server
+   - Orchestrator forwards tool execution requests to the ActionsManager
+   - ActionsManager routes each request to the appropriate MCP server via McpHost
    - Results of the operations are returned to the Orchestrator
 
 4. **Result Integration Phase**:
@@ -99,6 +103,7 @@ sequenceDiagram
     participant ChatUI as Chat UI
     participant LlmStore as LLM Store
     participant Orchestrator
+    participant ActionsManager
     participant McpHost
     participant LLM
     participant MCPServer as MCP Server
@@ -110,9 +115,11 @@ sequenceDiagram
     LlmStore->>Orchestrator: processMessageStream
 
     Note right of Orchestrator: Tool Discovery
-    Orchestrator->>McpHost: getAvailableTools()
+    Orchestrator->>ActionsManager: getAvailableTools()
+    ActionsManager->>McpHost: listTools()
     McpHost->>McpHost: Collect tools from registered servers
-    McpHost-->>Orchestrator: Return available tools
+    McpHost-->>ActionsManager: Return available tools
+    ActionsManager-->>Orchestrator: Return available tools
     
     Orchestrator->>Orchestrator: Enhance message with tool definitions
     Orchestrator->>Orchestrator: Add system prompt with tool usage instructions
@@ -122,11 +129,12 @@ sequenceDiagram
 
     Note right of Orchestrator: Tool Execution Phase
     Orchestrator->>Orchestrator: Parse tool call from response
-    Orchestrator->>McpHost: executeToolCall(toolName, arguments)
-    McpHost->>McpHost: Identify target MCP server for tool
+    Orchestrator->>ActionsManager: executeToolCall(toolName, arguments)
+    ActionsManager->>McpHost: executeToolCall(toolName, arguments)
     McpHost->>MCPServer: Execute tool call with arguments
     MCPServer-->>McpHost: Return tool execution result
-    McpHost-->>Orchestrator: Return tool execution result
+    McpHost-->>ActionsManager: Return tool execution result
+    ActionsManager-->>Orchestrator: Return tool execution result
 
     Orchestrator-->>LlmStore: Emit chunk with tool call
     LlmStore->>ChatStore: updateMessageToolCalls
@@ -142,21 +150,11 @@ sequenceDiagram
     ChatUI-->>User: Display complete response with tool calls
 ```
 
-#### Registering MCP Servers
-
-When registering MCP servers with the system, components should:
-
-1. Create the MCP server instance with necessary dependencies
-2. Register the server with the McpHost using `mcpHost.registerLocalServer(server, name)`
-3. Avoid direct interaction with the server for tool execution
-
-This architecture provides clean separation of concerns, centralized management of MCP servers, and a unified interface for tool execution.
-
 #### System Prompt and Tool Definition
 
-The Orchestrator injects a system prompt that instructs the LLM about available file management tools. This prompt:
+The Orchestrator injects a system prompt that instructs the LLM about available tools. This prompt:
 
-1. Defines the available file operations (read, write, list, delete, create)
+1. Defines the available operations (file management, code execution, etc.)
 2. Provides usage guidelines and examples
 3. Sets expectations for when and how to use these tools
 
@@ -168,13 +166,18 @@ The system prompt is combined with formal tool definitions that specify:
 
 #### MCP Integration for File Management
 
-The Orchestrator serves as an MCP host that connects the LLM with file management capabilities. This integration enables the LLM to read, write, and manipulate files in the browser's file system.
+The architecture delegates file management operations to the ActionsManager, which manages the File Management MCP Server:
 
 ```mermaid
 graph TD
     subgraph "Workbench"
         UI[User Interface]
         FS[FileSystem Store]
+    end
+
+    subgraph "Actions"
+        AM[ActionsManager]
+        MCH[McpHost]
     end
 
     subgraph "LLM Integration"
@@ -184,6 +187,7 @@ graph TD
 
     subgraph "File System"
         BFS[Browser File System]
+        FMCP[File Management MCP Server]
     end
 
     subgraph "External"
@@ -192,13 +196,17 @@ graph TD
 
     UI --> FS
     FS --> BFS
-    FS --> O
+    FS --> FMCP
+    FMCP --> MCH
+    MCH --> AM
+    AM --> O
     O --> LC
     LC --> LLM
-    O --> BFS
 ```
 
 #### Dynamic Interaction for Chat Messages
+
+In the chat interaction flow, the Orchestrator delegates tool execution to the ActionsManager:
 
 ```mermaid
 sequenceDiagram
@@ -207,6 +215,7 @@ sequenceDiagram
     participant LlmStore as LLM Store
     participant ChatStore as Chat Store
     participant Orchestrator
+    participant ActionsManager
     participant LLM
     participant DB as Database
 
@@ -223,20 +232,26 @@ sequenceDiagram
     ChatStore-->>LlmStore: Return temporary assistant message
 
     LlmStore->>Orchestrator: processMessageStream/processMessage
+    Orchestrator->>ActionsManager: getAvailableTools()
+    ActionsManager-->>Orchestrator: Return available tools
     Orchestrator->>Orchestrator: enhanceMessageWithHistoryAndTools
     Orchestrator->>LLM: Send enhanced request
 
     alt Streaming Response
         LLM-->>Orchestrator: Stream response chunks
-        loop For each chunk
-            Orchestrator-->>LlmStore: Emit chunk event
+        loop For each chunk with tool calls
+            Orchestrator->>ActionsManager: executeToolCall(name, args)
+            ActionsManager-->>Orchestrator: Return tool result
+            Orchestrator-->>LlmStore: Emit chunk event with result
             LlmStore->>ChatStore: updateMessageContent/updateMessageToolCalls
             ChatStore->>ChatStore: Update temporary message in memory
             ChatStore-->>ChatUI: Reactive UI update
         end
     else Non-Streaming Response
-        LLM-->>Orchestrator: Complete response
-        Orchestrator-->>LlmStore: Return response
+        LLM-->>Orchestrator: Complete response with tool calls
+        Orchestrator->>ActionsManager: executeToolCall(name, args)
+        ActionsManager-->>Orchestrator: Return tool results
+        Orchestrator-->>LlmStore: Return enhanced response
         LlmStore->>ChatStore: updateMessageContent/updateMessageToolCalls
         ChatStore->>ChatStore: Update temporary message in memory
         ChatStore-->>ChatUI: Reactive UI update
@@ -253,14 +268,16 @@ sequenceDiagram
 
 #### File System Operations via MCP
 
-File operations are a specific implementation of the MCP tool interaction pattern. The Orchestrator interacts with the Files Management MCP Server, which delegates operations to the Files Management component.
+File operations are routed through the ActionsManager, which delegates to the appropriate MCP server:
 
 ```mermaid
 sequenceDiagram
     participant User
     participant ChatUI as Chat UI
-    participant Orchestrator as Orchestrator (MCP Host)
+    participant Orchestrator
+    participant ActionsManager
     participant LLM
+    participant McpHost
     participant FMMCP as Files Management MCP Server
     participant FM as Files Management
     participant BFS as Browser File System
@@ -268,33 +285,27 @@ sequenceDiagram
     User->>ChatUI: Request file operation (read/write/list)
     ChatUI->>Orchestrator: Forward request (via LLM Store)
 
+    Orchestrator->>ActionsManager: getAvailableTools()
+    ActionsManager-->>Orchestrator: Return available tools (including file operations)
     Orchestrator->>Orchestrator: Enhance with file operation tools
     Orchestrator->>LLM: Send enhanced request
 
     LLM-->>Orchestrator: Response with file operation tool call
 
-    Orchestrator->>FMMCP: Execute file operation tool call
+    Orchestrator->>ActionsManager: executeToolCall(name, args)
+    ActionsManager->>McpHost: executeToolCall(name, args)
+    McpHost->>FMMCP: Execute file operation tool call
     FMMCP->>FM: Delegate to Files Management component
     FM->>BFS: Perform actual file system operation
     BFS-->>FM: Return operation result
     FM-->>FMMCP: Return formatted result
-    FMMCP-->>Orchestrator: Return tool execution result
+    FMMCP-->>McpHost: Return tool execution result
+    McpHost-->>ActionsManager: Return formatted result
+    ActionsManager-->>Orchestrator: Return tool execution result
 
     Orchestrator-->>ChatUI: Return response with tool call and result
     ChatUI-->>User: Display file operation result
 ```
-
-The Files Management MCP Server provides a standardized interface for file operations that abstracts away the underlying file system implementation. This allows the LLM to interact with files without needing to know the details of the file system. The server implements tools such as:
-
-- `read_file`: Read the contents of a file
-- `write_file`: Write content to a file
-- `list_files`: List files in a directory
-- `delete_file`: Delete a file
-- `create_directory`: Create a new directory
-
-When the LLM needs to perform a file operation, it generates a tool call with the appropriate tool name and arguments. The Orchestrator routes this call to the Files Management MCP Server, which delegates the operation to the Files Management component. The component then performs the actual file system operation using the Browser File System API and returns the result.
-
-This architecture provides a clean separation of concerns and allows the LLM to interact with the file system in a controlled and secure manner.
 
 ### 4. Main Entry Point (`index.ts`)
 
@@ -321,32 +332,32 @@ graph TD
 
 ## Core Responsibilities
 
-### MCP Host Implementation
+### LLM Communication
 
-- Coordinate with MCP servers:
-  - Chat Manager for message history
-  - Prompt Manager for enhancement
-  - Context Manager for relevant context
-  - Actions Manager for available tools
+- Handle interactions with the LLM provider:
+  - Send enhanced requests
+  - Process responses and streams
+  - Parse tool calls from responses
+  - Format tool results for display
 
 ### Request Enhancement
 
 - Assemble enhanced requests using:
-  - Chat history
-  - Enhanced prompts
-  - Relevant context
-  - Available tools
+  - Chat history from Chat Manager
+  - Enhanced prompts from Prompt Manager
+  - Relevant context from Context Manager
+  - Available tools from ActionsManager
 
-### LLM interaction
+### Tool Integration
 
-- Handle interactions with the `litellm-proxy`
-- Manage API connections
-- Handle rate limiting
-- Format provider-specific requests
+- Discover available tools from ActionsManager
+- Forward tool execution requests to ActionsManager
+- Process tool execution results
+- Integrate tool results into LLM responses
 
 ## External Relationships
 
-- Acts as MCP Host for other components
+- Uses ActionsManager for tool discovery and execution
 - Manages LLM provider connections via the `litellm-proxy`
 - Coordinates request enhancement flow
 

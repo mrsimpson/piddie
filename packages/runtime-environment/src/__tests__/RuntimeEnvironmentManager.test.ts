@@ -7,6 +7,7 @@ import {
 import { CommandResult, RuntimeEnvironmentProvider } from "../types";
 import { WebContainer } from "@webcontainer/api";
 import { WebContainerProvider } from "../providers/WebContainerProvider";
+import { FileSystem } from "@piddie/shared-types";
 
 // Mock the WebContainerProvider
 vi.mock("../providers/WebContainerProvider", () => {
@@ -50,6 +51,12 @@ class MockRuntimeProvider implements RuntimeEnvironmentProvider {
       stderr: "command not found: invalid",
       success: false
     });
+  }
+  getFileSystem(): FileSystem {
+    throw new Error("Method not implemented.");
+  }
+  dispose(): Promise<void> {
+    return Promise.resolve();
   }
 
   public async initialize(): Promise<void> {

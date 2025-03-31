@@ -1,3 +1,5 @@
+import type { FileSystem } from "@piddie/shared-types";
+
 /**
  * Represents the result of a command execution
  */
@@ -29,27 +31,29 @@ export interface CommandOptions {
  */
 export interface RuntimeEnvironmentProvider {
   /**
-   * Executes a command in the runtime environment
-   * @param command The command to execute
-   * @param options Command execution options
-   * @returns Promise resolving to the command result
-   */
-  executeCommand(
-    command: string,
-    options?: CommandOptions
-  ): Promise<CommandResult>;
-
-  /**
-   * Initializes the runtime environment
-   * @returns Promise that resolves when environment is ready
+   * Initialize the runtime environment provider
    */
   initialize(): Promise<void>;
 
   /**
-   * Checks if the runtime environment is ready
-   * @returns True if ready, false otherwise
+   * Execute a command in the runtime environment
+   */
+  executeCommand(command: string, options?: CommandOptions): Promise<CommandResult>;
+
+  /**
+   * Check if the runtime environment is ready
    */
   isReady(): boolean;
+
+  /**
+   * Get the file system associated with this runtime environment
+   */
+  getFileSystem(): FileSystem;
+
+  /**
+   * Dispose the runtime environment provider
+   */
+  dispose(): Promise<void>;
 }
 
 /**
@@ -72,4 +76,10 @@ export interface RuntimeEnvironment {
    * @returns Promise resolving to the command result
    */
   executeCommand(request: ExecuteCommandRequest): Promise<CommandResult>;
+
+  /**
+   * Get the file system associated with this runtime environment
+   * @returns The file system instance
+   */
+  getFileSystem(): FileSystem;
 }

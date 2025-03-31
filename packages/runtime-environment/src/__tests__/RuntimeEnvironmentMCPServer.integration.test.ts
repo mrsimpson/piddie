@@ -6,6 +6,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { CommandResult, RuntimeEnvironmentProvider } from "../types";
 import { RuntimeEnvironmentFactory } from "../factory/RuntimeEnvironmentFactory";
+import { FileSystem } from "@piddie/shared-types";
 
 // Define the response type for tool calls
 interface ToolCallResponse {
@@ -33,6 +34,12 @@ class MockRuntimeProvider implements RuntimeEnvironmentProvider {
       stderr: "command not found: invalid-command-that-does-not-exist",
       success: false
     });
+  }
+  getFileSystem(): FileSystem {
+    throw new Error("Method not implemented.");
+  }
+  dispose(): Promise<void> {
+    return Promise.resolve();
   }
 
   public async initialize(): Promise<void> {

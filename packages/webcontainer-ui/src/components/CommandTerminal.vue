@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, inject } from "vue";
+import { ref, watch } from "vue";
 import type { Terminal as XTerm } from "@xterm/xterm";
 import type { WebContainerProcess } from "@webcontainer/api";
 import TerminalTabs from "./TerminalTabs.vue";
@@ -7,15 +7,13 @@ import type { RuntimeEnvironmentManager } from "../types";
 
 const props = defineProps<{
   isVisible?: boolean;
+  runtimeManager: RuntimeEnvironmentManager;
 }>();
 
 const emit = defineEmits<{
   (e: "toggle", isVisible: boolean): void;
   (e: "command", command: string, output: string): void;
 }>();
-
-// Get the runtime environment manager from the parent component
-const runtimeManager = inject<RuntimeEnvironmentManager>("runtimeManager");
 
 // Interface for terminal state
 interface TerminalState {
@@ -46,9 +44,9 @@ const isTerminalVisible = ref(props.isVisible ?? true);
 async function handleTerminalReady(xterm: XTerm, id: number) {
   // Initialize the current directory
   let cwd = "/";
-  if (runtimeManager) {
+  if (props.runtimeManager) {
     try {
-      cwd = await runtimeManager.getWorkingDirectory();
+      cwd = await props.runtimeManager.getWorkingDirectory();
     } catch (error) {
       console.error("Error getting working directory:", error);
     }
@@ -221,7 +219,7 @@ function writePrompt(xterm: XTerm, directory: string) {
 
 // Function to execute a command
 async function executeCommand(command: string, id: number, xterm: XTerm) {
-  if (!runtimeManager) {
+  if (!props.runtimeManager) {
     xterm.write("\r\nRuntime manager not available\r\n");
     return;
   }
@@ -231,7 +229,7 @@ async function executeCommand(command: string, id: number, xterm: XTerm) {
 
   try {
     // Execute the command
-    const process = await runtimeManager.executeCommand(
+    const process = await props.runtimeManager.executeCommand(
       command,
       terminal.currentDirectory
     );
@@ -273,7 +271,7 @@ async function executeCommand(command: string, id: number, xterm: XTerm) {
 
 // Function to change directory
 async function changeDirectory(path: string, id: number, xterm: XTerm) {
-  if (!runtimeManager) {
+  if (!props.runtimeManager) {
     xterm.write("\r\nRuntime manager not available\r\n");
     return;
   }
@@ -283,10 +281,10 @@ async function changeDirectory(path: string, id: number, xterm: XTerm) {
 
   try {
     // Change directory in the container
-    await runtimeManager.setWorkingDirectory(path);
+    await props.runtimeManager.setWorkingDirectory(path);
 
     // Get the new working directory
-    const newDirectory = await runtimeManager.getWorkingDirectory();
+    const newDirectory = await props.runtimeManager.getWorkingDirectory();
 
     // Update the terminal's current directory
     terminal.currentDirectory = newDirectory;

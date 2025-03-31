@@ -10,25 +10,15 @@ import type { ChatManager, ToolCall, Message } from "@piddie/chat-management";
 import { MessageStatus } from "@piddie/chat-management";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { LlmAdapter } from "./index";
-import { McpHost } from "./mcp/McpHost";
-
-// Define Tool interface locally to avoid import issues
-interface Tool {
-  name: string;
-  description?: string | undefined;
-  inputSchema: {
-    type: string;
-    properties?: Record<string, unknown> | undefined;
-  };
-}
+import { ActionsManager, Tool } from "@piddie/actions";
 
 /**
  * Orchestrator for LLM interactions
- * Manages LLM providers and integrates the McpHost
+ * Manages LLM providers and delegates tool operations to the ActionsManager
  */
 export class Orchestrator implements LlmAdapter {
   private llmProviders: Map<string, LlmProviderConfig> = new Map();
-  private mcpHost: McpHost;
+  private actionsManager: ActionsManager;
   private client: LlmClient;
   private chatManager: ChatManager | undefined;
   private toolsBuffer: Tool[] | null = null;
@@ -43,7 +33,7 @@ export class Orchestrator implements LlmAdapter {
   constructor(client: LlmClient, chatManager: ChatManager) {
     this.client = client;
     this.chatManager = chatManager;
-    this.mcpHost = new McpHost();
+    this.actionsManager = ActionsManager.getInstance();
   }
 
   /**
@@ -78,12 +68,7 @@ export class Orchestrator implements LlmAdapter {
    * @param name The name to register the server under
    */
   async registerLocalMcpServer(server: McpServer, name: string): Promise<void> {
-    if (!this.mcpHost) {
-      console.warn("McpHost is not initialized, cannot register server");
-      return;
-    }
-
-    await this.mcpHost.registerLocalServer(server, name);
+    await this.actionsManager.registerServer(server, name);
     // Invalidate the tools buffer when registering a new server
     this.toolsBuffer = null;
   }
@@ -103,13 +88,7 @@ export class Orchestrator implements LlmAdapter {
    * @returns The server or undefined if not found
    */
   getMcpServer(name: string): McpServer | undefined {
-    if (!this.mcpHost) {
-      console.warn("McpHost is not initialized, cannot get server");
-      return undefined;
-    }
-
-    const connection = this.mcpHost.getConnection(name);
-    return connection?.server;
+    return this.actionsManager.getServer(name);
   }
 
   /**
@@ -118,23 +97,19 @@ export class Orchestrator implements LlmAdapter {
    * @returns True if the server was unregistered, false if it wasn't registered
    */
   unregisterMcpServer(name: string): boolean {
-    if (!this.mcpHost) {
-      console.warn("McpHost is not initialized, cannot unregister server");
-      return false;
-    }
-
-    const result = this.mcpHost.unregisterServer(name);
+    const result = this.actionsManager.unregisterServer(name);
     // Invalidate the tools buffer when unregistering a server
     this.toolsBuffer = null;
     return result;
   }
 
   /**
-   * Get the McpHost instance
+   * Get the McpHost instance (for backward compatibility)
    * @returns The McpHost instance
+   * @deprecated Use ActionsManager.getInstance() instead
    */
-  getMcpHost(): McpHost {
-    return this.mcpHost;
+  getMcpHost(): any {
+    return this.actionsManager.getMcpHost();
   }
 
   /**
@@ -156,14 +131,9 @@ export class Orchestrator implements LlmAdapter {
    * @returns A promise that resolves to an array of tools
    */
   private async getAvailableTools(): Promise<Tool[]> {
-    if (!this.mcpHost) {
-      console.warn("McpHost is not initialized, no tools available");
-      return [];
-    }
-
     if (this.toolsBuffer === null) {
       try {
-        this.toolsBuffer = await this.mcpHost.listTools();
+        this.toolsBuffer = await this.actionsManager.getAvailableTools();
       } catch (error) {
         console.error("Error listing tools:", error);
         this.toolsBuffer = [];
@@ -193,8 +163,8 @@ export class Orchestrator implements LlmAdapter {
       // Filter out the placeholder assistant message if it exists
       const filteredHistory = assistantMessageId
         ? history.filter(
-            (msg) => msg.id !== assistantMessageId || msg.content.trim() !== ""
-          )
+          (msg) => msg.id !== assistantMessageId || msg.content.trim() !== ""
+        )
         : history;
 
       // Map to the format expected by the LLM
@@ -337,18 +307,11 @@ export class Orchestrator implements LlmAdapter {
   }
 
   /**
-   * Execute a tool call by delegating to the McpHost
+   * Execute a tool call by delegating to the ActionsManager
    * @param toolCall The tool call to execute
    * @returns The result of the tool call
    */
   private async executeToolCall(toolCall: ToolCall): Promise<unknown> {
-    if (!this.mcpHost) {
-      console.warn(
-        "[Orchestrator] McpHost is not initialized, cannot execute tool call"
-      );
-      return { error: "McpHost is not initialized" };
-    }
-
     try {
       console.log(
         `[Orchestrator] Executing tool call: ${toolCall.function.name}`
@@ -361,8 +324,8 @@ export class Orchestrator implements LlmAdapter {
           ? JSON.parse(toolCall.function.arguments)
           : toolCall.function.arguments;
 
-      // Delegate tool execution to the McpHost
-      const result = await this.mcpHost.executeToolCall(toolName, toolArgs);
+      // Delegate tool execution to the ActionsManager
+      const result = await this.actionsManager.executeToolCall(toolName, toolArgs);
       console.log(
         `[Orchestrator] Tool call executed successfully: ${toolName}`,
         result
@@ -374,7 +337,7 @@ export class Orchestrator implements LlmAdapter {
           error: result.error
         };
       }
-      
+
       return result.result;
     } catch (error) {
       console.error("[Orchestrator] Error executing tool call:", error);

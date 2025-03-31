@@ -6,7 +6,6 @@ import { useChatStore } from "@piddie/chat-management-ui-vue";
 import { useFileSystemStore } from "@piddie/files-management-ui-vue";
 
 export type ChatStore = ReturnType<typeof useChatStore>;
-export type FileSystemStore = ReturnType<typeof useFileSystemStore>;
 
 export const useProjectStore = defineStore("project", () => {
   const projectManager = createProjectManager();
@@ -33,7 +32,6 @@ export const useProjectStore = defineStore("project", () => {
     if (isInitializing.value) return;
 
     const chatStore = useChatStore(getActivePinia());
-    const fileSystemStore = useFileSystemStore(getActivePinia());
 
     try {
       isInitializing.value = true;
@@ -64,11 +62,6 @@ export const useProjectStore = defineStore("project", () => {
 
       // Load project
       currentProject.value = await projectManager.openProject(projectId);
-
-      // Initialize file system
-      if (currentProject.value) {
-        await fileSystemStore.initializeForProject(currentProject.value);
-      }
 
       isChatVisible.value = true;
     } finally {

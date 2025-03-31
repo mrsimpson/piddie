@@ -1,10 +1,7 @@
 import { ref, reactive, onMounted, watch } from "vue";
 import { defineStore } from "pinia";
 import { useChatStore } from "@piddie/chat-management-ui-vue";
-import { useFileSystemStore } from "@piddie/files-management-ui-vue";
 import { MessageStatus, type ToolCall } from "@piddie/chat-management";
-import { FileManagementMcpServer } from "@piddie/files-management";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { settingsManager } from "@piddie/settings";
 import type {
   LlmProviderConfig as WorkbenchLlmConfig,
@@ -24,7 +21,6 @@ import {
 
 export const useLlmStore = defineStore("llm", () => {
   const chatStore = useChatStore();
-  const fileSystemStoreInstance = useFileSystemStore();
   const isStreaming = ref(false);
   const isProcessing = ref(false);
   const streamingMessageId = ref<string | null>(null);
@@ -33,11 +29,6 @@ export const useLlmStore = defineStore("llm", () => {
   const isVerifying = ref(false);
   const connectionStatus = ref<"none" | "success" | "error">("none");
   const availableModels = ref<ModelInfo[]>([]);
-
-  // References to the MCP servers for lifecycle management
-  const fileManagementMcpServer = ref<FileManagementMcpServer | null>(null);
-  const runtimeEnvironmentManager = ref<any>(null);
-  const runtimeEnvironmentMcpServer = ref<any>(null);
 
   // LLM adapter and orchestrator references
   let llmAdapter: ReturnType<typeof createLlmAdapter>;
@@ -91,6 +82,7 @@ export const useLlmStore = defineStore("llm", () => {
   async function initializeStore(): Promise<void> {
     try {
       isLoading.value = true;
+
       const loadedConfig = await settingsManager.getLlmConfig();
       const selectedProvider = await settingsManager.getSelectedProvider();
       Object.assign(workbenchConfig, loadedConfig, {
@@ -110,11 +102,8 @@ export const useLlmStore = defineStore("llm", () => {
         chatStore.chatManager
       );
 
-      // Get the Orchestrator from the LLM adapter to access its McpHost
+      // Get the Orchestrator from the LLM adapter
       orchestrator = llmAdapter as unknown as Orchestrator;
-
-      // Register MCP servers with the McpHost
-      await registerMcpServers();
     } catch (err) {
       console.error("Error initializing LLM store:", err);
       error.value = err instanceof Error ? err : new Error(String(err));
@@ -130,122 +119,8 @@ export const useLlmStore = defineStore("llm", () => {
     chatStore.chatManager
   );
 
-  // Attempt to get the Orchestrator for McpHost access
+  // Attempt to get the Orchestrator
   orchestrator = llmAdapter as unknown as Orchestrator;
-
-  /**
-   * Register all MCP servers with the McpHost
-   */
-  async function registerMcpServers(): Promise<void> {
-    if (!orchestrator) {
-      console.error("Cannot register MCP servers: Orchestrator not available");
-      return;
-    }
-
-    const mcpHost = orchestrator.getMcpHost();
-
-    // Register the file management MCP server if available
-    if (fileManagementMcpServer.value) {
-      try {
-        await mcpHost.registerLocalServer(
-          fileManagementMcpServer.value as unknown as McpServer,
-          "file_management"
-        );
-        console.log("File management MCP server registered successfully");
-      } catch (error) {
-        console.error("Failed to register file management MCP server:", error);
-      }
-    }
-
-    // Register the runtime environment MCP server if available
-    if (runtimeEnvironmentMcpServer.value) {
-      try {
-        await mcpHost.registerLocalServer(
-          runtimeEnvironmentMcpServer.value as unknown as McpServer,
-          "runtime_environment"
-        );
-        console.log("Runtime environment MCP server registered successfully");
-      } catch (error) {
-        console.error("Failed to register runtime environment MCP server:", error);
-      }
-    }
-  }
-
-  // Watch for file system initialization and register the MCP server
-  watch(
-    () => fileSystemStoreInstance.initialized,
-    async (initialized) => {
-      if (initialized) {
-        // Create the file management MCP server
-        fileManagementMcpServer.value = new FileManagementMcpServer(
-          fileSystemStoreInstance.getBrowserFileSystem()
-        );
-
-        // Register the server with the McpHost
-        if (orchestrator) {
-          try {
-            await orchestrator.getMcpHost().registerLocalServer(
-              fileManagementMcpServer.value as unknown as McpServer,
-              "file_management"
-            );
-            console.log("File management MCP server registered successfully");
-          } catch (error) {
-            console.error(
-              "Failed to register file management MCP server:",
-              error
-            );
-          }
-        }
-      }
-    }
-  );
-
-  // Initialize the runtime environment manager and register its MCP server
-  async function initializeRuntimeEnvironment(): Promise<void> {
-    try {
-      // Dynamically import the runtime environment components
-      const { RuntimeEnvironmentManager, RuntimeEnvironmentMCPServer } = await import("@piddie/runtime-environment");
-
-      // Create a RuntimeEnvironmentManager
-      runtimeEnvironmentManager.value = new RuntimeEnvironmentManager();
-
-      // Initialize the manager
-      await runtimeEnvironmentManager.value.initialize();
-
-      // Create an MCP server for the runtime environment
-      runtimeEnvironmentMcpServer.value = new RuntimeEnvironmentMCPServer(
-        runtimeEnvironmentManager.value
-      );
-
-      // Register the MCP server with the McpHost if the Orchestrator is available
-      if (orchestrator) {
-        try {
-          await orchestrator.getMcpHost().registerLocalServer(
-            runtimeEnvironmentMcpServer.value as unknown as McpServer,
-            "runtime_environment"
-          );
-          console.log("Runtime environment MCP server registered successfully");
-        } catch (error) {
-          console.error(
-            "Failed to register runtime environment MCP server:",
-            error
-          );
-        }
-      }
-    } catch (error) {
-      console.error("Failed to initialize runtime environment:", error);
-    }
-  }
-
-  // Update the file system when it changes
-  watch(
-    () => fileSystemStoreInstance.getBrowserFileSystem(),
-    (newFileSystem) => {
-      if (fileManagementMcpServer.value) {
-        fileManagementMcpServer.value.updateFileSystem(newFileSystem);
-      }
-    }
-  );
 
   // Load settings from database on store initialization
   onMounted(async () => {
@@ -276,15 +151,6 @@ export const useLlmStore = defineStore("llm", () => {
         getLlmProviderConfig(),
         chatStore.chatManager
       );
-
-      // Get the Orchestrator for McpHost access
-      orchestrator = llmAdapter as unknown as Orchestrator;
-
-      // Register MCP servers with the new adapter
-      await registerMcpServers();
-
-      // Initialize the runtime environment
-      await initializeRuntimeEnvironment();
     } catch (err) {
       console.error("Error loading LLM settings:", err);
       error.value = err instanceof Error ? err : new Error(String(err));
@@ -341,12 +207,6 @@ export const useLlmStore = defineStore("llm", () => {
         chatStore.chatManager
       );
 
-      // Get the Orchestrator for McpHost access
-      orchestrator = llmAdapter as unknown as Orchestrator;
-
-      // Re-register MCP servers with the new adapter
-      await registerMcpServers();
-
       return true;
     } catch (err) {
       console.error("Error verifying connection:", err);
@@ -399,12 +259,6 @@ export const useLlmStore = defineStore("llm", () => {
         chatStore.chatManager
       );
 
-      // Get the Orchestrator for McpHost access
-      orchestrator = llmAdapter as unknown as Orchestrator;
-
-      // Re-register MCP servers with the new adapter
-      await registerMcpServers();
-
       return true;
     } catch (err) {
       console.error("Error updating LLM config:", err);
@@ -432,12 +286,6 @@ export const useLlmStore = defineStore("llm", () => {
         getLlmProviderConfig(),
         chatStore.chatManager
       );
-
-      // Get the Orchestrator for McpHost access
-      orchestrator = llmAdapter as unknown as Orchestrator;
-
-      // Re-register MCP servers with the new adapter
-      await registerMcpServers();
 
       return true;
     } catch (err) {
@@ -911,7 +759,6 @@ export const useLlmStore = defineStore("llm", () => {
     sendMessage,
     cancelStreaming,
     getStoredProviderConfig,
-    initializeStore,
-    initializeRuntimeEnvironment
+    initializeStore
   };
 });

@@ -11,12 +11,14 @@ import {
 } from "./factory/RuntimeEnvironmentFactory";
 import { WebContainer } from "@webcontainer/api";
 import { WebContainerProvider } from "./providers/WebContainerProvider";
+import type { FileSystem } from "@piddie/shared-types";
 
 /**
  * Manages the runtime environment for executing commands
  */
 export class RuntimeEnvironmentManager implements RuntimeEnvironment {
-  private provider: RuntimeEnvironmentProvider;
+  private provider: RuntimeEnvironmentProvider | null = null;
+  private isInitialized = false;
 
   /**
    * Creates a new RuntimeEnvironmentManager
@@ -50,7 +52,11 @@ export class RuntimeEnvironmentManager implements RuntimeEnvironment {
    * Initializes the runtime environment
    */
   public async initialize(): Promise<void> {
+    if (!this.provider) {
+      throw new Error("No runtime environment provider set");
+    }
     await this.provider.initialize();
+    this.isInitialized = true;
   }
 
   /**
@@ -64,8 +70,8 @@ export class RuntimeEnvironmentManager implements RuntimeEnvironment {
     requestOrCommand: ExecuteCommandRequest | string,
     options?: CommandOptions
   ): Promise<CommandResult> {
-    if (!this.provider.isReady()) {
-      await this.initialize();
+    if (!this.provider) {
+      throw new Error("No runtime environment provider set");
     }
 
     if (typeof requestOrCommand === "string") {
@@ -82,7 +88,7 @@ export class RuntimeEnvironmentManager implements RuntimeEnvironment {
    * Checks if the runtime environment is ready
    */
   public isReady(): boolean {
-    return this.provider.isReady();
+    return this.provider?.isReady() || false;
   }
 
   /**
@@ -97,5 +103,27 @@ export class RuntimeEnvironmentManager implements RuntimeEnvironment {
     } else {
       this.provider = providerOrType;
     }
+  }
+
+  public getFileSystem(): FileSystem {
+    if (!this.provider) {
+      throw new Error("No runtime environment provider set");
+    }
+    return this.provider.getFileSystem();
+  }
+
+  /**
+   * Disposes of the runtime environment and its resources
+   */
+  public async dispose(): Promise<void> {
+    if (this.provider) {
+      try {
+        await this.provider.dispose();
+      } catch (error) {
+        console.error("Error disposing runtime environment provider:", error);
+      }
+      this.provider = null;
+    }
+    this.isInitialized = false;
   }
 }

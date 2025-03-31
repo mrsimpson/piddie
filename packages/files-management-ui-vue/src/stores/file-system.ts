@@ -6,15 +6,17 @@ import {
   WebContainerFileSystem,
   BrowserSyncTarget,
   WebContainerSyncTarget,
-  webContainerService,
   type FileSystem
 } from "@piddie/files-management";
 import type { SynchronizedFileSystem } from "../types/file-system";
 import { createSynchronizedFileSystem } from "../types/file-system";
 import { WATCHER_PRIORITIES } from "@piddie/shared-types";
-import { WebContainer } from "@webcontainer/api";
-import type { Project } from "@piddie/shared-types";
 import type { SyncTarget } from "@piddie/shared-types";
+
+export interface FileSystemStoreConfig {
+  projectId: string;
+  runtimeFileSystem?: FileSystem;
+}
 
 /**
  * This store serves as API to the files-management package.
@@ -188,85 +190,43 @@ export const useFileSystemStore = defineStore("file-system", () => {
   }
 
   /**
-   * Initialize file systems for a project using an existing WebContainer
-   * @param project The project to initialize for
-   * @param webContainer Optional existing WebContainer to use
+   * Initialize file systems for a project
+   * @param config Configuration for initialization
    */
-  async function initializeForProject(
-    project: Project,
-    webContainer?: WebContainer
-  ) {
+  async function initializeForProject(config: FileSystemStoreConfig) {
     try {
-      console.log(`Initializing file systems for project: ${project.id}`);
+      console.log(`Initializing file systems for project: ${config.projectId}`);
 
       // Reset the store state but don't delete file systems
       if (initialized.value) {
         await resetStoreState();
       }
 
-      // Reset any existing WebContainer to ensure clean state
-      if (webContainerService.hasContainer()) {
-        console.log("Resetting existing WebContainer from service");
-        await webContainerService.reset();
-      }
-
       // Reset systems array before initialization
       systems.value = [];
 
-      // Initialize sync manager
-      await initializeSyncManager();
-
-      // Create or reuse browser file system for this project
-      // The browser file system is automatically persisted with the project ID as name
+      // Create browser file system as primary
       console.log(
-        `Creating/loading browser file system for project: ${project.id}`
+        `Creating/loading browser file system for project: ${config.projectId}`
       );
       const browserFs = new BrowserFileSystem({
-        name: project.id,
+        name: config.projectId,
         rootDir: "/"
       });
       await browserFs.initialize();
 
-      // Add the browser file system as a sync target
+      // Add the browser file system as primary sync target
       await addSyncTarget(browserFs, "browser", "Browser Storage", true);
 
-      // Get or create a WebContainer
-      let containerInstance: WebContainer;
-      if (webContainer) {
-        console.log("Using provided WebContainer instance");
-        containerInstance = webContainer;
-      } else {
-        try {
-          console.log("No WebContainer provided, creating new one");
-          containerInstance = await webContainerService.createContainer();
-        } catch (containerErr) {
-          console.error("Failed to create WebContainer:", containerErr);
-          throw containerErr;
-        }
-      }
-
-      // Register the WebContainer with the service if needed
-      if (!webContainerService.hasContainer()) {
-        webContainerService.setContainer(containerInstance);
-      }
-
-      try {
-        console.log("Initializing WebContainer file system");
-        const webContainerFs = new WebContainerFileSystem(containerInstance);
-        await webContainerFs.initialize();
+      // If runtime filesystem is provided, add it as secondary target
+      if (config.runtimeFileSystem) {
+        console.log("Adding runtime file system as secondary target");
         await addSyncTarget(
-          webContainerFs,
-          "webcontainer",
-          "WebContainer",
+          config.runtimeFileSystem,
+          "runtime",
+          "Runtime Environment",
           false
         );
-        console.log("WebContainer target added");
-      } catch (webContainerError) {
-        console.error(
-          "Failed to initialize WebContainer file system:",
-          webContainerError
-        );
-        // Don't stop initialization completely if WebContainer file system fails
       }
 
       initialized.value = true;
