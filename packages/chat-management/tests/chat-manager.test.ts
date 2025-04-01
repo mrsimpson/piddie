@@ -128,7 +128,7 @@ describe("ChatManager", () => {
           metadata,
           messages: []
         });
-        expect(chat.id).toMatch(/^chat_\d+$/);
+        expect(chat.id).toBe("test-project");
         expect(chat.created).toBeInstanceOf(Date);
         expect(chat.lastUpdated).toBeInstanceOf(Date);
         expect(chatMocks.add).toHaveBeenCalledWith({

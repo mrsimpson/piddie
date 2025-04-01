@@ -43,8 +43,10 @@ export class ProjectDatabase extends Dexie {
 export class DexieProjectManager implements ProjectManager {
   private db: ProjectDatabase;
 
-  constructor() {
-    this.db = new ProjectDatabase();
+  constructor(
+    db?: ProjectDatabase // For testing
+  ) {
+    this.db = db || new ProjectDatabase();
   }
 
   /**
