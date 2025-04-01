@@ -7,8 +7,6 @@ import { DexieProjectManager } from "./internal/DexieProjectManager";
  * @param chatManager Optional chat manager instance for chat integration
  * @returns A ProjectManager instance
  */
-export function createProjectManager(
-  chatManager?: ChatManager
-): ProjectManager {
-  return new DexieProjectManager(undefined, chatManager);
+export function createProjectManager(): ProjectManager {
+  return new DexieProjectManager();
 }

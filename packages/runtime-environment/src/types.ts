@@ -14,16 +14,28 @@ export interface CommandResult {
   success: boolean;
 }
 
-/**
- * Options for command execution
- */
 export interface CommandOptions {
+  /** Session ID for the command (undefined means default session) */
+  sessionId?: string;
   /** Working directory for the command */
   cwd?: string;
   /** Environment variables to set for the command */
   env?: Record<string, string>;
   /** Maximum execution time in milliseconds before timeout */
   timeout?: number;
+}
+
+export interface SessionState {
+  /** Current working directory for this session */
+  cwd: string;
+  /** Environment variables for this session */
+  env: Record<string, string>;
+  /** Command history for this session */
+  history: Array<{
+    command: string;
+    timestamp: Date;
+    result: CommandResult;
+  }>;
 }
 
 /**

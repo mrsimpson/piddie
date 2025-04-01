@@ -75,16 +75,19 @@ graph TD
 The interaction between components follows this pattern:
 
 1. **Initialization Phase**:
+
    - The ActionsManager initializes the McpHost and registers all MCP servers
    - The Orchestrator references the ActionsManager for tool discovery and execution
 
 2. **Request Phase**:
+
    - User sends a message that might require tool execution
    - Orchestrator requests available tools from the ActionsManager
    - Orchestrator enhances the message with tool definitions
    - Enhanced message is sent to the LLM
 
 3. **Response and Tool Execution Phase**:
+
    - LLM generates a response that includes tool calls
    - Orchestrator detects tool calls in the response
    - Orchestrator forwards tool execution requests to the ActionsManager
@@ -120,7 +123,7 @@ sequenceDiagram
     McpHost->>McpHost: Collect tools from registered servers
     McpHost-->>ActionsManager: Return available tools
     ActionsManager-->>Orchestrator: Return available tools
-    
+
     Orchestrator->>Orchestrator: Enhance message with tool definitions
     Orchestrator->>Orchestrator: Add system prompt with tool usage instructions
     Orchestrator->>LLM: Send enhanced request with tool definitions

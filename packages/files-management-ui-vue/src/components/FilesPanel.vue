@@ -30,7 +30,9 @@ const entries = ref<FileSystemItem[]>([]);
 const currentPath = ref("/");
 const explorerError = ref<Error | null>(null);
 const loadingEntries = ref(false);
-const explorerRef = ref<{ handleFileChanges: (changes: FileChangeInfo[]) => void } | null>(null);
+const explorerRef = ref<{
+  handleFileChanges: (changes: FileChangeInfo[]) => void;
+} | null>(null);
 
 // Update selected system when systems change
 watch(
@@ -60,39 +62,46 @@ watch([selectedSystem, currentPath], async () => {
 });
 
 // Watch for system changes and set up file change handlers
-watch(selectedSystem, async (newSystem, oldSystem) => {
-  if (oldSystem?.syncTarget) {
-    // Unwatch old system
-    await oldSystem.syncTarget.unwatch();
-  }
-  
-  if (newSystem?.syncTarget) {
-    // Watch new system
-    await newSystem.syncTarget.watch(
-      (changes: FileChangeInfo[]) => {
-        console.log("FilesPanel: Received file changes:", changes);
-        if (explorerRef.value) {
-          explorerRef.value.handleFileChanges(changes);
-          // Reload directory if changes affect current path
-          const hasChangesInCurrentDir = changes.some((change: FileChangeInfo) => {
-            const parentDir = change.path.split("/").slice(0, -1).join("/") || "/";
-            return parentDir === currentPath.value;
-          });
-          if (hasChangesInCurrentDir) {
-            loadDirectory(currentPath.value);
+watch(
+  selectedSystem,
+  async (newSystem, oldSystem) => {
+    if (oldSystem?.syncTarget) {
+      // Unwatch old system
+      await oldSystem.syncTarget.unwatch();
+    }
+
+    if (newSystem?.syncTarget) {
+      // Watch new system
+      await newSystem.syncTarget.watch(
+        (changes: FileChangeInfo[]) => {
+          console.log("FilesPanel: Received file changes:", changes);
+          if (explorerRef.value) {
+            explorerRef.value.handleFileChanges(changes);
+            // Reload directory if changes affect current path
+            const hasChangesInCurrentDir = changes.some(
+              (change: FileChangeInfo) => {
+                const parentDir =
+                  change.path.split("/").slice(0, -1).join("/") || "/";
+                return parentDir === currentPath.value;
+              }
+            );
+            if (hasChangesInCurrentDir) {
+              loadDirectory(currentPath.value);
+            }
+          }
+        },
+        {
+          priority: WATCHER_PRIORITIES.UI_UPDATES,
+          metadata: {
+            registeredBy: "FilesPanel",
+            type: "ui-explorer"
           }
         }
-      },
-      {
-        priority: WATCHER_PRIORITIES.UI_UPDATES,
-        metadata: {
-          registeredBy: "FilesPanel",
-          type: "ui-explorer"
-        }
-      }
-    );
-  }
-}, { immediate: true });
+      );
+    }
+  },
+  { immediate: true }
+);
 
 async function loadDirectory(path: string) {
   if (!selectedSystem.value) return;
