@@ -126,7 +126,7 @@ export class WebContainerProvider implements RuntimeEnvironmentProvider {
    * Disposes of the web container and its resources
    */
   public async dispose(): Promise<void> {
-    this.container?.teardown()
+    this.container?.teardown();
     this.container = null;
     this.isInitialized = false;
   }

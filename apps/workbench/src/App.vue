@@ -17,7 +17,6 @@ function handleSidePanelCollapse(collapsed: boolean) {
   <div
     class="app-container"
     :class="{
-      'chat-hidden': !isChatVisible,
       'projects-list-collapsed': isProjectsListCollapsed
     }"
   >
