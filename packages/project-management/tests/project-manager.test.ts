@@ -1,11 +1,10 @@
 import { describe, it, expect, beforeEach, vi, Mocked } from "vitest";
-import type { Project } from "../src/types";
+import type { Project } from "@piddie/shared-types";
 import {
   DexieProjectManager,
   ProjectDatabase
 } from "../src/internal/DexieProjectManager";
 import type { Table } from "dexie";
-import type { Chat, ChatManager } from "@piddie/chat-management";
 import { generateProjectId } from "../src/utils/generateProjectId";
 
 // Create mock functions
@@ -15,17 +14,6 @@ const projectMocks = {
   put: vi.fn<(project: Project) => Promise<void>>(),
   delete: vi.fn<(id: string) => Promise<void>>(),
   toArray: vi.fn<() => Promise<Project[]>>()
-};
-
-// Create mock chat manager functions
-const mockChatManager: Mocked<ChatManager> = {
-  createChat: vi.fn<(metadata?: Record<string, unknown>) => Promise<Chat>>(),
-  addMessage: vi.fn(),
-  getChat: vi.fn(),
-  listChats: vi.fn(),
-  updateMessageStatus: vi.fn(),
-  deleteChat: vi.fn(),
-  updateMessageContent: vi.fn()
 };
 
 // Create a mock table that satisfies the Table interface
@@ -191,38 +179,10 @@ describe("ProjectManager", () => {
 
   describe("GIVEN a project manager with chat support", () => {
     beforeEach(() => {
-      projectManager = new DexieProjectManager(mockDb, mockChatManager);
+      projectManager = new DexieProjectManager(mockDb);
     });
 
     describe("WHEN creating a project", () => {
-      it("THEN should create both project and chat", async () => {
-        const projectName = "Test Project";
-        const mockChat: Chat = {
-          id: "clever-fox-runs",
-          messages: [],
-          created: new Date(),
-          lastUpdated: new Date(),
-          metadata: undefined
-        };
-
-        projectMocks.add.mockResolvedValueOnce("clever-fox-runs");
-        projectMocks.get.mockResolvedValueOnce(undefined); // ID doesn't exist yet
-        mockChatManager.createChat.mockResolvedValueOnce(mockChat);
-
-        const project = await projectManager.createProject(projectName);
-
-        // Verify project creation
-        expect(project.name).toBe(projectName);
-        expect(project.id).toBe("clever-fox-runs");
-        expect(project.chatId).toBe(project.id); // Same ID for both
-        expect(projectMocks.add).toHaveBeenCalledWith(project);
-
-        // Verify chat creation - the implementation calls createChat with just the ID
-        expect(mockChatManager.createChat).toHaveBeenCalledWith(
-          "clever-fox-runs"
-        );
-      });
-
       it("THEN should retry ID generation if ID exists", async () => {
         const projectName = "Test Project";
         const existingProject: Project = {
@@ -238,20 +198,11 @@ describe("ProjectManager", () => {
           .mockResolvedValueOnce(existingProject)
           .mockResolvedValueOnce(undefined);
 
-        const mockChat: Chat = {
-          id: "clever-fox-runs",
-          messages: [],
-          created: new Date(),
-          lastUpdated: new Date(),
-          metadata: undefined
-        };
-
         // Mock the second call to generateProjectId
         vi.mocked(generateProjectId)
           .mockReturnValueOnce("clever-fox-runs") // First call returns existing ID
           .mockReturnValueOnce("happy-owl-soars"); // Second call returns unique ID
 
-        mockChatManager.createChat.mockResolvedValueOnce(mockChat);
         projectMocks.add.mockResolvedValueOnce("happy-owl-soars");
 
         const project = await projectManager.createProject(projectName);

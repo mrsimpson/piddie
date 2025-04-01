@@ -18,7 +18,6 @@
   },
   "dependencies": {
     "@piddie/shared-types": "workspace:*",
-    "@piddie/chat-management": "workspace:*",
     "@piddie/files-management": "workspace:*",
     "dexie": "4.0.11"
   }
