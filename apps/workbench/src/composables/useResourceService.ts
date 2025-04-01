@@ -120,10 +120,10 @@ class ResourceService {
       });
       console.log(`FileSystemStore initialized for project ${projectId}`);
 
-      // 4. Initialize FileSyncManager
-      this.currentSyncManager = new FileSyncManager();
-      await this.currentSyncManager.initialize();
-      console.log(`FileSyncManager initialized for project ${projectId}`);
+      //   // 4. Initialize FileSyncManager
+      //   this.currentSyncManager = new FileSyncManager();
+      //   await this.currentSyncManager.initialize();
+      //   console.log(`FileSyncManager initialized for project ${projectId}`);
 
       // 5. Create and register MCP servers
       const runtimeServer = new RuntimeEnvironmentMCPServer(

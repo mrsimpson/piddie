@@ -205,6 +205,9 @@ export const useFileSystemStore = defineStore("file-system", () => {
       // Reset systems array before initialization
       systems.value = [];
 
+      // now that we cleaned the store, we can start from scratch again
+      await initializeSyncManager();
+
       // Create browser file system as primary
       console.log(
         `Creating/loading browser file system for project: ${config.projectId}`
@@ -215,7 +218,6 @@ export const useFileSystemStore = defineStore("file-system", () => {
       });
       await browserFs.initialize();
 
-      // Add the browser file system as primary sync target
       await addSyncTarget(browserFs, "browser", "Browser Storage", true);
 
       // If runtime filesystem is provided, add it as secondary target
