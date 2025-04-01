@@ -163,8 +163,8 @@ export class Orchestrator implements LlmAdapter {
       // Filter out the placeholder assistant message if it exists
       const filteredHistory = assistantMessageId
         ? history.filter(
-          (msg) => msg.id !== assistantMessageId || msg.content.trim() !== ""
-        )
+            (msg) => msg.id !== assistantMessageId || msg.content.trim() !== ""
+          )
         : history;
 
       // Map to the format expected by the LLM
@@ -325,7 +325,10 @@ export class Orchestrator implements LlmAdapter {
           : toolCall.function.arguments;
 
       // Delegate tool execution to the ActionsManager
-      const result = await this.actionsManager.executeToolCall(toolName, toolArgs);
+      const result = await this.actionsManager.executeToolCall(
+        toolName,
+        toolArgs
+      );
       console.log(
         `[Orchestrator] Tool call executed successfully: ${toolName}`,
         result

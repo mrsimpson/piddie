@@ -8,8 +8,9 @@ import ChatPanel from "@/components/ChatPanel.vue";
 import RuntimePanel from "@/components/RuntimePanel.vue";
 import { ResizablePanel } from "@piddie/common-ui-vue";
 import { WorkbenchSettingKey } from "@piddie/settings";
+import { type SyncManager } from "@piddie/shared-types";
 import { useResourceService } from "@/composables/useResourceService";
-import type { RuntimeEnvironmentManager } from "@piddie/runtime-environment";
+import type { RuntimeEnvironment } from "@piddie/runtime-environment";
 import "@piddie/files-management-ui-vue/style";
 import "@piddie/project-management-ui-vue/style";
 
@@ -25,10 +26,8 @@ const isChatPanelCollapsed = ref(false);
 const isRuntimePanelCollapsed = ref(false);
 
 // Create reactive references for runtime resources
-const runtimeManager = shallowRef<RuntimeEnvironmentManager | undefined>(
-  undefined
-);
-const syncManagerRef = shallowRef(fileSystemStore.syncManager);
+const runtime = shallowRef<RuntimeEnvironment | undefined>(undefined);
+const syncManagerRef = shallowRef<SyncManager | undefined>(undefined);
 
 // Panel widths
 const fileExplorerWidth = ref(250);
@@ -41,11 +40,19 @@ onMounted(async () => {
     try {
       await projectStore.setCurrentProject(projectId.value);
       await resourceService.activateProject(projectId.value);
-      // Update runtime manager reference
-      runtimeManager.value =
-        resourceService.getRuntimeEnvironmentManager() ?? undefined;
+      // Get the runtime environment interface instead of the manager
+      const manager = resourceService.getRuntimeEnvironmentManager();
+      runtime.value = manager
+        ? {
+            executeCommand: manager.executeCommand.bind(manager),
+            getFileSystem: manager.getFileSystem.bind(manager)
+          }
+        : undefined;
       // Update sync manager reference
-      syncManagerRef.value = resourceService.getFileSyncManager() ?? undefined;
+      if (!resourceService.getFileSyncManager()) {
+        throw new Error("File sync manager not found");
+      }
+      syncManagerRef.value = resourceService.getFileSyncManager()!;
     } catch (err) {
       console.error("Failed to initialize project resources:", err);
       error.value =
@@ -59,7 +66,7 @@ onMounted(async () => {
 // Cleanup resources when component is unmounted
 onUnmounted(async () => {
   await resourceService.deactivateCurrentProject();
-  runtimeManager.value = undefined;
+  runtime.value = undefined;
   syncManagerRef.value = undefined;
 });
 
@@ -121,7 +128,7 @@ function onRuntimePanelCollapse(collapsed: boolean) {
           :systems="fileSystemStore.systems"
           :error="error"
           :initial-collapsed="isFileExplorerCollapsed"
-          :runtime-manager="runtimeManager"
+          :runtime-manager="runtime"
           :sync-manager="syncManagerRef"
           @collapse="onFileExplorerCollapse"
         />
@@ -139,7 +146,7 @@ function onRuntimePanelCollapse(collapsed: boolean) {
       >
         <RuntimePanel
           :initial-collapsed="isRuntimePanelCollapsed"
-          :runtime-manager="runtimeManager"
+          :runtime="runtime"
           @collapse="onRuntimePanelCollapse"
         />
       </ResizablePanel>

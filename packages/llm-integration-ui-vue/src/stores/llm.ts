@@ -114,10 +114,7 @@ export const useLlmStore = defineStore("llm", () => {
   }
 
   // Create initial LLM adapter instance
-  llmAdapter = createLlmAdapter(
-    getLlmProviderConfig(),
-    chatStore.chatManager
-  );
+  llmAdapter = createLlmAdapter(getLlmProviderConfig(), chatStore.chatManager);
 
   // Attempt to get the Orchestrator
   orchestrator = llmAdapter as unknown as Orchestrator;
@@ -415,7 +412,7 @@ export const useLlmStore = defineStore("llm", () => {
                       (tc) =>
                         tc.function.name === functionName &&
                         JSON.stringify(tc.function.arguments) ===
-                        JSON.stringify(functionArgs)
+                          JSON.stringify(functionArgs)
                     );
 
                     if (existingIndex === -1) {
@@ -522,7 +519,7 @@ export const useLlmStore = defineStore("llm", () => {
                       (tc) =>
                         tc.function.name === functionName &&
                         JSON.stringify(tc.function.arguments) ===
-                        JSON.stringify(functionArgs)
+                          JSON.stringify(functionArgs)
                     );
 
                     if (existingIndex === -1) {
@@ -561,7 +558,7 @@ export const useLlmStore = defineStore("llm", () => {
                   (tc) =>
                     tc.function.name === functionName &&
                     JSON.stringify(tc.function.arguments) ===
-                    JSON.stringify(toolCall.function.arguments)
+                      JSON.stringify(toolCall.function.arguments)
                 );
 
                 if (existingIndex === -1) {

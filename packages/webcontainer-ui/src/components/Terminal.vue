@@ -1,167 +1,182 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, watch } from "vue";
-import { Terminal } from "@xterm/xterm";
+import { onMounted, onUnmounted, ref } from "vue";
+import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
-import { getTerminalTheme } from "../utils/getTerminalTheme";
-import type { TerminalOptions } from "../types";
-
-// Import required CSS
+import type { RuntimeEnvironment } from "@piddie/runtime-environment";
 import "@xterm/xterm/css/xterm.css";
 
 const props = defineProps<{
-  options?: TerminalOptions;
-  isVisible?: boolean;
-  isFocusOnRender?: boolean;
+  sessionId: string;
+  runtime: RuntimeEnvironment;
+  readonly?: boolean;
 }>();
 
 const emit = defineEmits<{
-  (e: "ready", terminal: Terminal): void;
-  (e: "resize", dimensions: { cols: number; rows: number }): void;
-  (e: "input", input: string): void;
+  terminalReady: [terminal: XTerm];
+  terminalResize: [cols: number, rows: number];
 }>();
 
-// Terminal element ref
-const terminalElement = ref<HTMLElement | null>(null);
-// Terminal instance
-const terminal = ref<Terminal | null>(null);
-// Terminal resize addon
-const fitAddon = ref<FitAddon | null>(null);
+const terminalRef = ref<HTMLDivElement>();
+const terminal = ref<XTerm>();
+let fitAddon: FitAddon;
+let currentCommand = "";
+let currentLine = "";
 
-// Initialize terminal
-onMounted(async () => {
-  if (terminalElement.value) {
-    // Create terminal instance
-    const term = new Terminal({
-      fontFamily: props.options?.fontFamily || "monospace",
-      fontSize: props.options?.fontSize || 14,
-      lineHeight: props.options?.lineHeight || 1.2,
-      cursorBlink: props.options?.cursorBlink ?? true,
-      cursorStyle: props.options?.cursorStyle || "block",
-      theme: props.options?.theme || getTerminalTheme()
-    });
+onMounted(() => {
+  if (!terminalRef.value) return;
 
-    // Create and load fit addon
-    const fit = new FitAddon();
-    term.loadAddon(fit);
+  // Initialize terminal with proper configuration
+  const xterm = new XTerm({
+    cursorBlink: true,
+    convertEol: true,
+    disableStdin: props.readonly,
+    theme: {
+      background: "#1e1e1e",
+      foreground: "#d4d4d4",
+      cursor: props.readonly ? "#00000000" : "#d4d4d4"
+    },
+    fontSize: 12,
+    fontFamily: "Menlo, courier-new, courier, monospace"
+  });
 
-    // Create and load web links addon
-    const webLinks = new WebLinksAddon();
-    term.loadAddon(webLinks);
+  terminal.value = xterm;
 
-    // Open terminal in the terminal element
-    term.open(terminalElement.value);
+  // Add addons
+  fitAddon = new FitAddon();
+  const webLinksAddon = new WebLinksAddon();
+  xterm.loadAddon(fitAddon);
+  xterm.loadAddon(webLinksAddon);
 
-    // Fit terminal to container size
-    fit.fit();
+  // Open terminal in container
+  xterm.open(terminalRef.value);
+  fitAddon.fit();
 
-    // Set references
-    terminal.value = term;
-    fitAddon.value = fit;
+  // Handle terminal input
+  xterm.onData((data) => {
+    if (props.readonly) return;
 
-    // Handle terminal input
-    term.onData((data: string) => {
-      emit("input", data);
-    });
-
-    // Focus terminal if requested
-    if (props.isFocusOnRender) {
-      term.focus();
+    switch (data) {
+      case "\r": // Enter
+        handleEnterKey();
+        break;
+      case "\u007F": // Backspace
+        handleBackspace();
+        break;
+      case "\u0003": // Ctrl+C
+        handleCtrlC();
+        break;
+      default:
+        if (
+          data >= String.fromCharCode(0x20) &&
+          data <= String.fromCharCode(0x7e)
+        ) {
+          // Only handle printable characters
+          currentLine += data;
+          xterm.write(data);
+        }
+        break;
     }
+  });
 
-    // Emit ready event with terminal instance
-    emit("ready", term);
+  // Handle window resize
+  const resizeObserver = new ResizeObserver(() => {
+    if (fitAddon && terminal.value) {
+      fitAddon.fit();
+      emit("terminalResize", terminal.value.cols, terminal.value.rows);
+    }
+  });
+  resizeObserver.observe(terminalRef.value);
 
-    // Handle window resize
-    const handleResize = () => {
-      if (fitAddon.value && terminal.value) {
-        fitAddon.value.fit();
-        const dimensions = {
-          cols: terminal.value.cols,
-          rows: terminal.value.rows
-        };
-        emit("resize", dimensions);
-      }
-    };
+  // Write initial prompt
+  writePrompt();
 
-    window.addEventListener("resize", handleResize);
+  // Emit terminal ready
+  emit("terminalReady", xterm);
+});
 
-    // Clean up resize event listener
-    onBeforeUnmount(() => {
-      window.removeEventListener("resize", handleResize);
-      // Dispose terminal instance
-      if (terminal.value) {
-        terminal.value.dispose();
-      }
-    });
+onUnmounted(() => {
+  if (terminal.value) {
+    terminal.value.dispose();
   }
 });
 
-// Handle visibility changes
-watch(
-  () => props.isVisible,
-  (isVisible: boolean | undefined) => {
-    if (isVisible && fitAddon.value) {
-      // When terminal becomes visible, refit it
-      setTimeout(() => {
-        fitAddon.value?.fit();
-        if (terminal.value) {
-          emit("resize", {
-            cols: terminal.value.cols,
-            rows: terminal.value.rows
-          });
-        }
-      }, 0);
+function writePrompt() {
+  terminal.value?.write("\r\n$ ");
+  currentLine = "";
+}
+
+async function handleEnterKey() {
+  const command = currentLine.trim();
+  if (!command) {
+    writePrompt();
+    return;
+  }
+
+  try {
+    terminal.value?.write("\r\n");
+    const result = await props.runtime.executeCommand({
+      command,
+      options: { sessionId: props.sessionId }
+    });
+
+    if (result.stdout) {
+      terminal.value?.write(result.stdout);
+    }
+    if (result.stderr) {
+      terminal.value?.write("\r\n" + result.stderr);
+    }
+  } catch (error) {
+    terminal.value?.write(
+      "\r\n" + (error instanceof Error ? error.message : String(error))
+    );
+  }
+
+  writePrompt();
+}
+
+function handleBackspace() {
+  if (currentLine.length > 0) {
+    currentLine = currentLine.slice(0, -1);
+    terminal.value?.write("\b \b");
+  }
+}
+
+function handleCtrlC() {
+  terminal.value?.write("^C");
+  writePrompt();
+}
+
+// Expose methods for parent components
+defineExpose({
+  reloadStyles: () => {
+    if (terminal.value) {
+      terminal.value.options.theme = {
+        background: "#1e1e1e",
+        foreground: "#d4d4d4",
+        cursor: props.readonly ? "#00000000" : "#d4d4d4"
+      };
     }
   }
-);
-
-// Method to write text to the terminal
-const write = (text: string) => {
-  if (terminal.value) {
-    terminal.value.write(text);
-  }
-};
-
-// Method to clear the terminal
-const clear = () => {
-  if (terminal.value) {
-    terminal.value.clear();
-  }
-};
-
-// Method to focus the terminal
-const focus = () => {
-  if (terminal.value) {
-    terminal.value.focus();
-  }
-};
-
-// Expose methods
-defineExpose({
-  terminal,
-  write,
-  clear,
-  focus
 });
 </script>
 
 <template>
-  <div
-    ref="terminalElement"
-    class="terminal-container"
-    :class="{ hidden: isVisible === false }"
-  ></div>
+  <div ref="terminalRef" class="terminal-container"></div>
 </template>
 
 <style scoped>
 .terminal-container {
   width: 100%;
   height: 100%;
-  overflow: hidden;
+  background-color: #1e1e1e;
 }
 
-.hidden {
-  display: none;
+:deep(.xterm) {
+  padding: 8px;
+}
+
+:deep(.xterm-viewport) {
+  overflow-y: auto;
 }
 </style>

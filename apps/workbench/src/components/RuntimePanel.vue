@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, watch } from "vue";
 import { CollapsiblePanel } from "@piddie/common-ui-vue";
-import { CommandTerminal } from "@piddie/webcontainer-ui";
-import type { RuntimeEnvironmentManager } from "@piddie/runtime-environment";
+import { TerminalSessionManager } from "@piddie/webcontainer-ui";
+import type { RuntimeEnvironment } from "@piddie/runtime-environment";
 import { useResourceService } from "@/composables/useResourceService";
 import "@piddie/webcontainer-ui/style";
 
 const props = defineProps<{
   initialCollapsed?: boolean;
+  runtime?: RuntimeEnvironment;
 }>();
 
 const emit = defineEmits<{
@@ -17,22 +18,23 @@ const emit = defineEmits<{
 const resourceService = useResourceService();
 const terminalReady = ref(false);
 const error = ref<Error | null>(null);
-const runtimeManager = ref<RuntimeEnvironmentManager | undefined>(undefined);
-
-// Display status message for debugging
 const statusMessage = ref("Initializing terminal...");
 
-onMounted(() => {
-  const runtimeManager = resourceService.getRuntimeEnvironmentManager();
-  console.log(
-    "RuntimePanel mounted, runtime manager:",
-    runtimeManager,
-    "ready:",
-    runtimeManager?.isReady?.()
-  );
-});
+// Watch for runtime changes
+watch(
+  () => props.runtime,
+  (runtime) => {
+    if (runtime) {
+      terminalReady.value = true;
+      statusMessage.value = "Terminal ready";
+    } else {
+      terminalReady.value = false;
+      statusMessage.value = "No runtime environment available";
+    }
+  },
+  { immediate: true }
+);
 
-// Handle panel collapse
 function handleCollapse(isCollapsed: boolean) {
   emit("collapse", isCollapsed);
 }
@@ -56,11 +58,7 @@ function handleCollapse(isCollapsed: boolean) {
         <div v-else-if="!terminalReady" class="loading-message">
           <p>{{ statusMessage }}</p>
         </div>
-        <CommandTerminal
-          v-else
-          :isVisible="true"
-          :runtimeManager="runtimeManager"
-        />
+        <TerminalSessionManager v-else :runtime="props.runtime!" />
       </div>
     </template>
   </CollapsiblePanel>

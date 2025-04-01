@@ -1,9 +1,11 @@
 # Actions Package
 
 ## Overview
+
 Manages and executes actions derived from LLM responses through a centralized ActionsManager, which serves as the single entry point for tool registration and execution via the Model Context Protocol (MCP).
 
 ## System Diagram
+
 ```mermaid
 graph TD
     subgraph "Actions Package"
@@ -12,18 +14,18 @@ graph TD
         AM --> CEH[Code Execution Handler]
         AM --> CH[Configuration Handler]
     end
-    
+
     subgraph "MCP Servers"
         MCH --> FS[File Management MCP Server]
         MCH --> RE[Runtime Environment MCP Server]
         MCH --> OMS[Other MCP Servers...]
     end
-    
+
     subgraph "Resources"
         FileSystem[File System]
         WebContainer[WebContainer]
     end
-    
+
     LLM[LLM Integration] --> AM
     FS --> FileSystem
     RE --> WebContainer
@@ -32,6 +34,7 @@ graph TD
 ## Core Components
 
 ### 1. Actions Manager
+
 - **Responsibilities**:
   - Serve as a singleton entry point for all action management
   - Initialize and maintain the McpHost instance
@@ -42,6 +45,7 @@ graph TD
   - Manage action lifecycle
 
 ### 2. McpHost
+
 - **Responsibilities**:
   - Maintain the registry of MCP servers
   - Route tool calls to appropriate servers
@@ -50,6 +54,7 @@ graph TD
   - Provide a unified interface for tool execution
 
 ### 3. File Change Handler
+
 - **Responsibilities**:
   - Manage file operations
   - Create git commits
@@ -57,6 +62,7 @@ graph TD
   - Handle rollback mechanisms
 
 ### 4. Code Execution Handler
+
 - **Responsibilities**:
   - Run code in sandboxed environment
   - Capture execution output
@@ -64,6 +70,7 @@ graph TD
   - Provide safe code execution capabilities
 
 ### 5. Configuration Handler
+
 - **Responsibilities**:
   - Update IDE settings
   - Manage project configurations
@@ -71,6 +78,7 @@ graph TD
   - Provide configuration change tracking
 
 ## Key Design Decisions
+
 - Singleton pattern for ActionsManager to provide a central access point
 - Centralized MCP server registration through ActionsManager
 - Clean separation between LLM communication and tool execution
@@ -80,6 +88,7 @@ graph TD
 - Rollback and error recovery support
 
 ## MCP Integration Flow
+
 ```mermaid
 sequenceDiagram
     participant App as Application Bootstrap
@@ -94,18 +103,18 @@ sequenceDiagram
     AM->>MCH: create new McpHost()
 
     App->>AM: initialize()
-    
+
     AM->>FS: initialize FileManagementMcpServer
     AM->>MCH: registerLocalServer(fileServer, "file_management")
-    
+
     AM->>RE: initialize RuntimeEnvironmentMcpServer
     AM->>MCH: registerLocalServer(runtimeServer, "runtime_environment")
-    
+
     O->>AM: getAvailableTools()
     AM->>MCH: listTools()
     MCH-->>AM: Return all available tools
     AM-->>O: Return available tools
-    
+
     O->>AM: executeToolCall(name, args)
     AM->>MCH: executeToolCall(name, args)
     MCH-->>AM: Return execution result
@@ -113,6 +122,7 @@ sequenceDiagram
 ```
 
 ## Action and Tool Interface
+
 ```typescript
 interface Action {
   type: ActionType;
@@ -132,12 +142,16 @@ interface ActionsManager {
   getInstance(): ActionsManager;
   initialize(): Promise<void>;
   getAvailableTools(): Promise<Tool[]>;
-  executeToolCall(name: string, args: Record<string, unknown>): Promise<{result: unknown, error?: string}>;
+  executeToolCall(
+    name: string,
+    args: Record<string, unknown>
+  ): Promise<{ result: unknown; error?: string }>;
   registerServer(server: McpServer, name: string): Promise<void>;
 }
 ```
 
 ## External Relationships
+
 - Provides tool discovery and execution to LLM Integration
 - Manages MCP servers for file operations, code execution, and runtime environment
 - Interfaces with File System
@@ -145,6 +159,7 @@ interface ActionsManager {
 - Supports Chat Context tracking
 
 ## Action Types
+
 - File Changes
 - Code Execution
 - Configuration Updates
@@ -152,6 +167,7 @@ interface ActionsManager {
 - Custom Extension Actions
 
 ## Performance Considerations
+
 - Minimal overhead action processing
 - Efficient tool call routing
 - Concurrent action support
@@ -159,12 +175,14 @@ interface ActionsManager {
 - Lightweight validation mechanisms
 
 ## Security Features
+
 - Standardized action authorization
 - Centralized resource limit enforcement
 - Sandboxed execution environments
 - Comprehensive logging and auditing
 
 ## Usage
+
 ```typescript
 // Getting the ActionsManager singleton
 const actionsManager = ActionsManager.getInstance();
@@ -179,13 +197,15 @@ const result = await actionsManager.executeToolCall("read_file", {
 
 // Traditional action execution
 const action: Action = {
-  type: 'FILE_CHANGE',
+  type: "FILE_CHANGE",
   payload: {
-    changes: [{ 
-      type: 'CREATE', 
-      path: 'src/example.ts', 
-      content: 'console.log("Hello, World!");' 
-    }]
+    changes: [
+      {
+        type: "CREATE",
+        path: "src/example.ts",
+        content: 'console.log("Hello, World!");'
+      }
+    ]
   }
 };
 
@@ -193,8 +213,9 @@ const actionResult = await actionsManager.executeAction(action);
 ```
 
 ## Future Enhancements
+
 - Extensible plugin system for third-party MCP servers
 - Advanced error recovery strategies
 - Machine learning-based action prediction
 - Distributed action execution
-- Enhanced action composition 
+- Enhanced action composition
