@@ -50,6 +50,7 @@ export class WebContainerProvider implements RuntimeEnvironmentProvider {
       // Create new container instance
       this.container = await WebContainer.boot();
       this.fileSystem = new WebContainerFileSystem(this.container);
+      await this.fileSystem.initialize();
       this.isInitialized = true;
     } catch (error: unknown) {
       console.error("Failed to initialize web container:", error);
