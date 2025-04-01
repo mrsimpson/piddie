@@ -1,7 +1,6 @@
 import Dexie, { type Table } from "dexie";
 import type { Project } from "@piddie/shared-types";
 import type { ProjectManager } from "../types";
-import type { ChatManager } from "@piddie/chat-management";
 import { generateProjectId } from "../utils/generateProjectId";
 
 /**
@@ -46,7 +45,6 @@ export class DexieProjectManager implements ProjectManager {
 
   constructor(
     db?: ProjectDatabase,
-    private chatManager?: ChatManager
   ) {
     this.db = db || new ProjectDatabase();
   }
@@ -71,11 +69,6 @@ export class DexieProjectManager implements ProjectManager {
 
   async createProject(name: string): Promise<Project> {
     const projectId = await this.generateUniqueProjectId();
-
-    // Create chat first to ensure it exists
-    if (this.chatManager) {
-      await this.chatManager.createChat(projectId);
-    }
 
     const project: Project = {
       id: projectId,

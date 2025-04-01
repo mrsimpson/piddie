@@ -11,8 +11,8 @@ import {
   FileManagementMcpServer
 } from "@piddie/files-management";
 import { useFileSystemStore } from "@piddie/files-management-ui-vue";
-import type { FileSystem } from "@piddie/shared-types";
 import { useProjectStore } from "@piddie/project-management-ui-vue";
+import { useChatStore } from "@piddie/chat-management-ui-vue";
 
 /**
  * Manages project-specific MCP servers and runtime environments
@@ -29,6 +29,7 @@ class ResourceService {
   // we'll be manipulating the stores, so reference them
   private fileSystemStore = useFileSystemStore();
   private projectStore = useProjectStore();
+  private chatStore = useChatStore();
 
   // MCP servers by project and name
   private servers = new Map<string, Map<string, McpServer>>();
@@ -100,7 +101,10 @@ class ResourceService {
     this.currentProjectId.value = projectId;
 
     try {
-      // 1. Initialize RuntimeEnvironment first
+      // Ensure the chat is loaded as the current chat
+      await this.chatStore.loadChat(this.projectStore.currentProject?.chatId);
+
+      // Initialize RuntimeEnvironment first
       this.currentRuntimeManager = new RuntimeEnvironmentManager();
       const provider = new WebContainerProvider();
       this.currentRuntimeManager.setProvider(provider);
@@ -109,10 +113,10 @@ class ResourceService {
         `RuntimeEnvironmentManager initialized for project ${projectId}`
       );
 
-      // 2. Get the runtime filesystem
+      // Get the runtime filesystem
       const runtimeFs = this.currentRuntimeManager.getFileSystem();
 
-      // 3. Initialize FileSystemStore with runtime filesystem
+      // Initialize FileSystemStore with runtime filesystem
 
       await this.fileSystemStore.initializeForProject({
         projectId,
@@ -120,12 +124,7 @@ class ResourceService {
       });
       console.log(`FileSystemStore initialized for project ${projectId}`);
 
-      //   // 4. Initialize FileSyncManager
-      //   this.currentSyncManager = new FileSyncManager();
-      //   await this.currentSyncManager.initialize();
-      //   console.log(`FileSyncManager initialized for project ${projectId}`);
-
-      // 5. Create and register MCP servers
+      // Create and register MCP servers
       const runtimeServer = new RuntimeEnvironmentMCPServer(
         this.currentRuntimeManager
       );

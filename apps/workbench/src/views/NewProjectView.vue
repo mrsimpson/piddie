@@ -5,6 +5,7 @@ import { useProjectStore } from "@piddie/project-management-ui-vue";
 import { useChatStore } from "@piddie/chat-management-ui-vue";
 import { useLlmStore } from "@piddie/llm-integration-ui-vue";
 import { LlmSettings } from "@piddie/llm-integration-ui-vue";
+import { useResourceService } from "@/composables/useResourceService";
 import "@piddie/llm-integration-ui-vue/style";
 import "@shoelace-style/shoelace/dist/components/textarea/textarea.js";
 import "@shoelace-style/shoelace/dist/components/button/button.js";
@@ -18,6 +19,7 @@ const router = useRouter();
 const projectStore = useProjectStore();
 const chatStore = useChatStore();
 const llmStore = useLlmStore();
+const resourceService = useResourceService();
 const projectPrompt = ref("");
 const errorMessage = ref("");
 const showSettings = ref(false);
@@ -117,24 +119,23 @@ async function createProject() {
     // Create the project
     const project = await projectStore.createProject(projectName);
 
-    // Create a chat and explicitly set it as the current chat
-    const chat = await chatStore.createChat(project.id);
+    // Set current project and initialize resources
+    await projectStore.setCurrentProject(project.id);
+    await resourceService.activateProject(project.id);
 
     // Ensure the chat is loaded as the current chat
-    await chatStore.loadChat(chat.id);
-
-    // Store the message content to send
-    const messageContent = projectPrompt.value;
-
-    // Navigate to the project page immediately
-    router.push(`/projects/${project.id}`);
-
-    // Start the LLM interaction in the background without awaiting it
-    // This allows the navigation to happen immediately
-    llmStore.sendMessage(messageContent, chat.id).catch((error: Error) => {
+    const chat = await chatStore.loadChat(project.id);
+    try {
+      // Send the message to LLM
+      const messageContent = projectPrompt.value;
+      await llmStore.sendMessage(messageContent, chat.id);
+    } catch (error) {
       console.error("Error sending message to LLM:", error);
-      // We don't need to set errorMessage here since we've already navigated away
-    });
+      // Don't throw here, we still want to navigate even if LLM fails
+    }
+
+    // Navigate to the project page after everything is set up
+    router.push(`/projects/${project.id}`);
   } catch (error) {
     console.error("Error creating project:", error);
     errorMessage.value =

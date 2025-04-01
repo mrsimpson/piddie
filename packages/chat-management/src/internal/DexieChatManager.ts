@@ -49,7 +49,7 @@ export class DexieChatManager implements ChatManager {
     metadata?: Record<string, unknown>
   ): Promise<Chat> {
     const chat: Omit<Chat, "messages"> = {
-      id: `chat_${Date.now()}`,
+      id: projectId, // there will be only one chat per project for now
       created: new Date(),
       lastUpdated: new Date(),
       projectId,

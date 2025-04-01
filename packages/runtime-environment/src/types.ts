@@ -38,7 +38,10 @@ export interface RuntimeEnvironmentProvider {
   /**
    * Execute a command in the runtime environment
    */
-  executeCommand(command: string, options?: CommandOptions): Promise<CommandResult>;
+  executeCommand(
+    command: string,
+    options?: CommandOptions
+  ): Promise<CommandResult>;
 
   /**
    * Check if the runtime environment is ready
