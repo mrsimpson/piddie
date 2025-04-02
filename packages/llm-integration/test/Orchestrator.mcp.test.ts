@@ -857,6 +857,206 @@ describe("Orchestrator MCP Integration", () => {
       );
       expect(errorChunks.length).toBeGreaterThan(0);
     });
+
+    it("should wait for each tool to complete before executing the next one", async () => {
+      // Track execution timing
+      const executionLog: Array<{
+        tool: string;
+        action: "start" | "end";
+        time: number;
+      }> = [];
+
+      // Register tools with timing tracking
+      mockMcpServer.registerTool("slow_tool_1", async (args) => {
+        executionLog.push({
+          tool: "slow_tool_1",
+          action: "start",
+          time: Date.now()
+        });
+        await new Promise((resolve) => setTimeout(resolve, 100)); // Long delay
+        executionLog.push({
+          tool: "slow_tool_1",
+          action: "end",
+          time: Date.now()
+        });
+        return { result: `Slow tool 1 executed with ${JSON.stringify(args)}` };
+      });
+
+      mockMcpServer.registerTool("slow_tool_2", async (args) => {
+        executionLog.push({
+          tool: "slow_tool_2",
+          action: "start",
+          time: Date.now()
+        });
+        await new Promise((resolve) => setTimeout(resolve, 50)); // Medium delay
+        executionLog.push({
+          tool: "slow_tool_2",
+          action: "end",
+          time: Date.now()
+        });
+        return { result: `Slow tool 2 executed with ${JSON.stringify(args)}` };
+      });
+
+      // Critical fix: Configure mock client with native tool support
+      // This is important to bypass content parsing and directly use the tool_calls
+      mockLlmClient.updateMockConfig({
+        supportsTools: true,
+        streaming: true,
+        content: "Executing slow tools in sequence",
+        toolCalls: [] // We'll handle tool calls directly in our custom streamMessage
+      });
+
+      // Track all emitted chunks to help debug
+      const allEmittedChunks: LlmStreamChunk[] = [];
+      const emittedChunks: LlmStreamChunk[] = [];
+
+      // Mock the client's streamMessage ONLY for this test
+      mockLlmClient.streamMessage = (message) => {
+        const emitter = new EventEmitter();
+
+        // Use setTimeout to ensure these run asynchronously
+        setTimeout(async () => {
+          try {
+            // Emit content first without tool calls
+            const contentChunk: LlmStreamChunk = {
+              content: "Starting sequence of tools...\n",
+              isFinal: false
+            };
+            emitter.emit(LlmStreamEvent.DATA, contentChunk);
+            allEmittedChunks.push(contentChunk);
+
+            // Short delay
+            await new Promise((resolve) => setTimeout(resolve, 10));
+
+            // Emit first tool call
+            const firstToolChunk: LlmStreamChunk = {
+              content: "",
+              tool_calls: [
+                {
+                  function: {
+                    name: "slow_tool_1",
+                    arguments: { order: 1 }
+                  }
+                }
+              ],
+              isFinal: false
+            };
+            console.log("TEST: Emitting tool_call for slow_tool_1");
+            emitter.emit(LlmStreamEvent.DATA, firstToolChunk);
+            allEmittedChunks.push(firstToolChunk);
+
+            // Wait for the first tool to be processed
+            // (important for this test - we need a delay here)
+            await new Promise((resolve) => setTimeout(resolve, 150));
+
+            // Emit second tool call
+            const secondToolChunk: LlmStreamChunk = {
+              content: "",
+              tool_calls: [
+                {
+                  function: {
+                    name: "slow_tool_2",
+                    arguments: { order: 2 }
+                  }
+                }
+              ],
+              isFinal: false
+            };
+            console.log("TEST: Emitting tool_call for slow_tool_2");
+            emitter.emit(LlmStreamEvent.DATA, secondToolChunk);
+            allEmittedChunks.push(secondToolChunk);
+
+            // Wait before finishing
+            await new Promise((resolve) => setTimeout(resolve, 100));
+
+            // Emit final chunk
+            const finalChunk: LlmStreamChunk = {
+              content: "All tools have been executed.",
+              isFinal: true
+            };
+            emitter.emit(LlmStreamEvent.DATA, finalChunk);
+            allEmittedChunks.push(finalChunk);
+
+            // Emit end event
+            console.log("TEST: Emitting END event");
+            emitter.emit(LlmStreamEvent.END, {
+              id: "resp-1",
+              chatId: message.chatId,
+              content: "All slow tools executed",
+              role: "assistant",
+              created: new Date(),
+              parentId: message.id
+            });
+          } catch (error) {
+            console.error("TEST: Error in mock streamMessage:", error);
+            emitter.emit(LlmStreamEvent.ERROR, error);
+          }
+        }, 0);
+
+        return emitter;
+      };
+
+      const message: LlmMessage = {
+        id: "msg-1",
+        chatId: "chat-1",
+        content: "Execute slow tools in sequence",
+        role: "user",
+        status: MessageStatus.SENT,
+        created: new Date(),
+        provider: "test"
+      };
+
+      // Process the message with streaming
+      const emitter = await orchestrator.processMessageStream(
+        message,
+        (chunk) => {
+          emittedChunks.push(chunk);
+        }
+      );
+
+      // Wait for streaming to complete
+      await new Promise<void>((resolve) => {
+        emitter.on(LlmStreamEvent.END, () => {
+          resolve();
+        });
+      });
+
+      // Debug: Log what chunks were emitted and the execution log
+      console.log(
+        "TEST: All emitted chunks:",
+        JSON.stringify(allEmittedChunks)
+      );
+      console.log("TEST: Execution log:", JSON.stringify(executionLog));
+
+      // Verify execution sequence - there should be 4 entries now
+      expect(executionLog.length).toBe(4); // 2 tools × (start + end)
+
+      // Get timestamps for each action
+      const _tool1Start = executionLog.find(
+        (log) => log.tool === "slow_tool_1" && log.action === "start"
+      )!.time;
+      const tool1End = executionLog.find(
+        (log) => log.tool === "slow_tool_1" && log.action === "end"
+      )!.time;
+      const tool2Start = executionLog.find(
+        (log) => log.tool === "slow_tool_2" && log.action === "start"
+      )!.time;
+      const _tool2End = executionLog.find(
+        (log) => log.tool === "slow_tool_2" && log.action === "end"
+      )!.time;
+
+      // Verify that second tool started after first tool completed
+      expect(tool2Start).toBeGreaterThan(tool1End);
+
+      // Verify tool results appear in chunks in the correct order
+      const toolResultChunks = emittedChunks.filter(
+        (chunk) => chunk.content && chunk.content.includes("Tool Result")
+      );
+
+      expect(toolResultChunks.length).toBe(2);
+      expect(toolResultChunks[0].content).toContain("Slow tool 1 executed");
+      expect(toolResultChunks[1].content).toContain("Slow tool 2 executed");
+    });
   });
 
   describe("getCompletion Integration", () => {

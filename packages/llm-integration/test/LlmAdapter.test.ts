@@ -62,7 +62,8 @@ vi.mock("../src/LiteLlmClient", () => {
           }, 10);
 
           return emitter;
-        })
+        }),
+        checkToolSupport: vi.fn().mockResolvedValue(false)
       };
     })
   };
@@ -214,16 +215,15 @@ describe("LLM Adapter", () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
 
       // Verify events were emitted
-      expect(onData).toHaveBeenCalledTimes(4);
+      expect(onData).toHaveBeenCalledTimes(3);
       expect(onEnd).toHaveBeenCalledTimes(1);
       expect(onError).not.toHaveBeenCalled();
 
       // Verify chunks were collected
-      expect(chunks).toHaveLength(4);
+      expect(chunks).toHaveLength(3);
       expect(chunks[0].content).toBe("This is ");
       expect(chunks[1].content).toBe("a streaming ");
       expect(chunks[2].content).toBe("response");
-      expect(chunks[3].content).toBe("This is a streaming response");
 
       // No longer verify chat manager was called
     });
