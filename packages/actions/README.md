@@ -10,9 +10,6 @@ Manages and executes actions derived from LLM responses through a centralized Ac
 graph TD
     subgraph "Actions Package"
         AM[ActionsManager] --> MCH[McpHost]
-        AM --> FCH[File Change Handler]
-        AM --> CEH[Code Execution Handler]
-        AM --> CH[Configuration Handler]
     end
 
     subgraph "MCP Servers"
@@ -52,30 +49,6 @@ graph TD
   - Provide standardized error handling and formatting
   - Manage server transport and communication
   - Provide a unified interface for tool execution
-
-### 3. File Change Handler
-
-- **Responsibilities**:
-  - Manage file operations
-  - Create git commits
-  - Implement atomic changes
-  - Handle rollback mechanisms
-
-### 4. Code Execution Handler
-
-- **Responsibilities**:
-  - Run code in sandboxed environment
-  - Capture execution output
-  - Manage execution context
-  - Provide safe code execution capabilities
-
-### 5. Configuration Handler
-
-- **Responsibilities**:
-  - Update IDE settings
-  - Manage project configurations
-  - Handle environment variables
-  - Provide configuration change tracking
 
 ## Integrated MCP Servers
 

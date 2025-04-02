@@ -167,3 +167,6 @@ export interface LlmStreamChunk {
   /** Whether this is the final chunk */
   isFinal: boolean;
 }
+
+// re-export the tool call. TODO: clarify which package shall own it
+export type { ToolCall };

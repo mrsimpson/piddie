@@ -13,6 +13,122 @@ import type { LlmAdapter } from "./index";
 import { ActionsManager, type Tool } from "@piddie/actions";
 
 /**
+ * A queue for managing tool calls in a FIFO manner with abort functionality
+ */
+class ToolCallQueue {
+  private queue: Array<{
+    toolCall: ToolCall;
+    resolve: (result: unknown) => void;
+    reject: (error: unknown) => void;
+  }> = [];
+  private isProcessing = false;
+  private aborted = false;
+  private executeToolFn: (toolCall: ToolCall) => Promise<unknown>;
+
+  /**
+   * Creates a new ToolCallQueue
+   * @param executeToolFn Function to execute tool calls
+   */
+  constructor(executeToolFn: (toolCall: ToolCall) => Promise<unknown>) {
+    this.executeToolFn = executeToolFn;
+  }
+
+  /**
+   * Adds a tool call to the queue
+   * @param toolCall The tool call to add
+   * @returns A promise that resolves with the tool call result
+   */
+  async enqueue(toolCall: ToolCall): Promise<unknown> {
+    // If the queue is aborted, reject immediately
+    if (this.aborted) {
+      return Promise.reject(new Error("Tool call queue has been aborted"));
+    }
+
+    // Return a promise that will be resolved when the tool call is executed
+    return new Promise((resolve, reject) => {
+      // Add the tool call to the queue
+      this.queue.push({ toolCall, resolve, reject });
+
+      // Start processing if not already doing so
+      if (!this.isProcessing) {
+        this.processNext();
+      }
+    });
+  }
+
+  /**
+   * Processes the next tool call in the queue
+   */
+  private async processNext(): Promise<void> {
+    // If the queue is empty or aborted, stop processing
+    if (this.queue.length === 0 || this.aborted) {
+      this.isProcessing = false;
+      return;
+    }
+
+    // Mark as processing
+    this.isProcessing = true;
+
+    // Get the next tool call from the queue
+    const { toolCall, resolve, reject } = this.queue.shift()!;
+
+    try {
+      // Execute the tool call
+      const result = await this.executeToolFn(toolCall);
+      // Resolve the promise with the result
+      resolve(result);
+    } catch (error) {
+      // Reject the promise with the error
+      reject(error);
+    } finally {
+      // Process the next tool call
+      this.processNext();
+    }
+  }
+
+  /**
+   * Gets the number of pending tool calls in the queue
+   * @returns The number of pending tool calls
+   */
+  get pendingCount(): number {
+    return this.queue.length;
+  }
+
+  /**
+   * Checks if the queue is currently processing a tool call
+   * @returns True if the queue is processing, false otherwise
+   */
+  get isActive(): boolean {
+    return this.isProcessing;
+  }
+
+  /**
+   * Aborts all pending tool calls in the queue
+   */
+  abort(): void {
+    // Set the aborted flag
+    this.aborted = true;
+
+    // Reject all pending promises
+    for (const { reject } of this.queue) {
+      reject(new Error("Tool call aborted"));
+    }
+
+    // Clear the queue
+    this.queue = [];
+  }
+
+  /**
+   * Resets the queue to its initial state
+   */
+  reset(): void {
+    this.aborted = false;
+    this.isProcessing = false;
+    this.queue = [];
+  }
+}
+
+/**
  * Orchestrator for LLM interactions
  * Manages LLM providers and delegates tool operations to the ActionsManager
  */
@@ -22,8 +138,11 @@ export class Orchestrator implements LlmAdapter {
   private client: LlmClient;
   private chatManager: ChatManager | undefined;
   private toolsBuffer: Tool[] | null = null;
-
+  // Track executed tool calls to avoid duplicates
+  private executedToolCalls = new Set<string>();
   private MCP_TOOL_USE = "json mcp-tool-use";
+  // Tool call queue for sequential execution
+  private toolCallQueue: ToolCallQueue;
 
   /**
    * Creates a new Orchestrator
@@ -39,6 +158,9 @@ export class Orchestrator implements LlmAdapter {
     this.client = client;
     this.chatManager = chatManager;
     this.actionsManager = actionsManager;
+
+    // Initialize the tool call queue with the execute tool function
+    this.toolCallQueue = new ToolCallQueue(this.executeToolCall.bind(this));
   }
 
   /**
@@ -308,41 +430,37 @@ export class Orchestrator implements LlmAdapter {
    * @returns The result of the tool call
    */
   private async executeToolCall(toolCall: ToolCall): Promise<unknown> {
+    if (!toolCall || !toolCall.function || !toolCall.function.name) {
+      throw new Error("Invalid tool call");
+    }
+
+    const toolName = toolCall.function.name;
+    const toolArgs = toolCall.function.arguments || {};
+    let parsedArgs;
+
     try {
-      console.log(
-        `[Orchestrator] Executing tool call: ${toolCall.function.name}`
-      );
+      // If arguments are provided as a string, parse them to an object
+      if (typeof toolArgs === "string") {
+        parsedArgs = JSON.parse(toolArgs);
+      } else {
+        parsedArgs = toolArgs;
+      }
 
-      // Extract the tool name and arguments
-      const toolName = toolCall.function.name;
-      const toolArgs =
-        typeof toolCall.function.arguments === "string"
-          ? JSON.parse(toolCall.function.arguments)
-          : toolCall.function.arguments;
-
-      // Delegate tool execution to the ActionsManager
+      // Call the tool via the ActionsManager
+      console.log(`[Orchestrator] Executing tool call: ${toolName}`);
       const result = await this.actionsManager.executeToolCall(
         toolName,
-        toolArgs
+        parsedArgs
       );
       console.log(
         `[Orchestrator] Tool call executed successfully: ${toolName}`,
         result
       );
-
-      // Return the result directly or format an error message if present
-      if (result.error) {
-        return {
-          error: result.error
-        };
-      }
-
-      return result.result;
+      return result;
     } catch (error) {
-      console.error("[Orchestrator] Error executing tool call:", error);
-      return {
-        error: error instanceof Error ? error.message : String(error)
-      };
+      // Return the error to be handled by the caller
+      console.error(`[Orchestrator] Error executing tool call:`, error);
+      throw error;
     }
   }
 
@@ -354,19 +472,38 @@ export class Orchestrator implements LlmAdapter {
   private async executeToolCalls(
     toolCalls: ToolCall[]
   ): Promise<Record<string, unknown>> {
+    if (!toolCalls || toolCalls.length === 0) {
+      return {};
+    }
+
+    console.log(`[Orchestrator] Executing ${toolCalls.length} tool calls`);
     const results: Record<string, unknown> = {};
 
+    // Execute each tool call in sequence and collect results
     for (const toolCall of toolCalls) {
-      const toolName = toolCall.function.name;
-
       try {
-        results[toolName] = await this.executeToolCall(toolCall);
+        // Create a unique ID for this tool call to avoid duplicates
+        const toolCallId = `${toolCall.function.name}-${JSON.stringify(toolCall.function.arguments)}`;
+
+        // Skip if already executed
+        if (this.executedToolCalls.has(toolCallId)) {
+          console.log(
+            `[Orchestrator] Skipping already executed tool: ${toolCall.function.name}`
+          );
+          continue;
+        }
+
+        // Mark as executed
+        this.executedToolCalls.add(toolCallId);
+
+        // Execute the tool call
+        const result = await this.executeToolCall(toolCall);
+
+        // Store the result
+        results[toolCall.function.name] = result;
       } catch (error) {
-        console.error(
-          `[Orchestrator] Error executing tool call ${toolName}:`,
-          error
-        );
-        results[toolName] = {
+        // Store the error as the result
+        results[toolCall.function.name] = {
           error: error instanceof Error ? error.message : String(error)
         };
       }
@@ -537,423 +674,341 @@ export class Orchestrator implements LlmAdapter {
     message: LlmMessage,
     onChunk?: (chunk: LlmStreamChunk) => void
   ): Promise<EventEmitter> {
-    try {
-      console.log("[Orchestrator] Processing message stream");
+    console.log("[Orchestrator] Processing message stream");
 
-      // Get the provider config
-      const providerConfig = this.llmProviders.get(message.provider);
-      if (!providerConfig) {
-        throw new Error(`Provider ${message.provider} not found`);
+    // Reset the executed tool calls set and tool call queue for this stream
+    this.executedToolCalls.clear();
+    this.toolCallQueue.reset();
+
+    // Create a new emitter
+    const emitter = new EventEmitter();
+
+    // Enhance the message with history and tools
+    const enhancedMessage =
+      await this.enhanceMessageWithHistoryAndTools(message);
+
+    // Track accumulated content for extracting tool calls
+    let fullContent = "";
+
+    // Track tool calls for updating the message
+    let toolCalls: ToolCall[] = [];
+
+    // Check if the provider supports tools natively
+    const supportsTools = await this.client.checkToolSupport();
+
+    // Helper function to emit tool result as a chunk
+    const emitToolResult = (toolName: string, result: unknown) => {
+      const content = `\n\n**Tool Result (${toolName}):**\n\n${
+        typeof result === "string" ? result : JSON.stringify(result, null, 2)
+      }\n\n`;
+
+      const chunk: LlmStreamChunk = {
+        content,
+        isFinal: false
+      };
+
+      emitter.emit("data", chunk);
+      if (onChunk) onChunk(chunk);
+    };
+
+    // Helper function to emit tool error as a chunk
+    const emitToolError = (toolName: string, error: unknown) => {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      const content = `\n\n**Tool Error (${toolName}):**\n\n${errorMessage}\n\n`;
+
+      const chunk: LlmStreamChunk = {
+        content,
+        isFinal: false
+      };
+
+      emitter.emit("data", chunk);
+      if (onChunk) onChunk(chunk);
+    };
+
+    // Helper function to execute a tool call and emit the result
+    const executeAndEmitToolCall = async (
+      toolCall: ToolCall
+    ): Promise<boolean> => {
+      if (!toolCall || !toolCall.function || !toolCall.function.name) {
+        return false;
       }
 
-      // Check if the provider supports tools
-      const supportsTools = await this.checkToolSupport(message.provider);
+      const toolName = toolCall.function.name;
 
-      // Enhance the message with chat history and tools
-      const enhancedMessage =
-        await this.enhanceMessageWithHistoryAndTools(message);
+      // Create a unique ID for this tool call
+      const toolCallId = `${toolName}-${JSON.stringify(toolCall.function.arguments)}`;
 
-      // Add system prompt with appropriate instructions based on tool support
-      if (!enhancedMessage.systemPrompt) {
-        enhancedMessage.systemPrompt = this.generateSystemPrompt(supportsTools);
+      // Skip if already executed
+      if (this.executedToolCalls.has(toolCallId)) {
+        console.log(
+          `[Orchestrator] Skipping already executed tool: ${toolName}`
+        );
+        return false;
       }
 
-      // Create an event emitter to return
-      const emitter = new EventEmitter();
+      // Mark as executed
+      this.executedToolCalls.add(toolCallId);
 
-      // Set up variables to track the full content and tool calls
-      let fullContent = "";
-      let toolCalls: ToolCall[] = [];
+      try {
+        console.log(
+          `[Orchestrator] Starting execution of tool call: ${toolName}`
+        );
 
-      // Track which tool calls have been executed
-      const executedToolCalls = new Set<string>();
+        // Enqueue tool call for sequential processing
+        const result = await this.toolCallQueue.enqueue(toolCall);
 
-      if (!supportsTools) {
-        // If the provider doesn't support tools natively, we need to extract them from the text
-        // Set up a Set to track which tool calls have been executed
-        // Track which tool calls have been executed
+        console.log(
+          `[Orchestrator] Tool call execution complete: ${toolName} with result:`,
+          result
+        );
 
-        // Create a wrapper for the onChunk callback
-        const wrappedOnChunk = (data: unknown) => {
-          const chunk = data as LlmStreamChunk;
+        // Emit the result
+        emitToolResult(toolName, result);
+        return true;
+      } catch (error) {
+        console.error(
+          `[Orchestrator] Error executing tool call: ${toolName}`,
+          error
+        );
+
+        // Emit the error
+        emitToolError(toolName, error);
+        return true;
+      }
+    };
+
+    // Helper function to process tool calls extracted from text
+    const processExtractedToolCalls = async (
+      extractedToolCalls: ToolCall[]
+    ) => {
+      if (extractedToolCalls.length === 0) {
+        return;
+      }
+
+      console.log(
+        `[Orchestrator] Processing ${extractedToolCalls.length} extracted tool calls`
+      );
+
+      // Process each extracted tool call sequentially
+      for (const toolCall of extractedToolCalls) {
+        await executeAndEmitToolCall(toolCall);
+      }
+    };
+
+    // Helper function to process tool calls from a chunk
+    const processChunkToolCalls = async (chunkToolCalls: ToolCall[]) => {
+      if (chunkToolCalls.length === 0) {
+        return;
+      }
+
+      console.log(
+        `[Orchestrator] Processing ${chunkToolCalls.length} chunk tool calls`
+      );
+
+      // Process each tool call from the chunk sequentially
+      for (const toolCall of chunkToolCalls) {
+        await executeAndEmitToolCall(toolCall);
+      }
+    };
+
+    if (!supportsTools) {
+      // If the provider doesn't support tools natively, we need to extract them from the text
+      // Create a wrapper for the onChunk callback
+      const wrappedOnChunk = async (data: unknown) => {
+        const chunk = data as LlmStreamChunk;
+        console.log(
+          `[Orchestrator] NON-NATIVE: Received chunk: ${JSON.stringify({
+            content:
+              chunk.content?.substring(0, 20) +
+              (chunk.content && chunk.content.length > 20 ? "..." : ""),
+            tool_calls: chunk.tool_calls?.map((tc) => tc.function.name),
+            isFinal: chunk.isFinal
+          })}`
+        );
+
+        // We need to ensure tools are executed sequentially
+        // Process any tool calls in this chunk BEFORE emitting to avoid race conditions
+        if (chunk.tool_calls && chunk.tool_calls.length > 0) {
           console.log(
-            `[Orchestrator] Received chunk: ${chunk.content ? `content: "${chunk.content.substring(0, 20)}${chunk.content.length > 20 ? "..." : ""}"` : "no content"}, tool_calls: ${chunk.tool_calls ? chunk.tool_calls.length : 0}`
+            `[Orchestrator] Processing ${chunk.tool_calls.length} chunk tool calls first`
           );
 
-          // Emit the chunk immediately to ensure UI updates without delay
-          // This ensures content appears in real-time
-          emitter.emit("data", chunk);
-          if (onChunk) onChunk(chunk);
+          // Add to tracking
+          toolCalls = [...toolCalls, ...chunk.tool_calls];
 
-          // Accumulate the content
-          if (chunk.content) {
-            fullContent += chunk.content;
+          // Process each tool call in sequence
+          await processChunkToolCalls(chunk.tool_calls);
+        }
 
-            // Check for complete tool calls in the accumulated content
-            // This happens after emitting the chunk to avoid delaying UI updates
-            const { content, extractedToolCalls } =
-              this.extractToolCallsFromPartialText(fullContent);
+        // Emit the chunk immediately to ensure UI updates without delay
+        // This ensures content appears in real-time
+        emitter.emit("data", chunk);
+        if (onChunk) onChunk(chunk);
 
-            // If we found complete tool calls, update the accumulated content and tool calls
-            if (extractedToolCalls.length > 0) {
-              console.log(
-                `[Orchestrator] Extracted ${extractedToolCalls.length} tool calls from text`
-              );
-              fullContent = content;
-              toolCalls = [...toolCalls, ...extractedToolCalls];
+        // Accumulate the content
+        if (chunk.content) {
+          fullContent += chunk.content;
 
-              // Execute each new tool call and emit the results
-              extractedToolCalls.forEach(async (toolCall) => {
-                // Create a unique ID for this tool call to avoid duplicate execution
-                const toolCallId = `${toolCall.function.name}-${JSON.stringify(toolCall.function.arguments)}`;
-
-                // Skip if we've already executed this tool call
-                if (executedToolCalls.has(toolCallId)) {
-                  return;
-                }
-
-                executedToolCalls.add(toolCallId);
-
-                // Emit the tool call first
-                const toolCallChunk: LlmStreamChunk = {
-                  content: "",
-                  isFinal: false,
-                  tool_calls: [toolCall]
-                };
-                emitter.emit("data", toolCallChunk);
-                if (onChunk) onChunk(toolCallChunk);
-
-                // Execute the tool call
-                try {
-                  const result = await this.executeToolCall(toolCall);
-
-                  // Emit the tool result
-                  const resultChunk: LlmStreamChunk = {
-                    content: `\n\n**Tool Result (${toolCall.function.name}):**\n\n${JSON.stringify(result, null, 2)}\n\n`,
-                    isFinal: false
-                  };
-                  emitter.emit("data", resultChunk);
-                  if (onChunk) onChunk(resultChunk);
-                } catch (error) {
-                  console.error(
-                    `[Orchestrator] Error executing tool call ${toolCall.function.name}:`,
-                    error
-                  );
-
-                  // Emit error as a chunk
-                  const errorChunk: LlmStreamChunk = {
-                    content: `\n\n**Tool Error (${toolCall.function.name}):**\n\n${error instanceof Error ? error.message : String(error)}\n\n`,
-                    isFinal: false
-                  };
-                  emitter.emit("data", errorChunk);
-                  if (onChunk) onChunk(errorChunk);
-                }
-              });
-            }
-          }
-
-          // Handle tool calls in the chunk (for providers with native tool support)
-          if (chunk.tool_calls && chunk.tool_calls.length > 0) {
-            // Execute each tool call and emit the results
-            chunk.tool_calls.forEach(async (toolCall) => {
-              // Create a unique ID for this tool call to avoid duplicate execution
-              const toolCallId = `${toolCall.function.name}-${JSON.stringify(toolCall.function.arguments)}`;
-
-              // Skip if we've already executed this tool call
-              if (executedToolCalls.has(toolCallId)) {
-                return;
-              }
-
-              executedToolCalls.add(toolCallId);
-
-              // Execute the tool call
-              try {
-                const result = await this.executeToolCall(toolCall);
-
-                // Emit the tool result
-                const resultChunk: LlmStreamChunk = {
-                  content: `\n\n**Tool Result (${toolCall.function.name}):**\n\n${JSON.stringify(result, null, 2)}\n\n`,
-                  isFinal: false
-                };
-                emitter.emit("data", resultChunk);
-                if (onChunk) onChunk(resultChunk);
-              } catch (error) {
-                console.error(
-                  `[Orchestrator] Error executing tool call ${toolCall.function.name}:`,
-                  error
-                );
-
-                // Emit error as a chunk
-                const errorChunk: LlmStreamChunk = {
-                  content: `\n\n**Tool Error (${toolCall.function.name}):**\n\n${error instanceof Error ? error.message : String(error)}\n\n`,
-                  isFinal: false
-                };
-                emitter.emit("data", errorChunk);
-                if (onChunk) onChunk(errorChunk);
-              }
-            });
-          }
-        };
-
-        // Process the message with streaming
-        const originalEmitter =
-          await this.client.streamMessage(enhancedMessage);
-
-        // Add the data event listener
-        originalEmitter.on("data", wrappedOnChunk);
-
-        // Forward events from the original emitter
-        originalEmitter.on("error", (err: unknown) => {
-          console.error("[Orchestrator] Stream error:", err);
-          emitter.emit("error", err);
-        });
-
-        originalEmitter.on("end", (response?: unknown) => {
-          console.log("[Orchestrator] Stream ended");
-          // Check for any remaining tool calls in the full content
+          // Check for complete tool calls in the accumulated content
+          // This happens after emitting the chunk to avoid delaying UI updates
           const { content, extractedToolCalls } =
-            this.extractToolCallsFromPartialText(fullContent, true);
+            this.extractToolCallsFromPartialText(fullContent);
 
-          // If we found more tool calls, emit them
+          // If we found complete tool calls, update the accumulated content and tool calls
           if (extractedToolCalls.length > 0) {
             console.log(
-              `[Orchestrator] Extracted ${extractedToolCalls.length} final tool calls`
+              `[Orchestrator] Extracted ${extractedToolCalls.length} tool calls from text`
             );
+            fullContent = content;
             toolCalls = [...toolCalls, ...extractedToolCalls];
 
-            // Emit a tool call event for each extracted tool call
-            extractedToolCalls.forEach((toolCall) => {
-              const toolCallChunk: LlmStreamChunk = {
-                content: "",
-                isFinal: false,
-                tool_calls: [toolCall]
-              };
-              emitter.emit("data", toolCallChunk);
-              if (onChunk) onChunk(toolCallChunk);
-            });
-
-            // Emit the final content without tool calls
-            if (content !== fullContent) {
-              const contentChunk: LlmStreamChunk = {
-                content,
-                isFinal: true,
-                tool_calls: []
-              };
-              emitter.emit("data", contentChunk);
-              if (onChunk) onChunk(contentChunk);
-            }
+            // Process extracted tool calls
+            await processExtractedToolCalls(extractedToolCalls);
           }
+        }
+      };
 
-          // Execute any remaining tool calls that haven't been executed yet
-          const remainingToolCalls = toolCalls.filter((toolCall) => {
-            const toolCallId = `${toolCall.function.name}-${JSON.stringify(toolCall.function.arguments)}`;
-            return !executedToolCalls.has(toolCallId);
-          });
+      // Stream the message with the wrapped callback
+      const originalEmitter = await this.client.streamMessage(enhancedMessage);
 
-          if (remainingToolCalls.length > 0) {
-            console.log(
-              `[Orchestrator] Executing ${remainingToolCalls.length} remaining tool calls`
+      // Add data event handler with the wrapped callback
+      originalEmitter.on("data", async (data: unknown) => {
+        await wrappedOnChunk(data);
+      });
+
+      // Handle end event
+      originalEmitter.on("end", async (data: unknown) => {
+        console.log("[Orchestrator] Stream ended");
+
+        // Optionally extract and process any remaining tool calls
+        const { extractedToolCalls } = this.extractToolCallsFromPartialText(
+          fullContent,
+          true
+        );
+        if (extractedToolCalls.length > 0) {
+          toolCalls = [...toolCalls, ...extractedToolCalls];
+          await processExtractedToolCalls(extractedToolCalls);
+        }
+
+        // Update the message with the full text and tool calls
+        try {
+          // Update message in chat manager if available
+          if (this.chatManager) {
+            await this.updateMessageContent(
+              message.chatId,
+              message.id,
+              fullContent
             );
 
-            // Execute each remaining tool call
-            Promise.all(
-              remainingToolCalls.map(async (toolCall) => {
-                const toolCallId = `${toolCall.function.name}-${JSON.stringify(toolCall.function.arguments)}`;
-
-                // Skip if we've already executed this tool call
-                if (executedToolCalls.has(toolCallId)) {
-                  return;
-                }
-
-                executedToolCalls.add(toolCallId);
-
-                try {
-                  const result = await this.executeToolCall(toolCall);
-
-                  // Emit the tool result
-                  const resultChunk: LlmStreamChunk = {
-                    content: `\n\n**Tool Result (${toolCall.function.name}):**\n\n${JSON.stringify(result, null, 2)}\n\n`,
-                    isFinal: false
-                  };
-                  emitter.emit("data", resultChunk);
-                  if (onChunk) onChunk(resultChunk);
-                } catch (error) {
-                  console.error(
-                    `[Orchestrator] Error executing tool call ${toolCall.function.name}:`,
-                    error
-                  );
-
-                  // Emit error as a chunk
-                  const errorChunk: LlmStreamChunk = {
-                    content: `\n\n**Tool Error (${toolCall.function.name}):**\n\n${error instanceof Error ? error.message : String(error)}\n\n`,
-                    isFinal: false
-                  };
-                  emitter.emit("data", errorChunk);
-                  if (onChunk) onChunk(errorChunk);
-                }
-              })
-            ).then(() => {
-              // After all tool calls are executed, emit the final chunk
-              const finalChunk: LlmStreamChunk = {
-                content: fullContent,
-                tool_calls: toolCalls,
-                isFinal: true
-              };
-              emitter.emit("data", finalChunk);
-              if (onChunk) onChunk(finalChunk);
-
-              // Finally emit the end event
-              console.log(
-                "[Orchestrator] Emitting end event after executing all tool calls"
+            if (toolCalls.length > 0) {
+              await this.updateMessageToolCalls(
+                message.chatId,
+                message.id,
+                toolCalls
               );
-              emitter.emit("end", response);
-            });
-          } else {
-            // If no remaining tool calls, emit the final chunk and end event
-            const finalChunk: LlmStreamChunk = {
-              content: fullContent,
-              tool_calls: toolCalls,
-              isFinal: true
-            };
-            emitter.emit("data", finalChunk);
-            if (onChunk) onChunk(finalChunk);
+            }
 
-            // Finally emit the end event
-            console.log(
-              "[Orchestrator] Emitting end event (no remaining tool calls)"
+            await this.updateMessageStatus(
+              message.chatId,
+              message.id,
+              MessageStatus.SENT
             );
-            emitter.emit("end", response);
           }
-        });
-      } else {
-        // If the provider supports tools natively, just forward the stream
-        const originalEmitter =
-          await this.client.streamMessage(enhancedMessage);
+        } catch (error) {
+          console.error("[Orchestrator] Error updating message:", error);
+        }
 
-        // Add data event handler
-        originalEmitter.on("data", (data: unknown) => {
+        // Emit end event after all tool calls have been executed
+        console.log(
+          "[Orchestrator] Emitting end event after executing all tool calls"
+        );
+        emitter.emit("end", data);
+      });
+
+      // Handle error event
+      originalEmitter.on("error", (error: unknown) => {
+        // Abort any pending tool calls
+        this.toolCallQueue.abort();
+
+        console.error("[Orchestrator] Stream error:", error);
+        emitter.emit("error", error);
+      });
+    } else {
+      // If the provider supports tools natively, process each chunk
+      const originalEmitter = await this.client.streamMessage(enhancedMessage);
+
+      // Add data event handler with synchronous processing
+      originalEmitter.on("data", async (data: unknown) => {
+        try {
           const chunk = data as LlmStreamChunk;
+
+          console.log(
+            `[Orchestrator] NATIVE: Received chunk: ${JSON.stringify({
+              content:
+                chunk.content?.substring(0, 20) +
+                (chunk.content && chunk.content.length > 20 ? "..." : ""),
+              tool_calls: chunk.tool_calls?.map((tc) => tc.function.name),
+              isFinal: chunk.isFinal
+            })}`
+          );
+
+          // Process tool calls BEFORE emitting the chunk (to maintain correct order)
+          if (chunk.tool_calls && chunk.tool_calls.length > 0) {
+            console.log(
+              `[Orchestrator] Native tool support: Processing ${chunk.tool_calls.length} tools from chunk`
+            );
+
+            // Update tracking
+            toolCalls = [...toolCalls, ...chunk.tool_calls];
+
+            // Process each tool call SEQUENTIALLY
+            await processChunkToolCalls(chunk.tool_calls);
+          }
+
+          // Forward chunk to client after processing any tools
           emitter.emit("data", chunk);
           if (onChunk) onChunk(chunk);
-        });
+        } catch (error) {
+          console.error("[Orchestrator] Error processing chunk:", error);
+        }
+      });
 
-        originalEmitter.on("error", (err: unknown) => {
-          emitter.emit("error", err);
-        });
+      // Handle end event
+      originalEmitter.on("end", async (data: unknown) => {
+        console.log("[Orchestrator] Stream ended");
 
-        originalEmitter.on("end", (data?: unknown) => {
-          console.log("[Orchestrator] Native tool support stream ended");
-
-          // For native tool support, we need to collect all tool calls from the response
-          // and execute any that haven't been executed yet
-          const response = data as LlmResponse;
-          if (
-            response &&
-            response.tool_calls &&
-            response.tool_calls.length > 0
-          ) {
-            const remainingToolCalls = response.tool_calls.filter(
-              (toolCall: ToolCall) => {
-                const toolCallId = `${toolCall.function.name}-${JSON.stringify(toolCall.function.arguments)}`;
-                return !executedToolCalls.has(toolCallId);
-              }
+        // Update message in chat manager if available
+        try {
+          if (this.chatManager && toolCalls.length > 0) {
+            await this.updateMessageToolCalls(
+              message.chatId,
+              message.id,
+              toolCalls
             );
-
-            if (remainingToolCalls.length > 0) {
-              console.log(
-                `[Orchestrator] Executing ${remainingToolCalls.length} remaining native tool calls`
-              );
-
-              // Execute each remaining tool call
-              Promise.all(
-                remainingToolCalls.map(async (toolCall: ToolCall) => {
-                  const toolCallId = `${toolCall.function.name}-${JSON.stringify(toolCall.function.arguments)}`;
-
-                  // Skip if we've already executed this tool call
-                  if (executedToolCalls.has(toolCallId)) {
-                    return;
-                  }
-
-                  executedToolCalls.add(toolCallId);
-
-                  try {
-                    const result = await this.executeToolCall(toolCall);
-
-                    // Emit the tool result
-                    const resultChunk: LlmStreamChunk = {
-                      content: `\n\n**Tool Result (${toolCall.function.name}):**\n\n${JSON.stringify(result, null, 2)}\n\n`,
-                      isFinal: false
-                    };
-                    emitter.emit("data", resultChunk);
-                    if (onChunk) onChunk(resultChunk);
-                  } catch (error) {
-                    console.error(
-                      `[Orchestrator] Error executing native tool call ${toolCall.function.name}:`,
-                      error
-                    );
-
-                    // Emit error as a chunk
-                    const errorChunk: LlmStreamChunk = {
-                      content: `\n\n**Tool Error (${toolCall.function.name}):**\n\n${error instanceof Error ? error.message : String(error)}\n\n`,
-                      isFinal: false
-                    };
-                    emitter.emit("data", errorChunk);
-                    if (onChunk) onChunk(errorChunk);
-                  }
-                })
-              ).then(() => {
-                // After all tool calls are executed, emit the final chunk
-                const finalChunk: LlmStreamChunk = {
-                  content: "",
-                  isFinal: true
-                };
-                emitter.emit("data", finalChunk);
-                if (onChunk) onChunk(finalChunk);
-
-                // Finally emit the end event
-                console.log(
-                  "[Orchestrator] Emitting end event after executing all native tool calls"
-                );
-                emitter.emit("end", response);
-              });
-            } else {
-              // If no remaining tool calls, emit the final chunk and end event
-              const finalChunk: LlmStreamChunk = {
-                content: "",
-                isFinal: true
-              };
-              emitter.emit("data", finalChunk);
-              if (onChunk) onChunk(finalChunk);
-
-              // Finally emit the end event
-              console.log(
-                "[Orchestrator] Emitting end event (no remaining native tool calls)"
-              );
-              emitter.emit("end", response);
-            }
-          } else {
-            // If no tool calls in the response, emit the final chunk and end event
-            const finalChunk: LlmStreamChunk = {
-              content: "",
-              isFinal: true
-            };
-            emitter.emit("data", finalChunk);
-            if (onChunk) onChunk(finalChunk);
-
-            // Finally emit the end event
-            console.log(
-              "[Orchestrator] Emitting end event (no native tool calls)"
-            );
-            emitter.emit("end", response);
           }
-        });
-      }
+        } catch (error) {
+          console.error("[Orchestrator] Error updating message:", error);
+        }
 
-      return emitter;
-    } catch (error) {
-      console.error("[Orchestrator] Error processing message stream:", error);
-      throw error;
+        // Emit end event after all tool calls have been executed
+        console.log(
+          "[Orchestrator] Emitting end event after executing all tool calls"
+        );
+        emitter.emit("end", data);
+      });
+
+      // Handle error event
+      originalEmitter.on("error", (error: unknown) => {
+        // Abort any pending tool calls
+        this.toolCallQueue.abort();
+
+        console.error("[Orchestrator] Stream error:", error);
+        emitter.emit("error", error);
+      });
     }
+
+    return emitter;
   }
 
   /**
