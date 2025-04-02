@@ -109,15 +109,6 @@ export class Orchestrator implements LlmAdapter {
   }
 
   /**
-   * Get the McpHost instance (for backward compatibility)
-   * @returns The McpHost instance
-   * @deprecated Use ActionsManager.getInstance() instead
-   */
-  getMcpHost(): any {
-    return this.actionsManager.getMcpHost();
-  }
-
-  /**
    * Checks if the current LLM provider supports function calling/tools
    * @param providerName The name of the provider to check
    * @returns A promise that resolves to true if tools are supported, false otherwise

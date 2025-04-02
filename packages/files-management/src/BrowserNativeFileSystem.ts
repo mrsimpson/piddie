@@ -203,7 +203,6 @@ export class BrowserNativeFileSystem extends FsPromisesAdapter {
           // Step 3: If it's a directory and not recursive, check if it's empty
           if (targetHandle.kind === "directory" && !options.recursive) {
             const dirHandle = targetHandle as FileSystemDirectoryHandle;
-            // eslint-disable-next-line
             for await (const [_] of dirHandle.entries()) {
               throw new FileSystemError(
                 `Directory not empty: ${path}`,

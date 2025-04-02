@@ -75,7 +75,7 @@ const context: SyncTargetTestContext<BrowserSyncTarget> = {
     return spies;
   },
   setupFileWithMetadata: async (
-    spies,
+    _spies,
     path,
     metadata: FileMetadata | null,
     content = "test content"

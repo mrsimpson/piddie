@@ -1,4 +1,4 @@
-import { ref, reactive, onMounted, watch } from "vue";
+import { ref, reactive, onMounted } from "vue";
 import { defineStore } from "pinia";
 import { useChatStore } from "@piddie/chat-management-ui-vue";
 import { MessageStatus, type ToolCall } from "@piddie/chat-management";
@@ -10,13 +10,11 @@ import type {
 import { LlmProviderFactory } from "@piddie/llm-integration";
 import type { ProviderType } from "@piddie/shared-types";
 
-// Import from the llm-integration package
 import {
   createLlmAdapter,
   type LlmStreamChunk,
   type LlmProviderConfig,
-  type LlmMessage,
-  Orchestrator
+  type LlmMessage
 } from "@piddie/llm-integration";
 
 export const useLlmStore = defineStore("llm", () => {
@@ -29,10 +27,6 @@ export const useLlmStore = defineStore("llm", () => {
   const isVerifying = ref(false);
   const connectionStatus = ref<"none" | "success" | "error">("none");
   const availableModels = ref<ModelInfo[]>([]);
-
-  // LLM adapter and orchestrator references
-  let llmAdapter: ReturnType<typeof createLlmAdapter>;
-  let orchestrator: Orchestrator | null = null;
 
   // Reactive configuration object for workbench
   const workbenchConfig = reactive<WorkbenchLlmConfig>({
@@ -78,6 +72,10 @@ export const useLlmStore = defineStore("llm", () => {
       provider: workbenchConfig.provider || "litellm"
     };
   };
+  let llmAdapter = createLlmAdapter(
+    getLlmProviderConfig(),
+    chatStore.chatManager
+  );
 
   async function initializeStore(): Promise<void> {
     try {
@@ -101,9 +99,6 @@ export const useLlmStore = defineStore("llm", () => {
         getLlmProviderConfig(),
         chatStore.chatManager
       );
-
-      // Get the Orchestrator from the LLM adapter
-      orchestrator = llmAdapter as unknown as Orchestrator;
     } catch (err) {
       console.error("Error initializing LLM store:", err);
       error.value = err instanceof Error ? err : new Error(String(err));
@@ -112,13 +107,6 @@ export const useLlmStore = defineStore("llm", () => {
       isLoading.value = false;
     }
   }
-
-  // Create initial LLM adapter instance
-  llmAdapter = createLlmAdapter(getLlmProviderConfig(), chatStore.chatManager);
-
-  // Attempt to get the Orchestrator
-  orchestrator = llmAdapter as unknown as Orchestrator;
-
   // Load settings from database on store initialization
   onMounted(async () => {
     try {
