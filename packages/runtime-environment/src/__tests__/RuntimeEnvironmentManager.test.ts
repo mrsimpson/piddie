@@ -135,14 +135,13 @@ describe("RuntimeEnvironmentManager", () => {
     expect(result.stderr).toBe("command not found: invalid");
   });
 
-  test("should auto-initialize if executing command when not ready", async () => {
+  test("should throw if executing command when not ready", async () => {
     const manager = new RuntimeEnvironmentManager();
     expect(manager.isReady()).toBe(false);
 
-    const result = await manager.executeCommand("echo hello");
-
-    expect(manager.isReady()).toBe(true);
-    expect(result.success).toBe(true);
+    await expect(manager.executeCommand("echo hello")).rejects.toThrow(
+      "Provider not initialized"
+    );
   });
 
   test("should allow changing the provider", async () => {

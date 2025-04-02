@@ -10,7 +10,7 @@ import type { ChatManager, ToolCall, Message } from "@piddie/chat-management";
 import { MessageStatus } from "@piddie/chat-management";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { LlmAdapter } from "./index";
-import { ActionsManager, Tool } from "@piddie/actions";
+import { ActionsManager, type Tool } from "@piddie/actions";
 
 /**
  * Orchestrator for LLM interactions
@@ -28,12 +28,17 @@ export class Orchestrator implements LlmAdapter {
   /**
    * Creates a new Orchestrator
    * @param client The LLM client to use
-   * @param chatManager Optional chat manager for persistence
+   * @param chatManager Chat manager for message handling
+   * @param actionsManager Actions manager for tool execution
    */
-  constructor(client: LlmClient, chatManager: ChatManager) {
+  constructor(
+    client: LlmClient,
+    chatManager: ChatManager,
+    actionsManager: ActionsManager
+  ) {
     this.client = client;
     this.chatManager = chatManager;
-    this.actionsManager = ActionsManager.getInstance();
+    this.actionsManager = actionsManager;
   }
 
   /**

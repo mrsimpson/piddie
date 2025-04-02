@@ -11,62 +11,57 @@ import { LlmStreamEvent } from "../src/types";
 import type { ChatManager, Message } from "@piddie/chat-management";
 import { MessageStatus } from "@piddie/chat-management";
 import { EventEmitter } from "@piddie/shared-types";
+import { ActionsManager } from "@piddie/actions";
 
-// Mock the McpHost class
-vi.mock("../src/mcp/McpHost", () => {
+// Mock the ActionsManager
+vi.mock("@piddie/actions", () => {
   return {
-    McpHost: vi.fn().mockImplementation(() => {
-      const servers = new Map();
-      return {
-        registerLocalServer: vi.fn(async (server, name) => {
-          // Just store the server without using transports
-          servers.set(name, {
-            server,
-            client: { listTools: vi.fn(), callTool: vi.fn() }
-          });
-          return Promise.resolve();
-        }),
-        unregisterServer: vi.fn((name) => {
-          return servers.delete(name);
-        }),
-        getConnection: vi.fn((name) => {
-          return servers.get(name);
-        }),
-        listTools: vi.fn(async () => {
-          const allTools = [];
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          for (const [_, connection] of servers.entries()) {
-            if (connection.server.listTools) {
-              const tools = await connection.server.listTools();
-              allTools.push(...tools);
-            }
-          }
-          return allTools;
-        }),
-        callTool: vi.fn(async (name, params) => {
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          for (const [_, connection] of servers.entries()) {
-            try {
-              if (connection.server.callTool) {
-                return await connection.server.callTool(name, params);
+    ActionsManager: {
+      getInstance: vi.fn().mockImplementation(() => {
+        const servers = new Map();
+        return {
+          registerServer: vi.fn(async (server, name) => {
+            servers.set(name, server);
+            return Promise.resolve();
+          }),
+          unregisterServer: vi.fn((name) => {
+            return servers.delete(name);
+          }),
+          getServer: vi.fn((name) => {
+            return servers.get(name);
+          }),
+          getAvailableTools: vi.fn(async () => {
+            const allTools = [];
+            for (const server of servers.values()) {
+              if (server.listTools) {
+                const tools = await server.listTools();
+                allTools.push(...tools);
               }
-            } catch (error) {
-              // If it's a "tool not found" error, continue to the next server
-              const errorMessage =
-                error instanceof Error ? error.message : String(error);
-              if (
-                errorMessage.includes("not found") ||
-                errorMessage.includes("unknown tool")
-              ) {
-                continue;
-              }
-              throw error;
             }
-          }
-          throw new Error(`Tool ${name} not found in any connection`);
-        })
-      };
-    })
+            return allTools;
+          }),
+          executeToolCall: vi.fn(async (name, args) => {
+            for (const server of servers.values()) {
+              try {
+                if (server.callTool) {
+                  const result = await server.callTool(name, args);
+                  return { result };
+                }
+              } catch (error) {
+                if (
+                  error instanceof Error &&
+                  error.message.includes("not found")
+                ) {
+                  continue;
+                }
+                throw error;
+              }
+            }
+            throw new Error(`Tool ${name} not found`);
+          })
+        };
+      })
+    }
   };
 });
 
@@ -104,6 +99,7 @@ describe("Orchestrator MCP Integration", () => {
   let mockLlmClient: MockLlmClientWithTools;
   let mockChatManager: ChatManager;
   let mockMcpServer: MockMcpServer;
+  let mockActionsManager: ActionsManager;
   let providerConfig: LlmProviderConfig;
 
   beforeEach(() => {
@@ -119,8 +115,53 @@ describe("Orchestrator MCP Integration", () => {
     mockChatManager = createMockChatManager();
     mockMcpServer = new MockMcpServer("test-server");
 
-    // Create orchestrator
-    orchestrator = new Orchestrator(mockLlmClient, mockChatManager);
+    // Create a mock ActionsManager instance
+    const servers = new Map();
+    mockActionsManager = {
+      registerServer: vi.fn(async (server, name) => {
+        servers.set(name, server);
+        return Promise.resolve();
+      }),
+      unregisterServer: vi.fn((name) => {
+        return servers.delete(name);
+      }),
+      getServer: vi.fn((name) => {
+        return servers.get(name);
+      }),
+      getAvailableTools: vi.fn(async () => {
+        const allTools = [];
+        for (const server of servers.values()) {
+          if (server.listTools) {
+            const tools = await server.listTools();
+            allTools.push(...tools);
+          }
+        }
+        return allTools;
+      }),
+      executeToolCall: vi.fn(async (name, args) => {
+        for (const server of servers.values()) {
+          try {
+            if (server.callTool) {
+              const result = await server.callTool(name, args);
+              return { result };
+            }
+          } catch (error) {
+            if (error instanceof Error && error.message.includes("not found")) {
+              continue;
+            }
+            throw error;
+          }
+        }
+        throw new Error(`Tool ${name} not found`);
+      })
+    } as unknown as ActionsManager;
+
+    // Create orchestrator with the mock ActionsManager
+    orchestrator = new Orchestrator(
+      mockLlmClient,
+      mockChatManager,
+      mockActionsManager
+    );
 
     // Register provider
     orchestrator.registerLlmProvider(providerConfig);
@@ -133,9 +174,13 @@ describe("Orchestrator MCP Integration", () => {
   describe("MCP Server Registration", () => {
     it("should register an MCP server successfully", async () => {
       await orchestrator.registerMcpServer(mockMcpServer as any, "test-server");
-
       const server = orchestrator.getMcpServer("test-server");
       expect(server).toBeDefined();
+      // Verify ActionsManager was called
+      expect(mockActionsManager.registerServer).toHaveBeenCalledWith(
+        mockMcpServer,
+        "test-server"
+      );
     });
 
     it("should unregister an MCP server successfully", async () => {
@@ -949,6 +994,55 @@ describe("Orchestrator MCP Integration", () => {
 
       // Verify chat manager was called to update the message
       expect(mockChatManager.updateMessage).toHaveBeenCalled();
+    });
+  });
+
+  describe("Tool Execution", () => {
+    beforeEach(async () => {
+      // Register MCP server with tools
+      await orchestrator.registerMcpServer(mockMcpServer as any, "test-server");
+
+      // Register tools directly on the mock server
+      mockMcpServer.registerTool("test_tool", (args) => {
+        return {
+          result: `Executed test_tool with args: ${JSON.stringify(args)}`
+        };
+      });
+    });
+
+    it("should execute a tool call through ActionsManager", async () => {
+      mockLlmClient.updateMockConfig({
+        supportsTools: true,
+        toolCalls: [
+          {
+            function: {
+              name: "test_tool",
+              arguments: { param1: "value1" }
+            }
+          }
+        ],
+        content: "Using test_tool"
+      });
+
+      const message = {
+        id: "msg-1",
+        chatId: "chat-1",
+        content: "Execute test_tool",
+        role: "user",
+        status: MessageStatus.SENT,
+        created: new Date(),
+        provider: "test"
+      };
+
+      const response = await orchestrator.processMessage(message);
+
+      // Verify ActionsManager was used to execute the tool
+      expect(mockActionsManager.executeToolCall).toHaveBeenCalledWith(
+        "test_tool",
+        { param1: "value1" }
+      );
+
+      expect(response.content).toContain("Tool Results");
     });
   });
 });
