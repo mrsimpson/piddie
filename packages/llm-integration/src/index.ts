@@ -134,12 +134,14 @@ export function createLlmClient(config: LlmProviderConfig): LlmClient {
 /**
  * Creates an LLM adapter with the specified configuration
  * @param config The LLM provider configuration
- * @param chatManager Optional chat manager for persistence
+ * @param chatManager Chat manager for message handling
+ * @param actionsManager Actions manager for tool execution
  * @returns The LLM adapter instance
  */
 export function createLlmAdapter(
   config: LlmProviderConfig,
-  chatManager: ChatManager
+  chatManager: ChatManager,
+  actionsManager: ActionsManager = ActionsManager.getInstance()
 ): LlmAdapter {
   const client = createLlmClient(config);
   config.client = client;
@@ -148,14 +150,11 @@ export function createLlmAdapter(
     throw new Error("Chat manager is required");
   }
 
-  const actionsManager = ActionsManager.getInstance();
   if (!actionsManager) {
-    console.warn("ActionsManager not available, tools may not work");
+    throw new Error("Actions manager is required");
   }
 
-  const adapter = new Orchestrator(client, chatManager);
-
-  // Register the provider with the adapter
+  const adapter = new Orchestrator(client, chatManager, actionsManager);
   adapter.registerLlmProvider(config);
 
   return adapter;
@@ -164,18 +163,25 @@ export function createLlmAdapter(
 /**
  * Creates a mock LLM adapter for testing and development
  * @param chatManager Optional chat manager for persistence
+ * @param actionsManager Optional actions manager for tool execution
  * @returns The LLM adapter instance with a mock client
  */
-export function createMockLlmAdapter(chatManager: ChatManager): LlmAdapter {
+export function createMockLlmAdapter(
+  chatManager: ChatManager,
+  actionsManager: ActionsManager = ActionsManager.getInstance()
+): LlmAdapter {
   const client = new MockLlmClient();
 
   if (!chatManager) {
     throw new Error("Chat manager is required");
   }
 
-  const adapter = new Orchestrator(client, chatManager);
+  if (!actionsManager) {
+    throw new Error("Actions manager is required");
+  }
 
-  // Register a mock provider with the adapter
+  const adapter = new Orchestrator(client, chatManager, actionsManager);
+
   const mockConfig: LlmProviderConfig = {
     name: "mock",
     description: "Mock LLM provider for testing",

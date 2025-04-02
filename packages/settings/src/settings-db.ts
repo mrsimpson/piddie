@@ -1,3 +1,4 @@
+/// <reference path="./env.d.ts" />
 import Dexie from "dexie";
 import type { ProviderType } from "@piddie/shared-types";
 
@@ -141,10 +142,10 @@ export class SettingsDatabase extends Dexie {
  * Default LLM configuration
  */
 export const DEFAULT_LLM_CONFIG: LlmProviderConfig = {
-  apiKey: import.meta.env.VITE_LITELLM_API_KEY || "",
-  baseUrl: import.meta.env.VITE_LITELLM_BASE_URL || "http://localhost:4000/v1",
-  defaultModel: import.meta.env.VITE_LITELLM_MODEL || "",
-  selectedModel: import.meta.env.VITE_LITELLM_MODEL || "",
+  apiKey: import.meta.env.VITE_LITELLM_API_KEY ?? "",
+  baseUrl: import.meta.env.VITE_LITELLM_BASE_URL ?? "http://localhost:4000/v1",
+  defaultModel: import.meta.env.VITE_LITELLM_MODEL ?? "",
+  selectedModel: import.meta.env.VITE_LITELLM_MODEL ?? "",
   provider: "litellm",
   availableModels: []
 };

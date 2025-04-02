@@ -696,9 +696,6 @@ importers:
 
   packages/project-management:
     dependencies:
-      '@piddie/chat-management':
-        specifier: workspace:*
-        version: link:../chat-management
       '@piddie/files-management':
         specifier: workspace:*
         version: link:../files-management
@@ -819,6 +816,9 @@ importers:
       '@piddie/common-ui-vue':
         specifier: workspace:*
         version: link:../common-ui-vue
+      '@piddie/runtime-environment':
+        specifier: workspace:*
+        version: link:../runtime-environment
       '@piddie/shared-types':
         specifier: workspace:*
         version: link:../shared-types
