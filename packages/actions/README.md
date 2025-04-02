@@ -77,6 +77,54 @@ graph TD
   - Handle environment variables
   - Provide configuration change tracking
 
+## Integrated MCP Servers
+
+### 1. File Management MCP Server
+
+- **Server Name**: `file_management`
+- **Description**: File management operations for reading, writing, and manipulating files
+- **Tools Provided**:
+  - `read_file`: Read contents of a file
+  - `write_file`: Write content to a file
+  - `list_files`: List files in a directory
+  - `delete_item`: Delete a file or directory
+  - `create_directory`: Create a new directory
+  - `stat`: Get information about a file or directory
+- **Integration**: Registered with ActionsManager during initialization, provides file system operations to the Orchestrator
+
+### 2. Runtime Environment MCP Server
+
+- **Server Name**: `runtime_environment`
+- **Description**: Runtime environment operations for executing commands
+- **Tools Provided**:
+  - `execute_command`: Execute a command in the runtime environment with options for:
+    - Working directory
+    - Environment variables
+    - Timeout settings
+- **Integration**: Registered with ActionsManager during initialization, provides command execution capabilities to the Orchestrator
+
+### Integration with Orchestrator
+
+The MCP servers are integrated into the system through the following flow:
+
+1. During application bootstrap:
+
+   - ActionsManager initializes the McpHost
+   - Each MCP server is registered with the ActionsManager
+   - ActionsManager maintains the server registry through McpHost
+
+2. Tool Discovery:
+
+   - Orchestrator requests available tools from ActionsManager
+   - ActionsManager aggregates tools from all registered MCP servers
+   - Tools are provided to the Orchestrator for LLM interaction
+
+3. Tool Execution:
+   - Orchestrator receives tool calls from LLM
+   - Tool calls are forwarded to ActionsManager
+   - ActionsManager routes calls to appropriate MCP servers
+   - Results are returned through the same chain
+
 ## Key Design Decisions
 
 - Singleton pattern for ActionsManager to provide a central access point

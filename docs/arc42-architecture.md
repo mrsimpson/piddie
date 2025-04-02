@@ -97,11 +97,11 @@ graph TD
 
 #### 5.2.1 Core AI System
 
-##### LLM Integration (MCP Host)
+##### LLM Integration
 
 - **Primary Responsibilities:**
   - Orchestrate LLM interactions
-  - Coordinate between MCP servers
+  - Coordinate with ActionsManager for tool operations
   - Manage provider connections
   - Handle request enhancement
 
@@ -126,12 +126,15 @@ graph TD
   - Gather workspace state
   - Assemble project information
 
-##### Actions Manager (MCP Server)
+##### Actions Manager
 
 - **Core Functions:**
-  - Provide tool interfaces
-  - Handle action execution
-  - Manage permissions
+  - Serve as central MCP host for tool registration and execution
+  - Maintain the registry of MCP servers through McpHost component
+  - Route tool calls to appropriate servers
+  - Provide standardized tool discovery and execution APIs
+  - Handle action execution and lifecycle management
+  - Provide centralized error handling and validation
 
 #### 5.2.2 Development Environment
 
