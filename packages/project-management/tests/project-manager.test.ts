@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi, Mocked } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { Project } from "@piddie/shared-types";
 import {
   DexieProjectManager,
