@@ -1,4 +1,3 @@
-import "./env.d.ts";
 import Dexie from "dexie";
 import type { ProviderType } from "@piddie/shared-types";
 

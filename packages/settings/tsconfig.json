@@ -4,7 +4,7 @@
     "declaration": true,
     "composite": true
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "env.d.ts"],
   "references": [
     {
       "path": "../shared-types"
