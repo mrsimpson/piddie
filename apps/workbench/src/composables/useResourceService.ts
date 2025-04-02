@@ -24,7 +24,6 @@ class ResourceService {
 
   // Current active managers
   private currentRuntimeManager: RuntimeEnvironmentManager | null = null;
-  private currentSyncManager: FileSyncManager | null = null;
 
   // we'll be manipulating the stores, so reference them
   private fileSystemStore = useFileSystemStore();
@@ -163,16 +162,6 @@ class ResourceService {
       }
     }
 
-    // Cleanup FileSyncManager
-    if (this.currentSyncManager) {
-      try {
-        await this.currentSyncManager.dispose();
-        this.currentSyncManager = null;
-      } catch (error) {
-        console.error("Failed to dispose FileSyncManager:", error);
-      }
-    }
-
     // Reset FileSystemStore
     try {
       await this.fileSystemStore.resetStoreState();
@@ -239,7 +228,7 @@ class ResourceService {
    * @returns The FileSyncManager or null if not set
    */
   public getFileSyncManager(): FileSyncManager | null {
-    return this.currentSyncManager;
+    return this.fileSystemStore.syncManager as unknown as FileSyncManager;
   }
 }
 
