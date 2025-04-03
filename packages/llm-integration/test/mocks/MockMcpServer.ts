@@ -62,7 +62,15 @@ export class MockMcpServer {
     name: string,
     args: Record<string, unknown>
   ): Promise<unknown> {
-    this.callHistory.push({ name, args });
+    // Check for duplicate calls - only add to history if this exact call hasn't been made
+    const isDuplicate = this.callHistory.some(
+      (call) => call.name === name &&
+        JSON.stringify(call.args) === JSON.stringify(args)
+    );
+
+    if (!isDuplicate) {
+      this.callHistory.push({ name, args });
+    }
 
     const handler = this.tools.get(name);
     if (!handler) {
