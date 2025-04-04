@@ -1,5 +1,15 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { McpHost, Tool } from "./mcp/McpHost";
+import { McpHost, Tool, McpToolExecutionError } from "./mcp/McpHost";
+
+/**
+ * Represents a tool call result for external consumers
+ */
+export interface ToolCallResult {
+  status: "success" | "error";
+  value: unknown;
+  contentType?: string;
+  timestamp: Date;
+}
 
 /**
  * Singleton manager for all actions and MCP servers
@@ -124,41 +134,49 @@ export class ActionsManager {
   public async executeToolCall(
     toolName: string,
     args: Record<string, unknown>
-  ): Promise<{
-    status: "success" | "error";
-    value: unknown;
-    contentType?: string;
-    timestamp: Date;
-  }> {
+  ): Promise<ToolCallResult> {
     try {
-      const { result, error } = await this.mcpHost.executeToolCall(
-        toolName,
-        args
-      );
-
-      if (error) {
-        return {
-          status: "error",
-          value: { error },
-          contentType: "application/json",
-          timestamp: new Date()
-        };
-      }
+      // McpHost.executeToolCall now throws errors instead of returning them
+      const result = await this.mcpHost.executeToolCall(toolName, args);
 
       // Determine content type based on result type
       let contentType = "application/json";
-      if (typeof result === "string") {
+      let value = result;
+
+      // Handle MCP protocol response structure
+      if (
+        typeof result === "object" &&
+        result !== null &&
+        "content" in result
+      ) {
+        const mcpResponse = result as {
+          content?: Array<{ type: string; text: string }>;
+        };
+
+        if (mcpResponse.content && mcpResponse.content.length > 0) {
+          // For simple text responses, combine all text content
+          const allTextContent = mcpResponse.content
+            .filter((item) => item.type === "text")
+            .map((item) => item.text)
+            .join("\n");
+
+          if (allTextContent.length > 0) {
+            value = allTextContent;
+            contentType = "text/plain";
+          }
+        }
+      } else if (typeof result === "string") {
         contentType = "text/plain";
       } else if (
-        (typeof Buffer !== 'undefined' && result instanceof Buffer) ||
-        (typeof Uint8Array !== 'undefined' && result instanceof Uint8Array)
+        (typeof Buffer !== "undefined" && result instanceof Buffer) ||
+        (typeof Uint8Array !== "undefined" && result instanceof Uint8Array)
       ) {
         contentType = "application/octet-stream";
       }
 
       return {
         status: "success",
-        value: result,
+        value,
         contentType,
         timestamp: new Date()
       };
@@ -167,11 +185,20 @@ export class ActionsManager {
         `[ActionsManager] Error executing tool call ${toolName}:`,
         error
       );
+
+      // Create error result with detailed message
+      let errorMessage: string;
+      if (error instanceof McpToolExecutionError) {
+        errorMessage = error.message;
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
+      } else {
+        errorMessage = String(error);
+      }
+
       return {
         status: "error",
-        value: {
-          error: error instanceof Error ? error.message : String(error)
-        },
+        value: { error: errorMessage },
         contentType: "application/json",
         timestamp: new Date()
       };
