@@ -289,7 +289,6 @@ export const useLlmStore = defineStore("llm", () => {
   async function sendMessage(
     content: string,
     chatId: string,
-    useStreaming = true
   ) {
     try {
       // Check if API key is set
@@ -301,7 +300,7 @@ export const useLlmStore = defineStore("llm", () => {
 
       error.value = null;
       isProcessing.value = true;
-      isStreaming.value = useStreaming;
+      isStreaming.value = true;
 
       // Create an ephemeral user message first for immediate visibility
       const userMessage = await chatStore.addMessage(
@@ -445,7 +444,6 @@ export const useLlmStore = defineStore("llm", () => {
         }
       };
 
-      if (useStreaming) {
         // Handle streaming response
         const handleChunk = (chunk: LlmStreamChunk) => {
           if (chunk.content) {
@@ -641,84 +639,6 @@ export const useLlmStore = defineStore("llm", () => {
           );
           await finalizeProcessing();
         }
-      } else {
-        // Handle non-streaming response
-        try {
-          const response = await llmAdapter.processMessage(llmMessage);
-
-          // Update accumulated content
-          accumulatedContent = response.content || "";
-
-          // Convert tool calls to the correct format if present
-          if (response.tool_calls && response.tool_calls.length > 0) {
-            // Process each tool call
-            response.tool_calls.forEach((toolCall) => {
-              const functionName = toolCall.function.name;
-
-              try {
-                // Parse arguments if they're a string
-                const functionArgs =
-                  typeof toolCall.function.arguments === "string"
-                    ? JSON.parse(toolCall.function.arguments)
-                    : toolCall.function.arguments;
-
-                // Create a new tool call with the parsed arguments
-                const newToolCall: ToolCall = {
-                  function: {
-                    name: functionName,
-                    arguments: functionArgs
-                  }
-                };
-
-                // Add to accumulated tool calls
-                accumulatedToolCalls.push(newToolCall);
-
-                // Also add to the map for consistency with streaming case
-                functionCallCounters[functionName] =
-                  (functionCallCounters[functionName] || 0) + 1;
-                const callIndex = functionCallCounters[functionName] - 1;
-
-                functionArgsMap.set(functionName, {
-                  argumentString:
-                    typeof toolCall.function.arguments === "string"
-                      ? toolCall.function.arguments
-                      : JSON.stringify(toolCall.function.arguments),
-                  isComplete: true,
-                  callIndex: callIndex
-                });
-              } catch (e) {
-                console.error(
-                  `Error parsing function arguments for ${functionName}:`,
-                  e
-                );
-              }
-            });
-          }
-
-          // Update the temporary message
-          chatStore.updateMessageContent(
-            assistantMessage.id,
-            accumulatedContent
-          );
-          if (accumulatedToolCalls.length > 0) {
-            chatStore.updateMessageToolCalls(
-              assistantMessage.id,
-              accumulatedToolCalls
-            );
-          }
-
-          // Finalize processing
-          await finalizeProcessing();
-        } catch (err: unknown) {
-          console.error("Error processing message:", err);
-          error.value = err instanceof Error ? err : new Error(String(err));
-          chatStore.updateMessageStatus(
-            assistantMessage.id,
-            MessageStatus.ERROR
-          );
-          await finalizeProcessing();
-        }
-      }
     } catch (err: unknown) {
       console.error("Error in sendMessage:", err);
       error.value = err instanceof Error ? err : new Error(String(err));

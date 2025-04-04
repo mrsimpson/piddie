@@ -38,9 +38,6 @@ const createMockChatManager = () => {
 
 /**
  * Creates a mock LLM client with configurable responses
- *
- * Note: The Orchestrator uses processMessageStream internally when processMessage
- * is called, so this mock ensures consistent responses between both methods.
  */
 const createMockClient = (
   options: {
@@ -82,20 +79,6 @@ const createMockClient = (
   return {
     checkToolSupport: vi.fn().mockResolvedValue(config.supportTools),
 
-    // Regular message sending (not used by Orchestrator.processMessage directly)
-    sendMessage: vi.fn().mockImplementation(() => {
-      if (config.errorMessage) {
-        return Promise.reject(new Error(config.errorMessage));
-      }
-
-      return Promise.resolve({
-        id: config.responseId,
-        content: config.responseContent,
-        model: config.model
-      });
-    }),
-
-    // Stream implementation (used by Orchestrator.processMessage internally)
     streamMessage: vi.fn().mockImplementation(() => {
       const emitter = new EventEmitter();
 
@@ -197,100 +180,6 @@ describe("LLM Adapter", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  describe("processMessage", () => {
-    it("should process a message and return a response", async () => {
-      // Setup mocks with specific expected responses
-      const mockChatManager = createMockChatManager();
-      const mockActionsManager = vi.mocked(ActionsManager)();
-
-      // Create a mock client with a consistent response content
-      const expectedContent = "This is a successful response";
-      const expectedId = "response-123";
-      const client = createMockClient({
-        responseContent: expectedContent,
-        responseId: expectedId
-      });
-
-      // Create adapter with mocks
-      const adapter = new Orchestrator(
-        client,
-        mockChatManager,
-        mockActionsManager
-      );
-      adapter.registerLlmProvider(defaultConfig);
-
-      // Create test message
-      const message: LlmMessage = {
-        id: "message-id",
-        chatId: "chat-id",
-        content: "Hello, world!",
-        role: "user",
-        status: MessageStatus.SENDING,
-        created: new Date(),
-        provider: "litellm"
-      };
-
-      // Process message
-      const response = await adapter.processMessage(message);
-      console.log("Response from processMessage:", response);
-
-      // Verify the response matches what we expect
-      expect(response).toMatchObject({
-        content: expectedContent,
-        id: expect.stringMatching(/^response-\d+$/),
-        tool_calls: [],
-        tool_results: {}
-      });
-
-      // Verify message update was called
-      expect(mockChatManager.updateMessageStatus).toHaveBeenCalledWith(
-        "chat-id",
-        "message-id",
-        MessageStatus.SENT
-      );
-    });
-
-    it("should handle errors during message processing", async () => {
-      // Setup mocks with error
-      const mockChatManager = createMockChatManager();
-      const mockActionsManager = vi.mocked(ActionsManager)();
-      const errorClient = createMockClient({
-        errorMessage: "Test error"
-      });
-
-      // Create adapter with mocks
-      const adapter = new Orchestrator(
-        errorClient,
-        mockChatManager,
-        mockActionsManager
-      );
-      adapter.registerLlmProvider(defaultConfig);
-
-      // Create test message
-      const message: LlmMessage = {
-        id: "message-id",
-        chatId: "chat-id",
-        content: "Hello, world!",
-        role: "user",
-        status: MessageStatus.SENDING,
-        created: new Date(),
-        provider: "litellm"
-      };
-
-      // Process message
-      let error: any;
-      try {
-        await adapter.processMessage(message);
-      } catch (e) {
-        error = e;
-      }
-
-      // Verify error was thrown
-      expect(error).toBeDefined();
-      expect(error.message).toBe("Test error");
-    });
   });
 
   describe("processMessageStream", () => {

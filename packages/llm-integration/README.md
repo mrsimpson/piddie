@@ -234,7 +234,7 @@ sequenceDiagram
     ChatStore->>ChatStore: Store temporary message in memory
     ChatStore-->>LlmStore: Return temporary assistant message
 
-    LlmStore->>Orchestrator: processMessageStream/processMessage
+    LlmStore->>Orchestrator: processMessageStream/processMessageStream
     Orchestrator->>ActionsManager: getAvailableTools()
     ActionsManager-->>Orchestrator: Return available tools
     Orchestrator->>Orchestrator: enhanceMessageWithHistoryAndTools
