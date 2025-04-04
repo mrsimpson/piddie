@@ -68,13 +68,6 @@ export interface LlmAdapter {
   checkToolSupport(providerName: string): Promise<boolean>;
 
   /**
-   * Process a message and return a response
-   * @param message The message to process
-   * @returns The response from the LLM
-   */
-  processMessage(message: LlmMessage): Promise<LlmResponse>;
-
-  /**
    * Process a message and stream the response
    * @param message The message to process
    * @param onChunk Optional callback for each chunk
