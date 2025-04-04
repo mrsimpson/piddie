@@ -149,7 +149,10 @@ export class ActionsManager {
       let contentType = "application/json";
       if (typeof result === "string") {
         contentType = "text/plain";
-      } else if (result instanceof Buffer) {
+      } else if (
+        (typeof Buffer !== 'undefined' && result instanceof Buffer) ||
+        (typeof Uint8Array !== 'undefined' && result instanceof Uint8Array)
+      ) {
         contentType = "application/octet-stream";
       }
 
