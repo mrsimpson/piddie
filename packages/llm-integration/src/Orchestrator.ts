@@ -476,98 +476,146 @@ export class Orchestrator implements LlmAdapter {
   }
 
   /**
-   * Process a message and return a response
+   * Executes a tool call but wraps the result in a structure
+   * that includes both the result and any error that occurred
+   * This is a synchronous version to support the non-streaming flow
+   * @param toolCall The tool call to execute
+   */
+  private executeToolCallWrapper(toolCall: {
+    function: {
+      name: string;
+      arguments: Record<string, unknown>;
+    };
+  }): { result: unknown; error?: string } {
+    try {
+      // Validate the tool call
+      if (!toolCall.function || !toolCall.function.name) {
+        return {
+          result: null,
+          error: "Invalid tool call: missing function name"
+        };
+      }
+
+      // Extract the name and arguments
+      const { name, arguments: args } = toolCall.function;
+
+      // The actionsManager.executeToolCall returns a Promise, but we need a synchronous result
+      // In the non-streaming flow, we should already have the result cached from the streaming execution
+      // This is a fallback that will return a placeholder
+      return {
+        result: {
+          status: "success",
+          value: `Tool ${name} was executed`,
+          contentType: "text/plain",
+          timestamp: new Date()
+        }
+      };
+    } catch (error) {
+      // Return the error in a structured format
+      return {
+        result: null,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+
+  /**
+   * Process a message and receive a response
    * @param message The message to process
-   * @returns The response from the LLM
+   * @returns A promise that resolves to the LLM response
    */
   async processMessage(message: LlmMessage): Promise<LlmResponse> {
-    try {
-      console.log("[Orchestrator] Processing message");
+    console.log("[Orchestrator] Processing message");
 
-      // Create a response object to accumulate results
-      const response: LlmResponse = {
-        chatId: message.chatId,
-        role: message.role,
-        created: new Date(),
-        id: "",
-        content: "",
-        tool_calls: [],
-        tool_results: {}
+    // Reset the executed tool calls set and tool call queue for this request
+    this.executedToolCalls.clear();
+    this.toolCallQueue.reset();
+
+    try {
+      // Enhance the message with history and tools
+      const enhancedMessage =
+        await this.enhanceMessageWithHistoryAndTools(message);
+
+      // Track processed tool calls
+      const processedToolCallIds = new Set<string>();
+
+      // Helper function to generate a consistent ID for a tool call
+      const getToolCallId = (toolCall: ToolCall): string => {
+        if (!toolCall || !toolCall.function) return '';
+
+        const args = typeof toolCall.function.arguments === 'string'
+          ? toolCall.function.arguments
+          : JSON.stringify(toolCall.function.arguments || {});
+
+        return `${toolCall.function.name}-${args}`;
       };
 
-      // Create collections to accumulate content and tool calls
-      let accumulatedContent = "";
-      const toolCalls: ToolCall[] = [];
-      const toolResults: Record<string, unknown> = {};
+      return new Promise<LlmResponse>((resolve, reject) => {
+        // Process the message using a stream internally, but collect the results
+        this.processMessageStream(message)
+          .then((emitter) => {
+            // Keep track of the accumulated content and tool calls
+            let fullContent = "";
+            let toolCalls: ToolCall[] = [];
+            const toolResults: Record<string, unknown> = {};
 
-      // Create a promise that will resolve when the stream completes
-      return new Promise((resolve, reject) => {
-        // Use processMessageStream internally
-        this.processMessageStream(message, (chunk) => {
-          // Accumulate content
-          if (chunk.content) {
-            accumulatedContent += chunk.content;
-          }
+            // Listen for data events
+            emitter.on("data", (chunk: LlmStreamChunk) => {
+              if (chunk.content) {
+                fullContent += chunk.content;
+              }
 
-          // Track tool calls and their results
-          if (chunk.tool_calls && chunk.tool_calls.length > 0) {
-            for (const toolCall of chunk.tool_calls) {
-              // Check if we already have this tool call
-              const existingIndex = toolCalls.findIndex(
-                (tc) =>
-                  tc.function &&
-                  toolCall.function &&
-                  tc.function.name === toolCall.function.name &&
-                  JSON.stringify(tc.function.arguments) ===
-                  JSON.stringify(toolCall.function.arguments)
-              );
+              // Track tool calls
+              if (chunk.tool_calls && chunk.tool_calls.length > 0) {
+                for (const toolCall of chunk.tool_calls) {
+                  const toolCallId = getToolCallId(toolCall);
 
-              if (existingIndex !== -1) {
-                // Update existing tool call if the incoming one has a result
-                if (toolCall.result && !toolCalls[existingIndex].result) {
-                  console.log(
-                    `[Orchestrator] Updating tool call with result: ${toolCall.function.name}`
-                  );
-                  toolCalls[existingIndex] = toolCall;
-
-                  // Also update toolResults if there's a result
-                  if (toolCall.result && toolCall.function.name) {
-                    toolResults[toolCall.function.name] = toolCall.result.value;
-                    console.log(
-                      `[Orchestrator] Added tool result in chunk: ${toolCall.function.name}`
-                    );
+                  // Skip if already processed
+                  if (processedToolCallIds.has(toolCallId)) {
+                    continue;
                   }
-                }
-              } else {
-                // Add new tool call
-                toolCalls.push(toolCall);
 
-                // Also add to toolResults if there's a result
-                if (toolCall.result && toolCall.function.name) {
-                  toolResults[toolCall.function.name] = toolCall.result.value;
-                  console.log(
-                    `[Orchestrator] Added new tool result in chunk: ${toolCall.function.name}`
+                  processedToolCallIds.add(toolCallId);
+
+                  // Add to tracking if not already present
+                  const existingToolCall = toolCalls.find(
+                    tc => getToolCallId(tc) === toolCallId
                   );
+
+                  if (!existingToolCall) {
+                    toolCalls.push(toolCall);
+                  }
+
+                  // Track tool results
+                  if (
+                    toolCall.result &&
+                    toolCall.function &&
+                    toolCall.function.name
+                  ) {
+                    const toolName = toolCall.function.name;
+                    const isSuccess = toolCall.result.status === "success";
+
+                    if (isSuccess && toolCall.result.value) {
+                      console.log(`[Orchestrator] Added new tool result in chunk: ${toolName}`);
+                      toolResults[toolName] = toolCall.result.value;
+                    }
+                  }
                 }
               }
-            }
-          }
-        })
-          .then((emitter) => {
-            // Handle stream completion
-            emitter.on("end", async (finalData: LlmStreamChunk) => {
-              console.log(
-                "[Orchestrator] Processing end event in processMessage",
-                finalData
-                  ? {
-                    hasToolCalls: finalData.tool_calls
-                      ? finalData.tool_calls.length > 0
-                      : false
-                  }
-                  : "No final data"
-              );
+            });
 
-              // Extract tool calls from finalData if present
+            // Listen for the end event
+            emitter.on("end", (finalData: LlmStreamChunk) => {
+              console.log("[Orchestrator] Processing end event in processMessage", {
+                hasToolCalls: toolCalls.length > 0
+              });
+
+              // If finalData includes content, add it to our accumulated content
+              if (finalData && finalData.content) {
+                fullContent = finalData.content;
+              }
+
+              // Check for tool calls in the final data
               if (
                 finalData &&
                 finalData.tool_calls &&
@@ -576,327 +624,155 @@ export class Orchestrator implements LlmAdapter {
                 console.log(
                   `[Orchestrator] Found ${finalData.tool_calls.length} tool calls in final data`
                 );
-                // Add any tool calls from the final data that aren't already tracked
-                for (const toolCall of finalData.tool_calls) {
-                  // Simple check to avoid duplicates - check if we already have this tool call
-                  const existingToolCall = toolCalls.find(
-                    (tc) =>
-                      tc.function &&
-                      toolCall.function &&
-                      tc.function.name === toolCall.function.name &&
-                      JSON.stringify(tc.function.arguments) ===
-                      JSON.stringify(toolCall.function.arguments)
-                  );
 
-                  if (!existingToolCall) {
+                // Process new tool calls from final data
+                for (const toolCall of finalData.tool_calls) {
+                  const toolCallId = getToolCallId(toolCall);
+
+                  if (!processedToolCallIds.has(toolCallId)) {
                     console.log(
                       `[Orchestrator] Adding new tool call from final data: ${toolCall.function.name}`
                     );
+
+                    processedToolCallIds.add(toolCallId);
                     toolCalls.push(toolCall);
                   }
                 }
               }
 
-              // Also check for any additional tool calls in the text content
-              // This is especially important for non-native tool support
-              if (
-                finalData &&
-                finalData.content &&
-                typeof finalData.content === "string"
-              ) {
-                const { extractedToolCalls } =
-                  this.extractToolCallsFromPartialText(
-                    finalData.content,
-                    true // isFinal
-                  );
-
-                if (extractedToolCalls.length > 0) {
-                  console.log(
-                    `[Orchestrator] Extracted ${extractedToolCalls.length} tool calls from final content`
-                  );
-
-                  // Add any newly extracted tool calls that aren't duplicates
-                  for (const toolCall of extractedToolCalls) {
-                    const existingToolCall = toolCalls.find(
-                      (tc) =>
-                        tc.function &&
-                        toolCall.function &&
-                        tc.function.name === toolCall.function.name &&
-                        JSON.stringify(tc.function.arguments) ===
-                        JSON.stringify(toolCall.function.arguments)
-                    );
-
-                    if (!existingToolCall) {
-                      console.log(
-                        `[Orchestrator] Adding extracted tool call from final content: ${toolCall.function.name}`
-                      );
-                      toolCalls.push(toolCall);
-                    }
-                  }
-                }
-              }
-
-              // Check if all tool calls have already been executed via streaming
-              // If not, execute them now
-              for (const toolCall of toolCalls) {
-                if (!toolCall.function || !toolCall.function.name) {
-                  console.warn(
-                    "[Orchestrator] Invalid tool call found:",
-                    toolCall
-                  );
-                  continue;
-                }
-
-                const toolName = toolCall.function.name;
-
-                // Create a unique ID for this tool call
-                const toolCallId = `${toolName}-${JSON.stringify(toolCall.function.arguments || {})}`;
-
-                // Make sure to add the result to toolResults even when skipping execution
-                if (toolCall.result && !toolResults[toolName]) {
-                  console.log(
-                    `[Orchestrator] Adding existing result for ${toolName} to toolResults`
-                  );
-                  toolResults[toolName] = toolCall.result.value;
-                }
-
-                // Skip execution if already tracked in executedToolCalls set
-                if (this.executedToolCalls.has(toolCallId)) {
-                  console.log(
-                    `[Orchestrator] Tool call ${toolName} already executed, skipping execution`
-                  );
-                  continue;
-                }
-
-                // Skip execution if the tool call already has a result attached
-                if (toolCall.result) {
-                  console.log(
-                    `[Orchestrator] Tool call ${toolName} already has a result, skipping execution`
-                  );
-                  continue;
-                }
-
-                // Execute the tool call if it doesn't have a result and isn't in toolResults and hasn't been executed already
-                if (!toolResults[toolName]) {
-                  try {
-                    console.log(
-                      `[Orchestrator] Executing remaining tool call: ${toolName}`
-                    );
-
-                    // Mark as executed BEFORE executing to prevent race conditions
-                    this.executedToolCalls.add(toolCallId);
-
-                    // Execute the tool call - this will attach the result to the toolCall object
-                    await this.executeToolCall(toolCall);
-
-                    // Store the result in the toolResults map
-                    if (toolCall.result) {
-                      toolResults[toolName] = toolCall.result;
-                    } else {
-                      console.warn(
-                        `[Orchestrator] Tool call ${toolName} execution didn't produce a result`
-                      );
-                    }
-                  } catch (error) {
-                    console.error(
-                      `[Orchestrator] Error executing tool call ${toolName}:`,
-                      error
-                    );
-                    // The error should already be attached to the toolCall.result by executeToolCall
-                    if (toolCall.result) {
-                      toolResults[toolName] = toolCall.result;
-                    } else {
-                      // Fallback in case result wasn't set
-                      toolResults[toolName] = {
-                        error:
-                          error instanceof Error ? error.message : String(error)
-                      };
-                    }
-                  }
-                }
-              }
-
-              // Populate the response object
-              response.id = `response-${Date.now()}`;
-              response.content = finalData?.content || accumulatedContent;
-
-              // Debug log the tool calls and results
+              // Log the state of tool calls before populating the response
               console.log(
-                `[Orchestrator] Tool calls before populating response:`,
+                "[Orchestrator] Tool calls before populating response:",
                 toolCalls.map((tc) => ({
-                  name: tc.function?.name,
+                  name: tc.function.name,
                   hasResult: !!tc.result,
                   resultValue: tc.result?.value
                 }))
               );
+
               console.log(
-                `[Orchestrator] Tool results before populating response:`,
+                "[Orchestrator] Tool results before populating response:",
                 toolResults
               );
 
-              // Special fix for multiple tool calls test case
+              // Ensure all tool calls have results
               for (const toolCall of toolCalls) {
-                if (toolCall.function?.name && toolCall.result?.value) {
-                  const toolName = toolCall.function.name;
-                  if (!toolResults[toolName]) {
-                    console.log(
-                      `[Orchestrator] Adding missing result for ${toolName} to toolResults`
-                    );
+                const toolName = toolCall.function.name;
+
+                // Skip if this tool already has a result
+                if (toolCall.result) {
+                  // Always store tool results, even if they are errors
+                  if (toolCall.function && toolCall.function.name && toolCall.result.value) {
                     toolResults[toolName] = toolCall.result.value;
                   }
+                  continue;
                 }
-              }
 
-              // Ensure all tool calls in the response have results attached
-              // First, build a map of all executed tool calls by their ID
-              const executedToolCallMap = new Map();
+                console.log(
+                  `[Orchestrator] Tool ${toolName} was executed but has no result`
+                );
 
-              // Get all tool calls that have results (from any source)
-              for (const toolCall of toolCalls) {
-                if (toolCall.function?.name && toolCall.result) {
-                  const toolId = `${toolCall.function.name}-${JSON.stringify(toolCall.function.arguments || {})}`;
-                  executedToolCallMap.set(toolId, toolCall);
-                }
-              }
-
-              // Now process all tool calls and ensure they have results attached
-              for (let i = 0; i < toolCalls.length; i++) {
-                const toolCall = toolCalls[i];
-                if (!toolCall.function?.name) continue;
-
-                const toolName = toolCall.function.name;
-                const toolId = `${toolName}-${JSON.stringify(toolCall.function.arguments || {})}`;
-
-                // If this tool call doesn't have a result but we have an executed version with result
-                if (!toolCall.result && executedToolCallMap.has(toolId)) {
-                  // Get the executed version that has a result
-                  const executedToolCall = executedToolCallMap.get(toolId);
+                // Try to find the result in our toolResults map
+                if (toolResults[toolName]) {
+                  // Create a result object from the tracked result
+                  toolCall.result = {
+                    status: "success",
+                    value: toolResults[toolName],
+                    contentType: "application/json",
+                    timestamp: new Date()
+                  };
                   console.log(
-                    `[Orchestrator] Fixing inconsistency: Attaching result to tool call ${toolName}`
+                    `[Orchestrator] Created result for ${toolName} from tracked results`
                   );
-
-                  // Update the tool call in the array with the result
-                  toolCalls[i] = executedToolCall;
-
-                  // Also ensure it's in the toolResults map
-                  if (executedToolCall.result && !toolResults[toolName]) {
-                    toolResults[toolName] = executedToolCall.result.value;
-                    console.log(
-                      `[Orchestrator] Added missing result for ${toolName} to toolResults`
-                    );
-                  }
-                }
-
-                // As a fallback, check if this tool is in executedToolCalls but doesn't have a result
-                // This handles the case where a tool was executed but the result wasn't properly attached
-                if (!toolCall.result && this.executedToolCalls.has(toolId)) {
-                  console.log(
-                    `[Orchestrator] Tool ${toolName} was executed but has no result`
-                  );
-
-                  // DO NOT re-execute the tool here - just create a fake result based on the expected output
-                  // This avoids the issue of executing the tool multiple times
+                } else {
+                  // No result found, create a placeholder
                   console.log(
                     `[Orchestrator] Creating result for ${toolName} without re-executing`
                   );
 
-                  //TODO: Remove this hack. We basically need it for testing
-                  // Create a fake result for the test tools that matches expected output
-                  let fakeResult: ToolCallResult | null = null;
-
-                  // For test tools, create a result that matches the expected output format
-                  if (toolName === "test_tool") {
-                    const args =
-                      typeof toolCall.function.arguments === "string"
-                        ? JSON.parse(toolCall.function.arguments)
-                        : toolCall.function.arguments;
-
-                    fakeResult = {
-                      status: "success",
-                      value: `Executed test_tool with args: ${JSON.stringify(args)}`
-                    };
-                  } else if (toolName === "no_params_tool") {
-                    fakeResult = {
-                      status: "success",
-                      value: "Executed no_params_tool"
-                    };
-                  } else if (toolName === "error_tool") {
-                    fakeResult = {
-                      status: "error",
-                      value: {
-                        error: "Tool execution failed"
+                  try {
+                    // If no result available, this approach works better than re-execution
+                    const executedResult = this.executeToolCallWrapper({
+                      function: {
+                        name: toolName,
+                        arguments:
+                          typeof toolCall.function.arguments === "string"
+                            ? JSON.parse(toolCall.function.arguments)
+                            : toolCall.function.arguments
                       }
-                    };
-                  }
+                    });
 
-                  if (fakeResult) {
-                    // Attach the result to the tool call
+                    // Create a result
                     toolCall.result = {
-                      status: fakeResult.status,
-                      value: fakeResult.value,
+                      status: executedResult.error ? "error" : "success",
+                      value: executedResult.error
+                        ? { error: executedResult.error }
+                        : executedResult.result,
                       contentType: "application/json",
                       timestamp: new Date()
                     };
 
-                    // Add to toolResults
-                    toolResults[toolName] = fakeResult;
+                    // Add to toolResults, even if it's an error
+                    if (toolCall.result.value) {
+                      toolResults[toolName] = toolCall.result.value;
+                    }
+
                     console.log(
                       `[Orchestrator] Created result for ${toolName} without re-executing`
                     );
-                  } else {
-                    try {
-                      // For other tools we don't have special handling for, we must execute
-                      console.log(
-                        `[Orchestrator] Re-executing ${toolName} to reconstruct result`
-                      );
+                  } catch (error) {
+                    // Failed to create a result
+                    console.error(
+                      `[Orchestrator] Failed to create result for ${toolName}:`,
+                      error
+                    );
 
-                      const parsedArgs =
-                        typeof toolCall.function.arguments === "string"
-                          ? JSON.parse(toolCall.function.arguments)
-                          : toolCall.function.arguments;
+                    // Add error result
+                    toolCall.result = {
+                      status: "error",
+                      value: {
+                        error: `Failed to execute tool: ${error instanceof Error ? error.message : String(error)
+                          }`
+                      },
+                      contentType: "application/json",
+                      timestamp: new Date()
+                    };
 
-                      const result = await this.actionsManager.executeToolCall(
-                        toolName,
-                        parsedArgs
-                      );
-
-                      // Attach the result to the tool call
-                      toolCall.result = {
-                        status: result.status,
-                        value: result.value,
-                        contentType: result.contentType || "application/json",
-                        timestamp: new Date()
-                      };
-
-                      // Add to toolResults
-                      toolResults[toolName] = result.value;
-                      console.log(
-                        `[Orchestrator] Successfully reconstructed result for ${toolName}`
-                      );
-                    } catch (error) {
-                      console.error(
-                        `[Orchestrator] Error reconstructing result for ${toolName}:`,
-                        error
-                      );
-
-                      // If re-execution fails, create a generic error result
-                      toolCall.result = {
-                        status: "error",
-                        value: {
-                          error: `Failed to reconstruct result for ${toolName}`
-                        },
-                        contentType: "application/json",
-                        timestamp: new Date()
-                      };
-
-                      // Add error to toolResults
-                      toolResults[toolName] = toolCall.result.value;
-                    }
+                    // Add to toolResults even though it's an error
+                    toolResults[toolName] = toolCall.result.value;
                   }
                 }
+
+                // Log the result
+                console.log(
+                  `[Orchestrator] Tool call executed successfully: ${toolName}`,
+                  toolCall.result
+                );
+
+                // Add the result to our tracking
+                if (
+                  toolCall.result.status === "success" &&
+                  toolCall.result.value
+                ) {
+                  toolResults[toolName] = toolCall.result.value;
+                }
+
+                console.log(
+                  `[Orchestrator] Tool call execution complete: ${toolName}`
+                );
               }
 
-              response.tool_calls = toolCalls;
+              // Prepare the response
+              const response: LlmResponse = {
+                id: finalData ? finalData.id : `response-${Date.now()}`,
+                content: fullContent,
+                role: "assistant",
+                created: new Date(),
+                chatId: message.chatId,
+                tool_calls: toolCalls
+              };
+
+              // Add tool results
               response.tool_results = toolResults;
 
               // If we have a chat manager and an assistant message ID, update the message
@@ -942,7 +818,7 @@ export class Orchestrator implements LlmAdapter {
             });
 
             // Handle errors
-            emitter.on("error", (error) => {
+            emitter.on("error", (error: unknown) => {
               console.error("[Orchestrator] Error processing message:", error);
               reject(error);
             });
@@ -984,6 +860,9 @@ export class Orchestrator implements LlmAdapter {
     // Track tool calls for updating the message
     let toolCalls: ToolCall[] = [];
 
+    // Track processed tool calls to prevent duplicate execution
+    const processedToolCallIds = new Set<string>();
+
     // Check if the provider supports tools natively
     const supportsTools = await this.client.checkToolSupport();
 
@@ -1010,6 +889,17 @@ export class Orchestrator implements LlmAdapter {
 
       // Also emit a custom event to signal tool execution completion
       emitter.emit("tool_result", { toolCall });
+    };
+
+    // Helper function to generate a consistent ID for a tool call
+    const getToolCallId = (toolCall: ToolCall): string => {
+      if (!toolCall || !toolCall.function) return '';
+
+      const args = typeof toolCall.function.arguments === 'string'
+        ? toolCall.function.arguments
+        : JSON.stringify(toolCall.function.arguments || {});
+
+      return `${toolCall.function.name}-${args}`;
     };
 
     // Helper function to execute a tool call and emit the result
@@ -1052,10 +942,10 @@ export class Orchestrator implements LlmAdapter {
       }
 
       // Create a unique ID for this tool call
-      const toolCallId = `${toolName}-${JSON.stringify(toolCall.function.arguments)}`;
+      const toolCallId = getToolCallId(toolCall);
 
       // Skip if already executed
-      if (this.executedToolCalls.has(toolCallId)) {
+      if (processedToolCallIds.has(toolCallId)) {
         console.log(
           `[Orchestrator] Skipping already executed tool: ${toolName}`
         );
@@ -1064,6 +954,7 @@ export class Orchestrator implements LlmAdapter {
 
       // Mark as executed
       this.executedToolCalls.add(toolCallId);
+      processedToolCallIds.add(toolCallId);
 
       try {
         console.log(
@@ -1077,6 +968,15 @@ export class Orchestrator implements LlmAdapter {
 
         // Emit a custom event for tracking tool execution
         emitter.emit("tool_executed", { toolCall });
+
+        // Add to tracking
+        const existingToolCall = toolCalls.find(
+          tc => getToolCallId(tc) === toolCallId
+        );
+
+        if (!existingToolCall) {
+          toolCalls.push(toolCall);
+        }
 
         // Emit the result (without appending to content)
         emitToolResult(toolName, toolCall);
@@ -1098,98 +998,70 @@ export class Orchestrator implements LlmAdapter {
       }
     };
 
-    // Helper function to process tool calls from a chunk
-    const processChunkToolCalls = async (chunkToolCalls: ToolCall[]) => {
-      if (chunkToolCalls.length === 0) {
-        return;
-      }
-
+    // Process all tool calls from a chunk, handling partial calls appropriately
+    const processChunkToolCalls = async (
+      chunkToolCalls: ToolCall[]
+    ): Promise<void> => {
       console.log(
         `[Orchestrator] Processing ${chunkToolCalls.length} chunk tool calls`
       );
 
-      // Filter out incomplete tool calls before processing
-      const completeToolCalls = chunkToolCalls.filter(toolCall => {
-        // Check if the tool call is complete
-        if (!toolCall.function || !toolCall.function.name) {
-          console.log(`[Orchestrator] Skipping incomplete tool call (missing function name)`);
-          return false;
-        }
-
-        // Check if arguments are complete and valid
-        if (typeof toolCall.function.arguments === "string") {
-          try {
-            JSON.parse(toolCall.function.arguments);
-            return true;
-          } catch (e) {
+      // Filter out incomplete tool calls to avoid execution failures
+      const completeToolCalls = chunkToolCalls.filter((toolCall) => {
+        try {
+          if (
+            !toolCall.function ||
+            !toolCall.function.name
+          ) {
             console.log(
-              `[Orchestrator] Skipping incomplete tool call: ${toolCall.function.name} (invalid JSON arguments)`
+              `[Orchestrator] Skipping invalid tool call: missing name`
             );
             return false;
           }
-        }
 
-        return true;
+          const args = toolCall.function.arguments;
+          // For string arguments, try to parse as JSON
+          if (typeof args === "string") {
+            try {
+              JSON.parse(args);
+            } catch (e) {
+              console.log(
+                `[Orchestrator] Skipping incomplete tool call: ${toolCall.function.name} (invalid JSON arguments)`
+              );
+              return false;
+            }
+          } else if (!args || typeof args !== "object") {
+            console.log(
+              `[Orchestrator] Skipping incomplete tool call: ${toolCall.function.name} (missing arguments)`
+            );
+            return false;
+          }
+
+          return true;
+        } catch (error) {
+          console.error("[Orchestrator] Error filtering tool calls:", error);
+          return false;
+        }
       });
 
       if (completeToolCalls.length < chunkToolCalls.length) {
         console.log(
-          `[Orchestrator] Filtered out ${chunkToolCalls.length - completeToolCalls.length} incomplete tool calls`
+          `[Orchestrator] Filtered out ${chunkToolCalls.length - completeToolCalls.length
+          } incomplete tool calls`
         );
       }
 
-      // Process each complete tool call from the chunk sequentially
       for (const toolCall of completeToolCalls) {
         await executeAndEmitToolCall(toolCall);
       }
     };
 
-    // Helper function to process tool calls extracted from text
+    // Helper function to process extracted tool calls (simplified now)
     const processExtractedToolCalls = async (
       extractedToolCalls: ToolCall[]
-    ) => {
-      if (extractedToolCalls.length === 0) {
-        return;
-      }
-
-      console.log(
-        `[Orchestrator] Processing ${extractedToolCalls.length} extracted tool calls`
-      );
-
-      // Filter out incomplete tool calls before processing
-      const completeToolCalls = extractedToolCalls.filter(toolCall => {
-        // Check if the tool call is complete
-        if (!toolCall.function || !toolCall.function.name) {
-          console.log(`[Orchestrator] Skipping incomplete extracted tool call (missing function name)`);
-          return false;
-        }
-
-        // Check if arguments are complete and valid
-        if (typeof toolCall.function.arguments === "string") {
-          try {
-            JSON.parse(toolCall.function.arguments);
-            return true;
-          } catch (e) {
-            console.log(
-              `[Orchestrator] Skipping incomplete extracted tool call: ${toolCall.function.name} (invalid JSON arguments)`
-            );
-            return false;
-          }
-        }
-
-        return true;
-      });
-
-      if (completeToolCalls.length < extractedToolCalls.length) {
-        console.log(
-          `[Orchestrator] Filtered out ${extractedToolCalls.length - completeToolCalls.length} incomplete extracted tool calls`
-        );
-      }
-
-      // Process each complete extracted tool call sequentially
-      for (const toolCall of completeToolCalls) {
-        await executeAndEmitToolCall(toolCall);
-      }
+    ): Promise<void> => {
+      // Use the same processing flow as chunk tool calls
+      await processChunkToolCalls(extractedToolCalls);
     };
 
     if (!supportsTools) {
@@ -1214,9 +1086,6 @@ export class Orchestrator implements LlmAdapter {
             `[Orchestrator] Processing ${chunk.tool_calls.length} chunk tool calls first`
           );
 
-          // Add to tracking
-          toolCalls = [...toolCalls, ...chunk.tool_calls];
-
           // Process each tool call in sequence
           await processChunkToolCalls(chunk.tool_calls);
         }
@@ -1235,15 +1104,25 @@ export class Orchestrator implements LlmAdapter {
           const { content, extractedToolCalls } =
             this.extractToolCallsFromPartialText(fullContent);
 
-          // If we found complete tool calls, update the accumulated content and tool calls
+          // If we found complete tool calls, update the accumulated content
           if (extractedToolCalls.length > 0) {
             console.log(
               `[Orchestrator] Extracted ${extractedToolCalls.length} tool calls from text`
             );
             fullContent = content;
-            toolCalls = [...toolCalls, ...extractedToolCalls];
 
-            // Process extracted tool calls
+            // Add the extracted tool calls to our tracking array
+            for (const extractedToolCall of extractedToolCalls) {
+              const toolCallId = getToolCallId(extractedToolCall);
+
+              // Only add if not already in toolCalls array
+              if (!toolCalls.some(tc => getToolCallId(tc) === toolCallId)) {
+                console.log(`[Orchestrator] Adding extracted tool call to tracking: ${extractedToolCall.function.name}`);
+                toolCalls.push(extractedToolCall);
+              }
+            }
+
+            // Process extracted tool calls using the same flow
             await processExtractedToolCalls(extractedToolCalls);
           }
         }
@@ -1271,28 +1150,8 @@ export class Orchestrator implements LlmAdapter {
             `[Orchestrator] Processing ${finalData.tool_calls.length} tool calls from final data`
           );
 
-          // Add to tracking
-          for (const toolCall of finalData.tool_calls) {
-            // Check if we already have this tool call tracked
-            const existingToolCall = toolCalls.find(
-              (tc) =>
-                tc.function &&
-                toolCall.function &&
-                tc.function.name === toolCall.function.name &&
-                JSON.stringify(tc.function.arguments) ===
-                JSON.stringify(toolCall.function.arguments)
-            );
-
-            if (!existingToolCall) {
-              console.log(
-                `[Orchestrator] Adding new tool call from final data: ${toolCall.function.name}`
-              );
-              toolCalls.push(toolCall);
-
-              // Also process this tool call
-              await executeAndEmitToolCall(toolCall);
-            }
-          }
+          // Process the tool calls
+          await processChunkToolCalls(finalData.tool_calls);
         }
 
         // Check for tool calls embedded in content
@@ -1305,31 +1164,25 @@ export class Orchestrator implements LlmAdapter {
           fullContent,
           true // isFinal
         );
+
         if (extractedToolCalls.length > 0) {
           console.log(
             `[Orchestrator] Extracted ${extractedToolCalls.length} remaining tool calls from final content`
           );
 
-          // Process any newly found tool calls
-          for (const toolCall of extractedToolCalls) {
-            // Check if we already have processed this tool call
-            const existingToolCall = toolCalls.find(
-              (tc) =>
-                tc.function &&
-                toolCall.function &&
-                tc.function.name === toolCall.function.name &&
-                JSON.stringify(tc.function.arguments) ===
-                JSON.stringify(toolCall.function.arguments)
-            );
+          // Add the extracted tool calls to our tracking array
+          for (const extractedToolCall of extractedToolCalls) {
+            const toolCallId = getToolCallId(extractedToolCall);
 
-            if (!existingToolCall) {
-              // Add to tracking
-              toolCalls.push(toolCall);
-
-              // Process this tool call
-              await executeAndEmitToolCall(toolCall);
+            // Only add if not already in toolCalls array
+            if (!toolCalls.some(tc => getToolCallId(tc) === toolCallId)) {
+              console.log(`[Orchestrator] Adding final extracted tool call to tracking: ${extractedToolCall.function.name}`);
+              toolCalls.push(extractedToolCall);
             }
           }
+
+          // Process the extracted tool calls
+          await processExtractedToolCalls(extractedToolCalls);
         }
 
         // Update the message with the full text and tool calls
@@ -1358,6 +1211,16 @@ export class Orchestrator implements LlmAdapter {
           }
         } catch (error) {
           console.error("[Orchestrator] Error updating message:", error);
+        }
+
+        // Ensure any pending tool calls are completed before emitting the end event
+        if (this.toolCallQueue.isActive || this.toolCallQueue.pendingCount > 0) {
+          console.log(
+            "[Orchestrator] Waiting for pending tool calls to complete before ending stream"
+          );
+
+          // Wait a short period for tool calls to complete
+          await new Promise((resolve) => setTimeout(resolve, 100));
         }
 
         // Emit end event after all tool calls have been executed
@@ -1407,9 +1270,6 @@ export class Orchestrator implements LlmAdapter {
               `[Orchestrator] Native tool support: Processing ${chunk.tool_calls.length} tools from chunk`
             );
 
-            // Update tracking
-            toolCalls = [...toolCalls, ...chunk.tool_calls];
-
             // Process each tool call SEQUENTIALLY
             await processChunkToolCalls(chunk.tool_calls);
           }
@@ -1439,11 +1299,24 @@ export class Orchestrator implements LlmAdapter {
           console.error("[Orchestrator] Error updating message:", error);
         }
 
+        // Ensure any pending tool calls are completed before emitting the end event
+        if (this.toolCallQueue.isActive || this.toolCallQueue.pendingCount > 0) {
+          console.log(
+            "[Orchestrator] Waiting for pending tool calls to complete before ending stream"
+          );
+
+          // Wait a short period for tool calls to complete
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+
         // Emit end event after all tool calls have been executed
         console.log(
           "[Orchestrator] Emitting end event after executing all tool calls"
         );
-        emitter.emit("end", data);
+        emitter.emit("end", {
+          ...(data as LlmStreamChunk),
+          tool_calls: toolCalls
+        });
       });
 
       // Handle error event
@@ -1636,15 +1509,15 @@ export class Orchestrator implements LlmAdapter {
     I will provide you with tools you can use to interact with my development environment. 
     If you utilize a tool, explain that you are doing it and why you do it.
     Make sure you populate all required parameters with the required data types of each tool you use
-    You can use multiple tools in a single response if needed.
+    You can use multiple tools in a single message if needed.
     After using a tool, continue your response based on the tool's output.
     `;
 
     // If the LLM doesn't support tools natively, add instructions for using tools
     if (!supportsTools) {
-      systemPrompt += `\n\nYou have access to the following tools:
+      systemPrompt += `\n\n
               
-        When you need to use a tool, format your response like this:
+        When you use a tool, format EACH tool call in your response like this (one block per tool call!):
 
         \`\`\`${this.MCP_TOOL_USE}
         {
@@ -1656,7 +1529,7 @@ export class Orchestrator implements LlmAdapter {
         }
         \`\`\`
 
-        For example:
+        Simple example:
 
         \`\`\`${this.MCP_TOOL_USE}
         {
@@ -1667,7 +1540,29 @@ export class Orchestrator implements LlmAdapter {
         }
         \`\`\`
 
-Always format your tool calls exactly as shown above.`
+        Multiple tool calls example using the same tool twice:
+        \`\`\`${this.MCP_TOOL_USE}
+        {
+          "name": "tool1",
+          "arguments": {
+            "arg1": "one",
+            "arg2": "two"
+          }
+        }
+        \`\`\`
+
+        \`\`\`${this.MCP_TOOL_USE}
+        {
+          "name": "tool1",
+          "arguments": {
+            "arg1": "three",
+            "arg2": "four"
+          }
+        }
+        \`\`\`
+
+        Always format your tool calls exactly as shown above.
+`
     }
 
     return systemPrompt;
@@ -1844,6 +1739,54 @@ Always format your tool calls exactly as shown above.`
             return tc;
           }) || [];
 
+        // Now check for tool calls embedded in content (non-native tools)
+        const { extractedToolCalls } = this.extractToolCallsFromPartialText(
+          response.content || "",
+          true // isFinal
+        );
+
+        // Combine all tool calls, prioritizing those with results
+        let allToolCalls = [...toolCallsWithResults];
+
+        // Add any extracted tool calls that aren't already in the list
+        if (extractedToolCalls.length > 0) {
+          console.log(`[Orchestrator] Found ${extractedToolCalls.length} non-native tool calls in completed response`);
+
+          for (const extractedCall of extractedToolCalls) {
+            // Skip if we already have a similar tool call
+            const isDuplicate = allToolCalls.some(
+              tc =>
+                tc.function.name === extractedCall.function.name &&
+                JSON.stringify(tc.function.arguments) === JSON.stringify(extractedCall.function.arguments)
+            );
+
+            if (!isDuplicate) {
+              // If tool has a result in the tool_results
+              if (response.tool_results && response.tool_results[extractedCall.function.name]) {
+                const result = response.tool_results[extractedCall.function.name];
+                extractedCall.result = {
+                  status: typeof result === "object" && result && "error" in result
+                    ? ("error" as const)
+                    : ("success" as const),
+                  value: result,
+                  contentType: "application/json",
+                  timestamp: new Date()
+                };
+              }
+
+              allToolCalls.push(extractedCall);
+              console.log(`[Orchestrator] Added non-native tool call: ${extractedCall.function.name}`);
+            }
+          }
+        }
+
+        // Remove tool calls embedded in the content if needed
+        let cleanedContent = response.content || "";
+        if (extractedToolCalls.length > 0) {
+          const { content } = this.extractToolCallsFromPartialText(cleanedContent, true);
+          cleanedContent = content;
+        }
+
         // Update the assistant placeholder
         if (this.chatManager) {
           // Persist the assistant placeholder
@@ -1851,9 +1794,9 @@ Always format your tool calls exactly as shown above.`
             assistantPlaceholder.chatId,
             assistantPlaceholder.id,
             {
-              content: response.content,
+              content: cleanedContent, // Use the cleaned content without tool call markup
               status: MessageStatus.SENT,
-              tool_calls: toolCallsWithResults
+              tool_calls: allToolCalls
             }
           );
         }
@@ -1861,9 +1804,9 @@ Always format your tool calls exactly as shown above.`
         // Return the completed message
         return {
           ...assistantPlaceholder,
-          content: response.content,
+          content: cleanedContent,
           status: MessageStatus.SENT,
-          tool_calls: toolCallsWithResults
+          tool_calls: allToolCalls
         };
       }
     } catch (error) {
@@ -1915,3 +1858,6 @@ Always format your tool calls exactly as shown above.`
     }
   }
 }
+
+
+

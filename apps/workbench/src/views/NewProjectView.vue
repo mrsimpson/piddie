@@ -63,6 +63,12 @@ const samplePrompts = [
     title: "Files",
     shortPrompt: "Simple file creation",
     fullPrompt: "Create two files: one with content '1', one with content '2'"
+  },
+  {
+    title: "Poems",
+    shortPrompt: "Simple file creation",
+    fullPrompt:
+      "Write a short poem into a file. Then, write a short critique about it into a second file"
   }
 ];
 
