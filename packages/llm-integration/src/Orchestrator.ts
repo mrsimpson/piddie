@@ -291,8 +291,8 @@ export class Orchestrator implements LlmAdapter {
       // Filter out the placeholder assistant message if it exists
       const filteredHistory = assistantMessageId
         ? history.filter(
-          (msg) => msg.id !== assistantMessageId || msg.content.trim() !== ""
-        )
+            (msg) => msg.id !== assistantMessageId || msg.content.trim() !== ""
+          )
         : history;
 
       // Map to the format expected by the LLM
@@ -497,7 +497,7 @@ export class Orchestrator implements LlmAdapter {
       }
 
       // Extract the name and arguments
-      const { name, arguments: args } = toolCall.function;
+      const { name } = toolCall.function;
 
       // The actionsManager.executeToolCall returns a Promise, but we need a synchronous result
       // In the non-streaming flow, we should already have the result cached from the streaming execution
@@ -533,19 +533,19 @@ export class Orchestrator implements LlmAdapter {
 
     try {
       // Enhance the message with history and tools
-      const enhancedMessage =
-        await this.enhanceMessageWithHistoryAndTools(message);
+      await this.enhanceMessageWithHistoryAndTools(message);
 
       // Track processed tool calls
       const processedToolCallIds = new Set<string>();
 
       // Helper function to generate a consistent ID for a tool call
       const getToolCallId = (toolCall: ToolCall): string => {
-        if (!toolCall || !toolCall.function) return '';
+        if (!toolCall || !toolCall.function) return "";
 
-        const args = typeof toolCall.function.arguments === 'string'
-          ? toolCall.function.arguments
-          : JSON.stringify(toolCall.function.arguments || {});
+        const args =
+          typeof toolCall.function.arguments === "string"
+            ? toolCall.function.arguments
+            : JSON.stringify(toolCall.function.arguments || {});
 
         return `${toolCall.function.name}-${args}`;
       };
@@ -556,7 +556,7 @@ export class Orchestrator implements LlmAdapter {
           .then((emitter) => {
             // Keep track of the accumulated content and tool calls
             let fullContent = "";
-            let toolCalls: ToolCall[] = [];
+            const toolCalls: ToolCall[] = [];
             const toolResults: Record<string, unknown> = {};
 
             // Listen for data events
@@ -579,7 +579,7 @@ export class Orchestrator implements LlmAdapter {
 
                   // Add to tracking if not already present
                   const existingToolCall = toolCalls.find(
-                    tc => getToolCallId(tc) === toolCallId
+                    (tc) => getToolCallId(tc) === toolCallId
                   );
 
                   if (!existingToolCall) {
@@ -596,7 +596,9 @@ export class Orchestrator implements LlmAdapter {
                     const isSuccess = toolCall.result.status === "success";
 
                     if (isSuccess && toolCall.result.value) {
-                      console.log(`[Orchestrator] Added new tool result in chunk: ${toolName}`);
+                      console.log(
+                        `[Orchestrator] Added new tool result in chunk: ${toolName}`
+                      );
                       toolResults[toolName] = toolCall.result.value;
                     }
                   }
@@ -606,9 +608,12 @@ export class Orchestrator implements LlmAdapter {
 
             // Listen for the end event
             emitter.on("end", (finalData: LlmStreamChunk) => {
-              console.log("[Orchestrator] Processing end event in processMessage", {
-                hasToolCalls: toolCalls.length > 0
-              });
+              console.log(
+                "[Orchestrator] Processing end event in processMessage",
+                {
+                  hasToolCalls: toolCalls.length > 0
+                }
+              );
 
               // If finalData includes content, add it to our accumulated content
               if (finalData && finalData.content) {
@@ -662,7 +667,11 @@ export class Orchestrator implements LlmAdapter {
                 // Skip if this tool already has a result
                 if (toolCall.result) {
                   // Always store tool results, even if they are errors
-                  if (toolCall.function && toolCall.function.name && toolCall.result.value) {
+                  if (
+                    toolCall.function &&
+                    toolCall.function.name &&
+                    toolCall.result.value
+                  ) {
                     toolResults[toolName] = toolCall.result.value;
                   }
                   continue;
@@ -731,8 +740,9 @@ export class Orchestrator implements LlmAdapter {
                     toolCall.result = {
                       status: "error",
                       value: {
-                        error: `Failed to execute tool: ${error instanceof Error ? error.message : String(error)
-                          }`
+                        error: `Failed to execute tool: ${
+                          error instanceof Error ? error.message : String(error)
+                        }`
                       },
                       contentType: "application/json",
                       timestamp: new Date()
@@ -764,7 +774,7 @@ export class Orchestrator implements LlmAdapter {
 
               // Prepare the response
               const response: LlmResponse = {
-                id: finalData ? finalData.id : `response-${Date.now()}`,
+                id: `response-${Date.now()}`,
                 content: fullContent,
                 role: "assistant",
                 created: new Date(),
@@ -858,7 +868,7 @@ export class Orchestrator implements LlmAdapter {
     let fullContent = "";
 
     // Track tool calls for updating the message
-    let toolCalls: ToolCall[] = [];
+    const toolCalls: ToolCall[] = [];
 
     // Track processed tool calls to prevent duplicate execution
     const processedToolCallIds = new Set<string>();
@@ -893,11 +903,12 @@ export class Orchestrator implements LlmAdapter {
 
     // Helper function to generate a consistent ID for a tool call
     const getToolCallId = (toolCall: ToolCall): string => {
-      if (!toolCall || !toolCall.function) return '';
+      if (!toolCall || !toolCall.function) return "";
 
-      const args = typeof toolCall.function.arguments === 'string'
-        ? toolCall.function.arguments
-        : JSON.stringify(toolCall.function.arguments || {});
+      const args =
+        typeof toolCall.function.arguments === "string"
+          ? toolCall.function.arguments
+          : JSON.stringify(toolCall.function.arguments || {});
 
       return `${toolCall.function.name}-${args}`;
     };
@@ -927,7 +938,10 @@ export class Orchestrator implements LlmAdapter {
             );
             return false;
           }
-        } else if (!toolCall.function.arguments || typeof toolCall.function.arguments !== "object") {
+        } else if (
+          !toolCall.function.arguments ||
+          typeof toolCall.function.arguments !== "object"
+        ) {
           console.log(
             `[Orchestrator] Tool call has invalid arguments format, skipping execution: ${toolName}`
           );
@@ -971,7 +985,7 @@ export class Orchestrator implements LlmAdapter {
 
         // Add to tracking
         const existingToolCall = toolCalls.find(
-          tc => getToolCallId(tc) === toolCallId
+          (tc) => getToolCallId(tc) === toolCallId
         );
 
         if (!existingToolCall) {
@@ -1009,10 +1023,7 @@ export class Orchestrator implements LlmAdapter {
       // Filter out incomplete tool calls to avoid execution failures
       const completeToolCalls = chunkToolCalls.filter((toolCall) => {
         try {
-          if (
-            !toolCall.function ||
-            !toolCall.function.name
-          ) {
+          if (!toolCall.function || !toolCall.function.name) {
             console.log(
               `[Orchestrator] Skipping invalid tool call: missing name`
             );
@@ -1024,7 +1035,7 @@ export class Orchestrator implements LlmAdapter {
           if (typeof args === "string") {
             try {
               JSON.parse(args);
-            } catch (e) {
+            } catch {
               console.log(
                 `[Orchestrator] Skipping incomplete tool call: ${toolCall.function.name} (invalid JSON arguments)`
               );
@@ -1046,7 +1057,8 @@ export class Orchestrator implements LlmAdapter {
 
       if (completeToolCalls.length < chunkToolCalls.length) {
         console.log(
-          `[Orchestrator] Filtered out ${chunkToolCalls.length - completeToolCalls.length
+          `[Orchestrator] Filtered out ${
+            chunkToolCalls.length - completeToolCalls.length
           } incomplete tool calls`
         );
       }
@@ -1116,8 +1128,10 @@ export class Orchestrator implements LlmAdapter {
               const toolCallId = getToolCallId(extractedToolCall);
 
               // Only add if not already in toolCalls array
-              if (!toolCalls.some(tc => getToolCallId(tc) === toolCallId)) {
-                console.log(`[Orchestrator] Adding extracted tool call to tracking: ${extractedToolCall.function.name}`);
+              if (!toolCalls.some((tc) => getToolCallId(tc) === toolCallId)) {
+                console.log(
+                  `[Orchestrator] Adding extracted tool call to tracking: ${extractedToolCall.function.name}`
+                );
                 toolCalls.push(extractedToolCall);
               }
             }
@@ -1175,8 +1189,10 @@ export class Orchestrator implements LlmAdapter {
             const toolCallId = getToolCallId(extractedToolCall);
 
             // Only add if not already in toolCalls array
-            if (!toolCalls.some(tc => getToolCallId(tc) === toolCallId)) {
-              console.log(`[Orchestrator] Adding final extracted tool call to tracking: ${extractedToolCall.function.name}`);
+            if (!toolCalls.some((tc) => getToolCallId(tc) === toolCallId)) {
+              console.log(
+                `[Orchestrator] Adding final extracted tool call to tracking: ${extractedToolCall.function.name}`
+              );
               toolCalls.push(extractedToolCall);
             }
           }
@@ -1214,7 +1230,10 @@ export class Orchestrator implements LlmAdapter {
         }
 
         // Ensure any pending tool calls are completed before emitting the end event
-        if (this.toolCallQueue.isActive || this.toolCallQueue.pendingCount > 0) {
+        if (
+          this.toolCallQueue.isActive ||
+          this.toolCallQueue.pendingCount > 0
+        ) {
           console.log(
             "[Orchestrator] Waiting for pending tool calls to complete before ending stream"
           );
@@ -1300,7 +1319,10 @@ export class Orchestrator implements LlmAdapter {
         }
 
         // Ensure any pending tool calls are completed before emitting the end event
-        if (this.toolCallQueue.isActive || this.toolCallQueue.pendingCount > 0) {
+        if (
+          this.toolCallQueue.isActive ||
+          this.toolCallQueue.pendingCount > 0
+        ) {
           console.log(
             "[Orchestrator] Waiting for pending tool calls to complete before ending stream"
           );
@@ -1387,7 +1409,9 @@ export class Orchestrator implements LlmAdapter {
                 });
 
                 // Log successfully extracted tool call
-                console.log(`[Orchestrator] Successfully extracted tool call: ${tool.name}`);
+                console.log(
+                  `[Orchestrator] Successfully extracted tool call: ${tool.name}`
+                );
               }
             } catch (parseError) {
               // Only log parsing errors if this is the final chunk
@@ -1439,12 +1463,19 @@ export class Orchestrator implements LlmAdapter {
                 });
 
                 // Remove the tool call from the content
-                updatedContent = updatedContent.replace(incompleteMcpToolRegex, "");
-                console.log(`[Orchestrator] Extracted incomplete tool call in final chunk: ${tool.name}`);
+                updatedContent = updatedContent.replace(
+                  incompleteMcpToolRegex,
+                  ""
+                );
+                console.log(
+                  `[Orchestrator] Extracted incomplete tool call in final chunk: ${tool.name}`
+                );
               }
             } catch {
               // Ignore parsing errors for incomplete tool calls in final chunk
-              console.log(`[Orchestrator] Failed to parse incomplete tool call JSON in final chunk`);
+              console.log(
+                `[Orchestrator] Failed to parse incomplete tool call JSON in final chunk`
+              );
             }
           }
         } catch {
@@ -1562,7 +1593,7 @@ export class Orchestrator implements LlmAdapter {
         \`\`\`
 
         Always format your tool calls exactly as shown above.
-`
+`;
     }
 
     return systemPrompt;
@@ -1645,7 +1676,7 @@ export class Orchestrator implements LlmAdapter {
                   (tc) =>
                     tc.function.name === newToolCall.function.name &&
                     JSON.stringify(tc.function.arguments) ===
-                    JSON.stringify(newToolCall.function.arguments)
+                      JSON.stringify(newToolCall.function.arguments)
                 );
 
                 if (!existingToolCall) {
@@ -1746,28 +1777,36 @@ export class Orchestrator implements LlmAdapter {
         );
 
         // Combine all tool calls, prioritizing those with results
-        let allToolCalls = [...toolCallsWithResults];
+        const allToolCalls = [...toolCallsWithResults];
 
         // Add any extracted tool calls that aren't already in the list
         if (extractedToolCalls.length > 0) {
-          console.log(`[Orchestrator] Found ${extractedToolCalls.length} non-native tool calls in completed response`);
+          console.log(
+            `[Orchestrator] Found ${extractedToolCalls.length} non-native tool calls in completed response`
+          );
 
           for (const extractedCall of extractedToolCalls) {
             // Skip if we already have a similar tool call
             const isDuplicate = allToolCalls.some(
-              tc =>
+              (tc) =>
                 tc.function.name === extractedCall.function.name &&
-                JSON.stringify(tc.function.arguments) === JSON.stringify(extractedCall.function.arguments)
+                JSON.stringify(tc.function.arguments) ===
+                  JSON.stringify(extractedCall.function.arguments)
             );
 
             if (!isDuplicate) {
               // If tool has a result in the tool_results
-              if (response.tool_results && response.tool_results[extractedCall.function.name]) {
-                const result = response.tool_results[extractedCall.function.name];
+              if (
+                response.tool_results &&
+                response.tool_results[extractedCall.function.name]
+              ) {
+                const result =
+                  response.tool_results[extractedCall.function.name];
                 extractedCall.result = {
-                  status: typeof result === "object" && result && "error" in result
-                    ? ("error" as const)
-                    : ("success" as const),
+                  status:
+                    typeof result === "object" && result && "error" in result
+                      ? ("error" as const)
+                      : ("success" as const),
                   value: result,
                   contentType: "application/json",
                   timestamp: new Date()
@@ -1775,7 +1814,9 @@ export class Orchestrator implements LlmAdapter {
               }
 
               allToolCalls.push(extractedCall);
-              console.log(`[Orchestrator] Added non-native tool call: ${extractedCall.function.name}`);
+              console.log(
+                `[Orchestrator] Added non-native tool call: ${extractedCall.function.name}`
+              );
             }
           }
         }
@@ -1783,7 +1824,10 @@ export class Orchestrator implements LlmAdapter {
         // Remove tool calls embedded in the content if needed
         let cleanedContent = response.content || "";
         if (extractedToolCalls.length > 0) {
-          const { content } = this.extractToolCallsFromPartialText(cleanedContent, true);
+          const { content } = this.extractToolCallsFromPartialText(
+            cleanedContent,
+            true
+          );
           cleanedContent = content;
         }
 
@@ -1858,6 +1902,3 @@ export class Orchestrator implements LlmAdapter {
     }
   }
 }
-
-
-

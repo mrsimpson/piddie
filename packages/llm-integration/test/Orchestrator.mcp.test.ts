@@ -1360,7 +1360,9 @@ describe("Orchestrator MCP Integration", () => {
           timestamp: Date.now(),
           args
         });
-        console.log(`[TEST] Executed complex_tool with args: ${JSON.stringify(args)}`);
+        console.log(
+          `[TEST] Executed complex_tool with args: ${JSON.stringify(args)}`
+        );
         return {
           result: `Executed complex_tool with args: ${JSON.stringify(args)}`
         };
@@ -1463,7 +1465,8 @@ describe("Orchestrator MCP Integration", () => {
             emitter.emit(LlmStreamEvent.END, {
               id: "resp-1",
               chatId: message.chatId,
-              content: "I'm going to use the complex_tool.\n\nThe tool has been executed.",
+              content:
+                "I'm going to use the complex_tool.\n\nThe tool has been executed.",
               role: "assistant",
               created: new Date(),
               parentId: message.id,
@@ -1513,15 +1516,24 @@ describe("Orchestrator MCP Integration", () => {
       expect(toolCalls).toHaveLength(1);
 
       // Verify the tool was executed with the complete arguments
-      expect(toolCalls[0]?.args).toEqual({ param1: "value1", param2: "value2" });
+      expect(toolCalls[0]?.args).toEqual({
+        param1: "value1",
+        param2: "value2"
+      });
 
       // Check execution log to verify execution happened after all chunks were received
-      const executedEntries = executionLog.filter(log => log.state === "executed");
+      const executedEntries = executionLog.filter(
+        (log) => log.state === "executed"
+      );
       expect(executedEntries).toHaveLength(1);
 
       // Get the execution timestamp
-      const executionTime = executionLog.find(log => log.state === "executed")?.timestamp;
-      const startTime = executionLog.find(log => log.state === "started")?.timestamp;
+      const executionTime = executionLog.find(
+        (log) => log.state === "executed"
+      )?.timestamp;
+      const startTime = executionLog.find(
+        (log) => log.state === "started"
+      )?.timestamp;
 
       expect(executionTime).toBeDefined();
       expect(startTime).toBeDefined();
@@ -1543,7 +1555,9 @@ describe("Orchestrator MCP Integration", () => {
 
       // Override the tool implementation
       mockMcpServer.registerTool("json_tool", (args) => {
-        console.log(`[TEST] Executed json_tool with args: ${JSON.stringify(args)}`);
+        console.log(
+          `[TEST] Executed json_tool with args: ${JSON.stringify(args)}`
+        );
         return {
           result: `Executed json_tool with args: ${JSON.stringify(args)}`
         };
@@ -1685,15 +1699,18 @@ describe("Orchestrator MCP Integration", () => {
       // Verify the tool was called exactly once with the correct arguments
       const toolCalls = mockMcpServer.getToolCallHistory("json_tool");
       expect(toolCalls).toHaveLength(1);
-      expect(toolCalls[0]?.args).toEqual({ param1: "value1", param2: "value2" });
+      expect(toolCalls[0]?.args).toEqual({
+        param1: "value1",
+        param2: "value2"
+      });
 
       // Verify that there was a log about skipping the incomplete tool call
       const skippedLogs = consoleLogSpy.mock.calls.filter(
-        (call: unknown[]) => typeof call[0] === "string" && (
-          call[0].includes("Skipping incomplete") ||
-          call[0].includes("Tool call arguments are not valid") ||
-          call[0].includes("invalid JSON")
-        )
+        (call: unknown[]) =>
+          typeof call[0] === "string" &&
+          (call[0].includes("Skipping incomplete") ||
+            call[0].includes("Tool call arguments are not valid") ||
+            call[0].includes("invalid JSON"))
       );
       expect(skippedLogs.length).toBeGreaterThan(0);
 
@@ -1708,10 +1725,16 @@ describe("Orchestrator MCP Integration", () => {
 
       // Setup spy on the executeToolCall method to track when it's called
       const originalExecuteToolCall = mockActionsManager.executeToolCall;
-      const mockExecute = vi.fn().mockImplementation(async (name: string, args: Record<string, unknown>) => {
-        console.log(`[TEST] Executing ${name} with args: ${JSON.stringify(args)}`);
-        return originalExecuteToolCall(name, args);
-      });
+      const mockExecute = vi
+        .fn()
+        .mockImplementation(
+          async (name: string, args: Record<string, unknown>) => {
+            console.log(
+              `[TEST] Executing ${name} with args: ${JSON.stringify(args)}`
+            );
+            return originalExecuteToolCall(name, args);
+          }
+        );
 
       mockActionsManager.executeToolCall = mockExecute;
 
@@ -1741,7 +1764,8 @@ describe("Orchestrator MCP Integration", () => {
           try {
             // Emit initial content
             emitter.emit(LlmStreamEvent.DATA, {
-              content: "I'll use a tool that requires complex structured data.\n\n",
+              content:
+                "I'll use a tool that requires complex structured data.\n\n",
               isFinal: false
             });
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -1754,7 +1778,7 @@ describe("Orchestrator MCP Integration", () => {
                   id: toolCallId,
                   function: {
                     name: "multipart_tool",
-                    arguments: '{' // Just opening brace
+                    arguments: "{" // Just opening brace
                   }
                 }
               ],
@@ -1786,7 +1810,8 @@ describe("Orchestrator MCP Integration", () => {
                   id: toolCallId, // SAME ID
                   function: {
                     name: "multipart_tool",
-                    arguments: '{"complex": {"nested": "value"}, "array": [1, 2, 3' // Still not valid JSON
+                    arguments:
+                      '{"complex": {"nested": "value"}, "array": [1, 2, 3' // Still not valid JSON
                   }
                 }
               ],
@@ -1802,7 +1827,8 @@ describe("Orchestrator MCP Integration", () => {
                   id: toolCallId, // SAME ID
                   function: {
                     name: "multipart_tool",
-                    arguments: '{"complex": {"nested": "value"}, "array": [1, 2, 3]}' // Complete valid JSON
+                    arguments:
+                      '{"complex": {"nested": "value"}, "array": [1, 2, 3]}' // Complete valid JSON
                   }
                 }
               ],
@@ -1812,7 +1838,8 @@ describe("Orchestrator MCP Integration", () => {
 
             // Completion message
             emitter.emit(LlmStreamEvent.DATA, {
-              content: "\nTool execution complete. The result should be processed correctly.",
+              content:
+                "\nTool execution complete. The result should be processed correctly.",
               isFinal: true
             });
 
@@ -1829,7 +1856,8 @@ describe("Orchestrator MCP Integration", () => {
                   id: toolCallId,
                   function: {
                     name: "multipart_tool",
-                    arguments: '{"complex": {"nested": "value"}, "array": [1, 2, 3]}'
+                    arguments:
+                      '{"complex": {"nested": "value"}, "array": [1, 2, 3]}'
                   }
                 }
               ]
@@ -1886,13 +1914,10 @@ describe("Orchestrator MCP Integration", () => {
       expect(mockExecute).toHaveBeenCalledTimes(1);
 
       // Verify the content of the call
-      expect(mockExecute).toHaveBeenCalledWith(
-        "multipart_tool",
-        {
-          complex: { nested: "value" },
-          array: [1, 2, 3]
-        }
-      );
+      expect(mockExecute).toHaveBeenCalledWith("multipart_tool", {
+        complex: { nested: "value" },
+        array: [1, 2, 3]
+      });
     });
   });
 
