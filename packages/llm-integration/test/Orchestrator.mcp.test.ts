@@ -1339,6 +1339,561 @@ describe("Orchestrator MCP Integration", () => {
       expect(slowTool1Results.length).toBe(2); // start and end events
       expect(slowTool2Results.length).toBe(2); // start and end events
     });
+
+    it("should only execute tool calls when they are complete", async () => {
+      // Clear any existing tool call history
+      mockMcpServer.clearCallHistory();
+
+      // Track tool execution times to verify when they're executed
+      const executionLog: Array<{
+        tool: string;
+        state: "started" | "executed";
+        timestamp: number;
+        args?: Record<string, unknown>;
+      }> = [];
+
+      // Override the tool implementation to track execution
+      mockMcpServer.registerTool("complex_tool", (args) => {
+        executionLog.push({
+          tool: "complex_tool",
+          state: "executed",
+          timestamp: Date.now(),
+          args
+        });
+        console.log(`[TEST] Executed complex_tool with args: ${JSON.stringify(args)}`);
+        return {
+          result: `Executed complex_tool with args: ${JSON.stringify(args)}`
+        };
+      });
+
+      // Use a specific toolCallId to track this particular execution
+      const uniqueId = Date.now().toString();
+
+      // Mock the client to emit chunked/incomplete tool calls
+      mockLlmClient.updateMockConfig({
+        supportsTools: true,
+        streaming: true,
+        content: "I'm going to use the complex_tool."
+      });
+
+      // Track when we start sending the tool call
+      executionLog.push({
+        tool: "complex_tool",
+        state: "started",
+        timestamp: Date.now()
+      });
+
+      // This is the critical part - we're simulating how real LLMs stream tool calls:
+      // 1. They send partial JSON strings in the arguments field
+      // 2. The arguments gradually build up across multiple chunks
+      // 3. Each chunk represents the current state of the stream
+      mockLlmClient.streamMessage = (message) => {
+        const emitter = new EventEmitter();
+
+        setTimeout(async () => {
+          try {
+            // First emit content only
+            emitter.emit(LlmStreamEvent.DATA, {
+              content: "I'm going to use the complex_tool.\n\n",
+              isFinal: false
+            });
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // First chunk - incomplete JSON argument string (missing closing brace)
+            // This is how real LLMs stream tool arguments - as incomplete JSON strings
+            emitter.emit(LlmStreamEvent.DATA, {
+              content: "",
+              tool_calls: [
+                {
+                  id: uniqueId,
+                  function: {
+                    name: "complex_tool",
+                    arguments: '{"param1": "value1"' // Incomplete JSON, missing closing brace
+                  }
+                }
+              ],
+              isFinal: false
+            });
+
+            await new Promise((resolve) => setTimeout(resolve, 30));
+
+            // Second chunk - now with more complete but still invalid JSON
+            // Still building the JSON incrementally
+            emitter.emit(LlmStreamEvent.DATA, {
+              content: "",
+              tool_calls: [
+                {
+                  id: uniqueId,
+                  function: {
+                    name: "complex_tool",
+                    arguments: '{"param1": "value1", "param2": "value2"' // Still not valid JSON
+                  }
+                }
+              ],
+              isFinal: false
+            });
+
+            await new Promise((resolve) => setTimeout(resolve, 30));
+
+            // Final chunk - now with complete valid JSON
+            emitter.emit(LlmStreamEvent.DATA, {
+              content: "",
+              tool_calls: [
+                {
+                  id: uniqueId,
+                  function: {
+                    name: "complex_tool",
+                    arguments: '{"param1": "value1", "param2": "value2"}' // Complete valid JSON
+                  }
+                }
+              ],
+              isFinal: false
+            });
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Emit final content
+            emitter.emit(LlmStreamEvent.DATA, {
+              content: "The tool has been executed.",
+              isFinal: true
+            });
+
+            // Emit end event
+            emitter.emit(LlmStreamEvent.END, {
+              id: "resp-1",
+              chatId: message.chatId,
+              content: "I'm going to use the complex_tool.\n\nThe tool has been executed.",
+              role: "assistant",
+              created: new Date(),
+              parentId: message.id,
+              tool_calls: [
+                {
+                  id: uniqueId,
+                  function: {
+                    name: "complex_tool",
+                    arguments: '{"param1": "value1", "param2": "value2"}'
+                  }
+                }
+              ]
+            });
+          } catch (error) {
+            console.error("Error in mock streamMessage:", error);
+            emitter.emit(LlmStreamEvent.ERROR, error);
+          }
+        }, 0);
+
+        return emitter;
+      };
+
+      const message: LlmMessage = {
+        id: "msg-1",
+        chatId: "chat-1",
+        content: "Use the complex tool with chunked delivery",
+        role: "user" as ChatCompletionRole,
+        status: MessageStatus.SENT,
+        created: new Date(),
+        provider: "test"
+      };
+
+      // Process the message with streaming
+      emitter = await orchestrator.processMessageStream(message, (chunk) => {
+        emittedChunks.push(chunk);
+      });
+
+      // Wait for streaming to complete
+      await new Promise<void>((resolve) => {
+        emitter.on(LlmStreamEvent.END, () => {
+          resolve();
+        });
+      });
+
+      // Verify the tool was called only once
+      const toolCalls = mockMcpServer.getToolCallHistory("complex_tool");
+      expect(toolCalls).toHaveLength(1);
+
+      // Verify the tool was executed with the complete arguments
+      expect(toolCalls[0]?.args).toEqual({ param1: "value1", param2: "value2" });
+
+      // Check execution log to verify execution happened after all chunks were received
+      const executedEntries = executionLog.filter(log => log.state === "executed");
+      expect(executedEntries).toHaveLength(1);
+
+      // Get the execution timestamp
+      const executionTime = executionLog.find(log => log.state === "executed")?.timestamp;
+      const startTime = executionLog.find(log => log.state === "started")?.timestamp;
+
+      expect(executionTime).toBeDefined();
+      expect(startTime).toBeDefined();
+
+      // Verify that execution happened after the start (with some delay)
+      if (executionTime && startTime) {
+        // Tool shouldn't be executed until after the complete pattern is received
+        expect(executionTime).toBeGreaterThan(startTime);
+      }
+    });
+
+    it("should handle malformed tool calls gracefully during streaming", async () => {
+      // Clear any existing tool call history
+      mockMcpServer.clearCallHistory();
+
+      // Set up spy to track console logs
+      const consoleLogSpy = vi.spyOn(console, "log");
+      const consoleErrorSpy = vi.spyOn(console, "error");
+
+      // Override the tool implementation
+      mockMcpServer.registerTool("json_tool", (args) => {
+        console.log(`[TEST] Executed json_tool with args: ${JSON.stringify(args)}`);
+        return {
+          result: `Executed json_tool with args: ${JSON.stringify(args)}`
+        };
+      });
+
+      // Use unique IDs for tool calls
+      const invalidToolId = "invalid-json-" + Date.now();
+      const validToolId = "valid-json-" + Date.now();
+
+      // Configure mock client with native tool support
+      mockLlmClient.updateMockConfig({
+        supportsTools: true,
+        streaming: true,
+        content: "Using json_tool with various formats"
+      });
+
+      // Mock the client to emit tool calls with valid and invalid formats
+      // This better simulates how real LLMs stream tool calls with arguments as JSON strings
+      mockLlmClient.streamMessage = (message) => {
+        const emitter = new EventEmitter();
+
+        setTimeout(async () => {
+          try {
+            // First emit content
+            emitter.emit(LlmStreamEvent.DATA, {
+              content: "I'll use json_tool with valid and invalid formats.\n\n",
+              isFinal: false
+            });
+
+            await new Promise((resolve) => setTimeout(resolve, 10));
+
+            // Emit a malformed tool call (with syntactically invalid JSON)
+            emitter.emit(LlmStreamEvent.DATA, {
+              content: "",
+              tool_calls: [
+                {
+                  id: invalidToolId,
+                  function: {
+                    name: "json_tool",
+                    arguments: "{param1: value1, param2: value2}" // Invalid JSON (missing quotes)
+                  }
+                }
+              ],
+              isFinal: false
+            });
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Emit a correct tool call with a different ID
+            // First part of the valid JSON
+            emitter.emit(LlmStreamEvent.DATA, {
+              content: "Let me fix that and try again.\n\n",
+              tool_calls: [
+                {
+                  id: validToolId, // Different ID to represent a new tool call attempt
+                  function: {
+                    name: "json_tool",
+                    arguments: '{"param1": "value1"' // Partial JSON (not complete)
+                  }
+                }
+              ],
+              isFinal: false
+            });
+
+            await new Promise((resolve) => setTimeout(resolve, 15));
+
+            // Complete the JSON for the valid tool call
+            emitter.emit(LlmStreamEvent.DATA, {
+              content: "",
+              tool_calls: [
+                {
+                  id: validToolId,
+                  function: {
+                    name: "json_tool",
+                    arguments: '{"param1": "value1", "param2": "value2"}' // Complete JSON
+                  }
+                }
+              ],
+              isFinal: false
+            });
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Emit final content
+            emitter.emit(LlmStreamEvent.DATA, {
+              content: "Now the tool should execute correctly.",
+              isFinal: true
+            });
+
+            // Emit end event
+            emitter.emit(LlmStreamEvent.END, {
+              id: "resp-1",
+              chatId: message.chatId,
+              content: "Full response with both tool attempts",
+              role: "assistant",
+              created: new Date(),
+              parentId: message.id,
+              tool_calls: [
+                {
+                  id: validToolId,
+                  function: {
+                    name: "json_tool",
+                    arguments: '{"param1": "value1", "param2": "value2"}'
+                  }
+                }
+              ]
+            });
+          } catch (error) {
+            console.error("Error in mock streamMessage:", error);
+            emitter.emit(LlmStreamEvent.ERROR, error);
+          }
+        }, 0);
+
+        return emitter;
+      };
+
+      const message: LlmMessage = {
+        id: "msg-1",
+        chatId: "chat-1",
+        content: "Use the JSON tool with malformed arguments",
+        role: "user" as ChatCompletionRole,
+        status: MessageStatus.SENT,
+        created: new Date(),
+        provider: "test"
+      };
+
+      // Process the message with streaming
+      emitter = await orchestrator.processMessageStream(message, (chunk) => {
+        emittedChunks.push(chunk);
+      });
+
+      // Wait for streaming to complete
+      await new Promise<void>((resolve) => {
+        emitter.on(LlmStreamEvent.END, () => {
+          resolve();
+        });
+      });
+
+      // Verify the tool was called exactly once with the correct arguments
+      const toolCalls = mockMcpServer.getToolCallHistory("json_tool");
+      expect(toolCalls).toHaveLength(1);
+      expect(toolCalls[0]?.args).toEqual({ param1: "value1", param2: "value2" });
+
+      // Verify that there was a log about skipping the incomplete tool call
+      const skippedLogs = consoleLogSpy.mock.calls.filter(
+        (call: unknown[]) => typeof call[0] === "string" && (
+          call[0].includes("Skipping incomplete") ||
+          call[0].includes("Tool call arguments are not valid") ||
+          call[0].includes("invalid JSON")
+        )
+      );
+      expect(skippedLogs.length).toBeGreaterThan(0);
+
+      // Restore spies
+      consoleLogSpy.mockRestore();
+      consoleErrorSpy.mockRestore();
+    });
+
+    it("should only parse and execute complete tool calls when streamed across multiple chunks", async () => {
+      // Clear any existing tool call history
+      mockMcpServer.clearCallHistory();
+
+      // Setup spy on the executeToolCall method to track when it's called
+      const originalExecuteToolCall = mockActionsManager.executeToolCall;
+      const mockExecute = vi.fn().mockImplementation(async (name: string, args: Record<string, unknown>) => {
+        console.log(`[TEST] Executing ${name} with args: ${JSON.stringify(args)}`);
+        return originalExecuteToolCall(name, args);
+      });
+
+      mockActionsManager.executeToolCall = mockExecute;
+
+      // Register multi-part tool
+      mockMcpServer.registerTool("multipart_tool", (args) => {
+        return {
+          result: `Executed multipart_tool with args: ${JSON.stringify(args)}`
+        };
+      });
+
+      // Use a specific tool call ID for tracking
+      const toolCallId = "multipart-" + Date.now();
+
+      // Configure mock client with native tool support
+      mockLlmClient.updateMockConfig({
+        supportsTools: true,
+        streaming: true,
+        content: "Using multipart_tool with complex nested data"
+      });
+
+      // Create a custom streaming implementation that simulates how real LLMs
+      // send incremental JSON strings for tool call arguments
+      mockLlmClient.streamMessage = (message) => {
+        const emitter = new EventEmitter();
+
+        setTimeout(async () => {
+          try {
+            // Emit initial content
+            emitter.emit(LlmStreamEvent.DATA, {
+              content: "I'll use a tool that requires complex structured data.\n\n",
+              isFinal: false
+            });
+            await new Promise((resolve) => setTimeout(resolve, 10));
+
+            // First chunk - beginning of the JSON object
+            emitter.emit(LlmStreamEvent.DATA, {
+              content: "",
+              tool_calls: [
+                {
+                  id: toolCallId,
+                  function: {
+                    name: "multipart_tool",
+                    arguments: '{' // Just opening brace
+                  }
+                }
+              ],
+              isFinal: false
+            });
+            await new Promise((resolve) => setTimeout(resolve, 15));
+
+            // Second chunk - adding the complex property
+            emitter.emit(LlmStreamEvent.DATA, {
+              content: "",
+              tool_calls: [
+                {
+                  id: toolCallId, // SAME ID
+                  function: {
+                    name: "multipart_tool",
+                    arguments: '{"complex": {"nested": "value"}' // Partial JSON with complex object
+                  }
+                }
+              ],
+              isFinal: false
+            });
+            await new Promise((resolve) => setTimeout(resolve, 15));
+
+            // Third chunk - adding array property but still not complete
+            emitter.emit(LlmStreamEvent.DATA, {
+              content: "",
+              tool_calls: [
+                {
+                  id: toolCallId, // SAME ID
+                  function: {
+                    name: "multipart_tool",
+                    arguments: '{"complex": {"nested": "value"}, "array": [1, 2, 3' // Still not valid JSON
+                  }
+                }
+              ],
+              isFinal: false
+            });
+            await new Promise((resolve) => setTimeout(resolve, 15));
+
+            // Final chunk - complete valid JSON
+            emitter.emit(LlmStreamEvent.DATA, {
+              content: "",
+              tool_calls: [
+                {
+                  id: toolCallId, // SAME ID
+                  function: {
+                    name: "multipart_tool",
+                    arguments: '{"complex": {"nested": "value"}, "array": [1, 2, 3]}' // Complete valid JSON
+                  }
+                }
+              ],
+              isFinal: false
+            });
+            await new Promise((resolve) => setTimeout(resolve, 15));
+
+            // Completion message
+            emitter.emit(LlmStreamEvent.DATA, {
+              content: "\nTool execution complete. The result should be processed correctly.",
+              isFinal: true
+            });
+
+            // Emit end event
+            emitter.emit(LlmStreamEvent.END, {
+              id: "resp-1",
+              chatId: message.chatId,
+              content: "Full response with multipart tool call",
+              role: "assistant",
+              created: new Date(),
+              parentId: message.id,
+              tool_calls: [
+                {
+                  id: toolCallId,
+                  function: {
+                    name: "multipart_tool",
+                    arguments: '{"complex": {"nested": "value"}, "array": [1, 2, 3]}'
+                  }
+                }
+              ]
+            });
+          } catch (error) {
+            console.error("Error in mock streamMessage:", error);
+            emitter.emit(LlmStreamEvent.ERROR, error);
+          }
+        }, 0);
+
+        return emitter;
+      };
+
+      const message: LlmMessage = {
+        id: "msg-1",
+        chatId: "chat-1",
+        content: "Use the multipart tool with streaming",
+        role: "user" as ChatCompletionRole,
+        status: MessageStatus.SENT,
+        created: new Date(),
+        provider: "test"
+      };
+
+      // Reset call counts before the test
+      mockExecute.mockClear();
+
+      // Process the message with streaming
+      emitter = await orchestrator.processMessageStream(message, (chunk) => {
+        emittedChunks.push(chunk);
+      });
+
+      // Wait for streaming to complete
+      await new Promise<void>((resolve) => {
+        emitter.on(LlmStreamEvent.END, () => {
+          resolve();
+        });
+      });
+
+      // Restore original executeToolCall
+      mockActionsManager.executeToolCall = originalExecuteToolCall;
+
+      // Verify the tool was called exactly once with all parts properly reassembled
+      const toolCalls = mockMcpServer.getToolCallHistory("multipart_tool");
+      expect(toolCalls).toHaveLength(1);
+
+      // Verify the arguments were correctly parsed from all the chunks
+      expect(toolCalls[0]?.args).toEqual({
+        complex: { nested: "value" },
+        array: [1, 2, 3]
+      });
+
+      // Verify the ActionsManager.executeToolCall was only called once
+      // This confirms the tool call was only executed when it was complete
+      expect(mockExecute).toHaveBeenCalledTimes(1);
+
+      // Verify the content of the call
+      expect(mockExecute).toHaveBeenCalledWith(
+        "multipart_tool",
+        {
+          complex: { nested: "value" },
+          array: [1, 2, 3]
+        }
+      );
+    });
   });
 
   describe("getCompletion Integration", () => {
