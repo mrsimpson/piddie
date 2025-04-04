@@ -119,12 +119,59 @@ export class ActionsManager {
    * Execute a tool call with standard error handling
    * @param toolName The name of the tool to call
    * @param args The arguments for the tool
-   * @returns Result of the tool call with additional error information if applicable
+   * @returns Result of the tool call conforming to ToolCallResult interface
    */
   public async executeToolCall(
     toolName: string,
     args: Record<string, unknown>
-  ): Promise<{ result: unknown; error?: string }> {
-    return this.mcpHost.executeToolCall(toolName, args);
+  ): Promise<{
+    status: "success" | "error";
+    value: unknown;
+    contentType?: string;
+    timestamp: Date;
+  }> {
+    try {
+      const { result, error } = await this.mcpHost.executeToolCall(
+        toolName,
+        args
+      );
+
+      if (error) {
+        return {
+          status: "error",
+          value: { error },
+          contentType: "application/json",
+          timestamp: new Date()
+        };
+      }
+
+      // Determine content type based on result type
+      let contentType = "application/json";
+      if (typeof result === "string") {
+        contentType = "text/plain";
+      } else if (result instanceof Buffer) {
+        contentType = "application/octet-stream";
+      }
+
+      return {
+        status: "success",
+        value: result,
+        contentType,
+        timestamp: new Date()
+      };
+    } catch (error) {
+      console.error(
+        `[ActionsManager] Error executing tool call ${toolName}:`,
+        error
+      );
+      return {
+        status: "error",
+        value: {
+          error: error instanceof Error ? error.message : String(error)
+        },
+        contentType: "application/json",
+        timestamp: new Date()
+      };
+    }
   }
 }

@@ -19,6 +19,17 @@ export interface ToolCall {
     name: string;
     arguments: Record<string, unknown>;
   };
+  result?: ToolCallResult;
+}
+
+/**
+ * Represents the result of a tool call execution
+ */
+export interface ToolCallResult {
+  status: "success" | "error";
+  value: unknown;
+  contentType?: string; // Optional descriptor for serialization
+  timestamp?: Date; // When the tool was executed
 }
 
 /**

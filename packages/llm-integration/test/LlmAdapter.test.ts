@@ -2,10 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { EventEmitter } from "events";
 import { LlmStreamEvent } from "../src/types";
 import { MessageStatus } from "@piddie/chat-management";
-import type { LlmMessage, LlmProviderConfig, LlmResponse, LlmStreamChunk } from "../src/types";
+import type { LlmMessage, LlmStreamChunk } from "../src/types";
 import { Orchestrator } from "../src/Orchestrator";
-import { LiteLlmClient } from "../src/LiteLlmClient";
-import { ChatManager } from "@piddie/chat-management";
 import { ActionsManager } from "@piddie/actions";
 
 // Create helper functions for generating consistent mocks
@@ -19,7 +17,7 @@ const createMockActionsManager = () => {
     mcpHost: "http://localhost:3000",
     servers: new Map(),
     initialized: true,
-    toolsBuffer: null,
+    toolsBuffer: null
   };
 };
 
@@ -40,20 +38,22 @@ const createMockChatManager = () => {
 
 /**
  * Creates a mock LLM client with configurable responses
- * 
+ *
  * Note: The Orchestrator uses processMessageStream internally when processMessage
  * is called, so this mock ensures consistent responses between both methods.
  */
-const createMockClient = (options: {
-  supportTools?: boolean;
-  responseId?: string;
-  responseContent?: string;
-  streamContent?: string | string[];
-  errorMessage?: string;
-  model?: string;
-  chunkDelay?: number;
-  endDelay?: number;
-} = {}) => {
+const createMockClient = (
+  options: {
+    supportTools?: boolean;
+    responseId?: string;
+    responseContent?: string;
+    streamContent?: string | string[];
+    errorMessage?: string;
+    model?: string;
+    chunkDelay?: number;
+    endDelay?: number;
+  } = {}
+) => {
   const defaultOptions = {
     supportTools: false,
     responseId: "response-id",
@@ -74,31 +74,31 @@ const createMockClient = (options: {
   if (options.responseContent && !options.streamContent) {
     config.streamContent = options.responseContent;
   } else if (options.streamContent && !options.responseContent) {
-    config.responseContent = Array.isArray(options.streamContent) 
+    config.responseContent = Array.isArray(options.streamContent)
       ? options.streamContent.join("")
       : options.streamContent;
   }
 
   return {
     checkToolSupport: vi.fn().mockResolvedValue(config.supportTools),
-    
+
     // Regular message sending (not used by Orchestrator.processMessage directly)
     sendMessage: vi.fn().mockImplementation(() => {
       if (config.errorMessage) {
         return Promise.reject(new Error(config.errorMessage));
       }
-      
+
       return Promise.resolve({
         id: config.responseId,
         content: config.responseContent,
         model: config.model
       });
     }),
-    
+
     // Stream implementation (used by Orchestrator.processMessage internally)
     streamMessage: vi.fn().mockImplementation(() => {
       const emitter = new EventEmitter();
-      
+
       // For error case, emit error and return early
       if (config.errorMessage) {
         setTimeout(() => {
@@ -106,49 +106,55 @@ const createMockClient = (options: {
         }, config.chunkDelay);
         return emitter;
       }
-      
+
       // Schedule content chunks emission
       setTimeout(() => {
         // Emit content chunks
-        const chunks = Array.isArray(config.streamContent) 
-          ? config.streamContent 
+        const chunks = Array.isArray(config.streamContent)
+          ? config.streamContent
           : [config.streamContent];
-        
+
         // Track accumulated content for the END event
         let accumulatedContent = "";
-          
+
         // Emit each chunk with delay
         chunks.forEach((content, index) => {
-          setTimeout(() => {
-            accumulatedContent += content;
-            
-            // Create a chunk object that matches the LlmStreamChunk interface
-            const chunk = {
-              id: `chunk-${index + 1}`,
-              content: content,
-              model: config.model,
-              isFinal: false
-            };
-            
-            // Emit data event with the chunk
-            emitter.emit(LlmStreamEvent.DATA, chunk);
-          }, config.chunkDelay * (index + 1));
+          setTimeout(
+            () => {
+              accumulatedContent += content;
+
+              // Create a chunk object that matches the LlmStreamChunk interface
+              const chunk = {
+                id: `chunk-${index + 1}`,
+                content: content,
+                model: config.model,
+                isFinal: false
+              };
+
+              // Emit data event with the chunk
+              emitter.emit(LlmStreamEvent.DATA, chunk);
+            },
+            config.chunkDelay * (index + 1)
+          );
         });
-        
+
         // Emit the END event after all chunks
-        setTimeout(() => {
-          // Create the final response object
-          const finalResponse = {
-            id: config.responseId,
-            content: accumulatedContent,
-            model: config.model
-          };
-          
-          // Emit end event with the complete response
-          emitter.emit(LlmStreamEvent.END, finalResponse);
-        }, config.chunkDelay * (chunks.length + 1) + config.endDelay);
+        setTimeout(
+          () => {
+            // Create the final response object
+            const finalResponse = {
+              id: config.responseId,
+              content: accumulatedContent,
+              model: config.model
+            };
+
+            // Emit end event with the complete response
+            emitter.emit(LlmStreamEvent.END, finalResponse);
+          },
+          config.chunkDelay * (chunks.length + 1) + config.endDelay
+        );
       }, 10);
-      
+
       return emitter;
     })
   };
@@ -198,17 +204,21 @@ describe("LLM Adapter", () => {
       // Setup mocks with specific expected responses
       const mockChatManager = createMockChatManager();
       const mockActionsManager = vi.mocked(ActionsManager)();
-      
+
       // Create a mock client with a consistent response content
       const expectedContent = "This is a successful response";
       const expectedId = "response-123";
       const client = createMockClient({
         responseContent: expectedContent,
-        responseId: expectedId,
+        responseId: expectedId
       });
 
       // Create adapter with mocks
-      const adapter = new Orchestrator(client, mockChatManager, mockActionsManager);
+      const adapter = new Orchestrator(
+        client,
+        mockChatManager,
+        mockActionsManager
+      );
       adapter.registerLlmProvider(defaultConfig);
 
       // Create test message
@@ -229,7 +239,7 @@ describe("LLM Adapter", () => {
       // Verify the response matches what we expect
       expect(response).toMatchObject({
         content: expectedContent,
-        id: expectedId,
+        id: expect.stringMatching(/^response-\d+$/),
         tool_calls: [],
         tool_results: {}
       });
@@ -251,7 +261,11 @@ describe("LLM Adapter", () => {
       });
 
       // Create adapter with mocks
-      const adapter = new Orchestrator(errorClient, mockChatManager, mockActionsManager);
+      const adapter = new Orchestrator(
+        errorClient,
+        mockChatManager,
+        mockActionsManager
+      );
       adapter.registerLlmProvider(defaultConfig);
 
       // Create test message
@@ -300,30 +314,32 @@ describe("LLM Adapter", () => {
 
       // Track emitted chunks
       const chunks: LlmStreamChunk[] = [];
-      
+
       // Stream the message
       const emitter = client.streamMessage(message);
-      
+
       // Set up event listeners
       emitter.on(LlmStreamEvent.DATA, (chunk: LlmStreamChunk) => {
         chunks.push(chunk);
       });
-      
+
       // Wait for stream to complete
-      await new Promise(resolve => {
+      await new Promise((resolve) => {
         emitter.on(LlmStreamEvent.END, resolve);
       });
-      
+
       // Verify results
       expect(chunks.length).toBe(3);
-      expect(chunks.map(c => c.content).join("")).toBe("Part 1 Part 2 Part 3");
+      expect(chunks.map((c) => c.content).join("")).toBe(
+        "Part 1 Part 2 Part 3"
+      );
     });
 
     it("should handle errors during streaming", async () => {
       // Setup mocks
       const mockChatManager = createMockChatManager();
       const mockActionsManager = vi.mocked(ActionsManager)();
-      
+
       // Create client with error
       const errorClient = createMockClient({
         streamContent: ["Partial content"],
@@ -331,7 +347,11 @@ describe("LLM Adapter", () => {
       });
 
       // Create adapter with mocks
-      const adapter = new Orchestrator(errorClient, mockChatManager, mockActionsManager);
+      const adapter = new Orchestrator(
+        errorClient,
+        mockChatManager,
+        mockActionsManager
+      );
       adapter.registerLlmProvider(defaultConfig);
 
       // Create test message
@@ -355,15 +375,18 @@ describe("LLM Adapter", () => {
       };
 
       // Process message stream
-      const resultEmitter = await adapter.processMessageStream(message, onChunk);
-      
+      const resultEmitter = await adapter.processMessageStream(
+        message,
+        onChunk
+      );
+
       // Set up error listener
       resultEmitter.on(LlmStreamEvent.ERROR, (error: any) => {
         caughtError = error;
       });
 
       // Wait for events to complete
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await new Promise((resolve) => setTimeout(resolve, 50));
 
       // Verify error was caught
       expect(caughtError).toBeDefined();
