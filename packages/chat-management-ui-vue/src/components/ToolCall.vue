@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { type ToolCall } from "@piddie/chat-management";
+import { computed } from "vue";
 
 const props = defineProps<{
   toolCall: ToolCall;
@@ -19,13 +20,34 @@ function formatToolCallResult(result: ToolCall["result"]): string {
   if (!result) return "";
 
   try {
-    if (typeof result.value === "string") {
-      return result.value;
+    if (isJsonResult(result)) {
+      return JSON.stringify(result.value, null, 2);
+    } else if (isTextResult(result)) {
+      return String(result.value);
+    } else if (isBinaryResult(result)) {
+      return "Binary data";
     }
-    return JSON.stringify(result.value, null, 2);
+    return String(result.value);
   } catch (e) {
     return String(result.value);
   }
+}
+
+/**
+ * Get the result type display text
+ */
+function getResultTypeDisplay(result: ToolCall["result"]): string {
+  if (!result) return "";
+
+  if (isJsonResult(result)) {
+    return "JSON";
+  } else if (isTextResult(result)) {
+    return result.contentType!.replace("text/", "");
+  } else if (isBinaryResult(result)) {
+    return "Binary";
+  }
+
+  return result.contentType || "Text";
 }
 
 /**
@@ -34,6 +56,54 @@ function formatToolCallResult(result: ToolCall["result"]): string {
 function hasToolCallResult(toolCall: ToolCall): boolean {
   return Boolean(toolCall.result);
 }
+
+/**
+ * Determine if a result is binary data
+ */
+function isBinaryResult(result: ToolCall["result"]): boolean {
+  if (!result) return false;
+
+  return result.contentType === "application/octet-stream";
+}
+
+/**
+ * Determine if a result is JSON
+ */
+function isJsonResult(result: ToolCall["result"]): boolean {
+  if (!result) return false;
+
+  return result.contentType === "application/json";
+}
+
+/**
+ * Determine if a result is text
+ */
+function isTextResult(result: ToolCall["result"]): boolean {
+  if (!result) return false;
+
+  return !!result.contentType?.startsWith("text/");
+}
+
+/**
+ * Compute result class based on type and status
+ */
+const resultClass = computed((): Record<string, boolean> => {
+  if (!props.toolCall.result) return {};
+
+  const classes: Record<string, boolean> = {
+    [props.toolCall.result.status]: true
+  };
+
+  if (isJsonResult(props.toolCall.result)) {
+    classes["json-result"] = true;
+  }
+
+  if (isBinaryResult(props.toolCall.result)) {
+    classes["binary-result"] = true;
+  }
+
+  return classes;
+});
 </script>
 
 <template>
@@ -57,10 +127,15 @@ function hasToolCallResult(toolCall: ToolCall): boolean {
 
     <!-- Display tool call result if present -->
     <div v-if="toolCall.result" class="tool-call-result">
-      <div class="tool-call-result-header">Result:</div>
-      <pre class="tool-call-result-value" :class="toolCall.result.status">{{
-        formatToolCallResult(toolCall.result)
-      }}</pre>
+      <div class="tool-call-result-header">
+        Result:
+        <span class="result-type" v-if="toolCall.result.contentType">
+          {{ getResultTypeDisplay(toolCall.result) }}
+        </span>
+      </div>
+      <pre class="tool-call-result-value" :class="resultClass">
+        {{ formatToolCallResult(toolCall.result) }}
+      </pre>
     </div>
   </div>
 </template>
@@ -125,6 +200,17 @@ function hasToolCallResult(toolCall: ToolCall): boolean {
   font-size: 0.8rem;
   margin-bottom: 0.25rem;
   color: var(--sl-color-neutral-700);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.result-type {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.3rem;
+  background-color: var(--sl-color-neutral-200);
+  border-radius: var(--sl-border-radius-pill);
+  font-weight: normal;
 }
 
 .tool-call-result-value {
@@ -145,5 +231,14 @@ function hasToolCallResult(toolCall: ToolCall): boolean {
 .tool-call-result-value.error {
   background-color: var(--sl-color-danger-50);
   border-left: 2px solid var(--sl-color-danger-500);
+}
+
+.tool-call-result-value.json-result {
+  color: var(--sl-color-primary-700);
+}
+
+.tool-call-result-value.binary-result {
+  color: var(--sl-color-neutral-600);
+  font-style: italic;
 }
 </style>
