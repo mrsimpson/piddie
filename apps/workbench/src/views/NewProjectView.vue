@@ -58,6 +58,11 @@ const samplePrompts = [
     shortPrompt: "Create a weather dashboard",
     fullPrompt:
       "Let's build a weather dashboard that shows current conditions and forecasts. Use the OpenWeather API and add charts for temperature trends."
+  },
+  {
+    title: "Files",
+    shortPrompt: "Simple file creation",
+    fullPrompt: "Create two files: one with content '1', one with content '2'"
   }
 ];
 

@@ -462,6 +462,44 @@ export const useLlmStore = defineStore("llm", () => {
             chunk.tool_calls.forEach((toolCall) => {
               const functionName = toolCall.function.name;
 
+              // Check if this tool call has a result attached directly
+              if (toolCall.result) {
+                console.log(
+                  `[LlmStore] Received tool call with result for ${functionName}`
+                );
+
+                // First check if we already have this tool call in our accumulated list
+                const existingToolCall = accumulatedToolCalls.find(
+                  (tc) =>
+                    tc.function.name === toolCall.function.name &&
+                    JSON.stringify(tc.function.arguments) ===
+                      JSON.stringify(toolCall.function.arguments)
+                );
+
+                if (existingToolCall) {
+                  // Update the existing tool call with the result
+                  console.log(
+                    `[LlmStore] Updating existing tool call with result for ${functionName}`
+                  );
+                  existingToolCall.result = toolCall.result;
+                } else {
+                  // Add the new tool call with result to our accumulated list
+                  console.log(
+                    `[LlmStore] Adding new tool call with result for ${functionName}`
+                  );
+                  accumulatedToolCalls.push(toolCall);
+                }
+
+                // Update the UI immediately with the tool call result
+                chatStore.updateMessageToolCalls(
+                  assistantMessage.id,
+                  accumulatedToolCalls
+                );
+
+                return; // Skip the rest of the processing for this tool call
+              }
+
+              // Continue with existing processing for tool calls without results
               // Check if we already have an entry for this function name
               let entry = functionArgsMap.get(functionName);
 

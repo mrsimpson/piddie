@@ -10,7 +10,8 @@ export class EventEmitter {
    * @param listener The event listener function
    * @returns This instance for chaining
    */
-  on(event: string, listener: (data: unknown) => void): EventEmitter {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  on(event: string, listener: (data: any) => void): EventEmitter {
     if (!this.events[event]) {
       this.events[event] = [];
     }
