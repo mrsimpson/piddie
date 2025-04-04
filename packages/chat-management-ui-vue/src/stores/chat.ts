@@ -10,7 +10,7 @@ import { createChatManager, MessageStatus } from "@piddie/chat-management";
 import { v4 as uuidv4 } from "uuid";
 
 export const useChatStore = defineStore("chat", () => {
-  const chatManager = createChatManager();
+  const chatPersistence = createChatManager();
   const currentChat = ref<Chat | null>(null);
   const temporaryMessages = ref<Map<string, Message>>(new Map());
 
@@ -47,7 +47,7 @@ export const useChatStore = defineStore("chat", () => {
     projectId: string,
     metadata?: Record<string, unknown>
   ) {
-    const chat = await chatManager.createChat(projectId, metadata);
+    const chat = await chatPersistence.createChat(projectId, metadata);
     currentChat.value = chat;
     return chat;
   }
@@ -81,6 +81,10 @@ export const useChatStore = defineStore("chat", () => {
     );
 
     return { userMessage, assistantPlaceholder };
+  }
+
+  function isEphemeral(messageId: string) {
+    return messageId.startsWith("temp_");
   }
 
   /**
@@ -123,7 +127,7 @@ export const useChatStore = defineStore("chat", () => {
       return message;
     } else {
       // Create a persisted message in the database
-      const message = await chatManager.addMessage(
+      const message = await chatPersistence.addMessage(
         chatId,
         content,
         role,
@@ -132,7 +136,7 @@ export const useChatStore = defineStore("chat", () => {
       );
 
       if (status !== MessageStatus.SENT) {
-        await chatManager.updateMessageStatus(chatId, message.id, status);
+        await chatPersistence.updateMessageStatus(chatId, message.id, status);
       }
 
       return message;
@@ -159,7 +163,7 @@ export const useChatStore = defineStore("chat", () => {
     }
 
     // Create the message in the database
-    const message = await chatManager.addMessage(
+    const message = await chatPersistence.addMessage(
       tempMessage.chatId,
       updates?.content || tempMessage.content,
       tempMessage.role,
@@ -170,7 +174,7 @@ export const useChatStore = defineStore("chat", () => {
 
     // Apply status update if needed
     if (updates?.status && updates.status !== MessageStatus.SENT) {
-      await chatManager.updateMessageStatus(
+      await chatPersistence.updateMessageStatus(
         message.chatId,
         message.id,
         updates.status
@@ -179,7 +183,7 @@ export const useChatStore = defineStore("chat", () => {
 
     // Apply tool calls if any
     if (updates?.tool_calls && updates?.tool_calls.length > 0) {
-      await chatManager.updateMessageToolCalls(
+      await chatPersistence.updateMessageToolCalls(
         message.chatId,
         message.id,
         updates.tool_calls
@@ -201,20 +205,27 @@ export const useChatStore = defineStore("chat", () => {
   }
 
   function updateMessageStatus(messageId: string, status: MessageStatus) {
-    const message = temporaryMessages.value.get(messageId);
-    if (message) {
-      // Create a new Map to trigger reactivity
-      const updatedMessage = { ...message, status };
-      temporaryMessages.value = new Map(temporaryMessages.value).set(
-        messageId,
-        updatedMessage
-      );
+    // For ephemeral messages, just update in memory
+    if (isEphemeral(messageId)) {
+      const message = temporaryMessages.value.get(messageId);
+      if (message) {
+        // Create a new Map to trigger reactivity
+        const updatedMessage = { ...message, status };
+        temporaryMessages.value = new Map(temporaryMessages.value).set(
+          messageId,
+          updatedMessage
+        );
+      }
       return;
     }
 
-    // If not a temporary message, update in the database
+    // For persisted messages, update in the database
     if (currentChat.value) {
-      chatManager.updateMessageStatus(currentChat.value.id, messageId, status);
+      chatPersistence.updateMessageStatus(
+        currentChat.value.id,
+        messageId,
+        status
+      );
     }
   }
 
@@ -222,22 +233,26 @@ export const useChatStore = defineStore("chat", () => {
     messageId: string,
     toolCalls: ToolCall[]
   ) {
-    const tempMessage = temporaryMessages.value.get(messageId);
-    if (tempMessage) {
-      // Create a new Map to trigger reactivity
-      const updatedMessage = { ...tempMessage, tool_calls: toolCalls };
-      temporaryMessages.value = new Map(temporaryMessages.value).set(
-        messageId,
-        updatedMessage
-      );
+    // For ephemeral messages, just update in memory
+    if (isEphemeral(messageId)) {
+      const tempMessage = temporaryMessages.value.get(messageId);
+      if (tempMessage) {
+        // Create a new Map to trigger reactivity
+        const updatedMessage = { ...tempMessage, tool_calls: toolCalls };
+        temporaryMessages.value = new Map(temporaryMessages.value).set(
+          messageId,
+          updatedMessage
+        );
+      }
       return;
     }
 
+    // For persisted messages, update in the database
     if (!currentChat.value) {
       throw new Error("No active chat");
     }
 
-    await chatManager.updateMessageToolCalls(
+    await chatPersistence.updateMessageToolCalls(
       currentChat.value.id,
       messageId,
       toolCalls
@@ -248,20 +263,23 @@ export const useChatStore = defineStore("chat", () => {
    * Update a message's content
    */
   function updateMessageContent(messageId: string, content: string) {
-    const message = temporaryMessages.value.get(messageId);
-    if (message) {
-      // Create a new Map to trigger reactivity
-      const updatedMessage = { ...message, content };
-      temporaryMessages.value = new Map(temporaryMessages.value).set(
-        messageId,
-        updatedMessage
-      );
+    // For ephemeral messages, just update in memory
+    if (isEphemeral(messageId)) {
+      const message = temporaryMessages.value.get(messageId);
+      if (message) {
+        // Create a new Map to trigger reactivity
+        const updatedMessage = { ...message, content };
+        temporaryMessages.value = new Map(temporaryMessages.value).set(
+          messageId,
+          updatedMessage
+        );
+      }
       return;
     }
 
-    // If not a temporary message, update in the database
+    // For persisted messages, update in the database
     if (currentChat.value) {
-      chatManager.updateMessageContent(
+      chatPersistence.updateMessageContent(
         currentChat.value.id,
         messageId,
         content
@@ -270,13 +288,13 @@ export const useChatStore = defineStore("chat", () => {
   }
 
   async function loadChat(chatId: string) {
-    const chat = await chatManager.getChat(chatId);
+    const chat = await chatPersistence.getChat(chatId);
     currentChat.value = chat;
     return chat;
   }
 
   async function listChats(limit?: number, offset = 0) {
-    return chatManager.listChats(limit, offset);
+    return chatPersistence.listChats(limit, offset);
   }
 
   async function listProjectChats(
@@ -284,11 +302,11 @@ export const useChatStore = defineStore("chat", () => {
     limit?: number,
     offset = 0
   ) {
-    return chatManager.listProjectChats(projectId, limit, offset);
+    return chatPersistence.listProjectChats(projectId, limit, offset);
   }
 
   async function deleteChat(chatId: string) {
-    await chatManager.deleteChat(chatId);
+    await chatPersistence.deleteChat(chatId);
     if (currentChat.value?.id === chatId) {
       currentChat.value = null;
     }
@@ -302,7 +320,7 @@ export const useChatStore = defineStore("chat", () => {
   return {
     currentChat,
     messages,
-    chatManager,
+    chatManager: chatPersistence,
     createChat,
     sendMessageToLlm,
     addMessage,

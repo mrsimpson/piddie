@@ -259,6 +259,77 @@ describe("BaseLlmClient", () => {
       const toolCalls = client.extractToolCallsPublic(content);
       expect(toolCalls).toHaveLength(0);
     });
+
+    it("should handle multiple tool calls in a single tool_calls array", () => {
+      const content = `Here's a response with multiple tool calls in a single block.
+
+\`\`\`mcp-tool-call
+{
+  "tool_calls": [
+    {
+      "function": {
+        "name": "write_file",
+        "arguments": {
+          "path": "./file1.txt",
+          "content": "1"
+        }
+      }
+    },
+    {
+      "function": {
+        "name": "write_file",
+        "arguments": {
+          "path": "./file2.txt",
+          "content": "2"
+        }
+      }
+    }
+  ]
+}
+\`\`\``;
+
+      const toolCalls = client.extractToolCallsPublic(content);
+      expect(toolCalls).toHaveLength(2);
+      expect(toolCalls[0]?.function.name).toBe("write_file");
+      expect(toolCalls[0]?.function.arguments).toEqual({
+        path: "./file1.txt",
+        content: "1"
+      });
+      expect(toolCalls[1]?.function.name).toBe("write_file");
+      expect(toolCalls[1]?.function.arguments).toEqual({
+        path: "./file2.txt",
+        content: "2"
+      });
+    });
+
+    it("should handle multiple mcp-tool-call blocks in one response", () => {
+      const content = `Here's a response with multiple tool call blocks.
+
+\`\`\`mcp-tool-call
+{
+  "function": {
+    "name": "tool1",
+    "arguments": { "param1": "value1" }
+  }
+}
+\`\`\`
+
+And here's another one:
+
+\`\`\`mcp-tool-call
+{
+  "function": {
+    "name": "tool2",
+    "arguments": { "param2": "value2" }
+  }
+}
+\`\`\``;
+
+      const toolCalls = client.extractToolCallsPublic(content);
+      expect(toolCalls).toHaveLength(2);
+      expect(toolCalls[0]?.function.name).toBe("tool1");
+      expect(toolCalls[1]?.function.name).toBe("tool2");
+    });
   });
 
   describe("JSON Parsing Helper", () => {

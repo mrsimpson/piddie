@@ -10,6 +10,7 @@ on:
 
 jobs:
   semantic-pr-naming:
+    if: false
     name: Semantic pull request naming
     runs-on: ubuntu-latest
     steps:

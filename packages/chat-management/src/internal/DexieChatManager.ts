@@ -44,6 +44,15 @@ export class DexieChatManager implements ChatManager {
     this.db = db || new ChatDatabase();
   }
 
+  /**
+   * Checks if a message ID is from an ephemeral message
+   * @param messageId The message ID to check
+   * @returns True if the message is ephemeral, false otherwise
+   */
+  private isEphemeralMessage(messageId: string): boolean {
+    return messageId.startsWith("temp_");
+  }
+
   async createChat(
     projectId: string,
     metadata?: Record<string, unknown>
@@ -115,6 +124,11 @@ export class DexieChatManager implements ChatManager {
     messageId: string,
     status: MessageStatus
   ): Promise<void> {
+    // Skip database operations for ephemeral messages
+    if (this.isEphemeralMessage(messageId)) {
+      return;
+    }
+
     const message = await this.db.messages.get(messageId);
     if (!message) {
       throw new Error("Message not found");
@@ -135,6 +149,11 @@ export class DexieChatManager implements ChatManager {
     messageId: string,
     content: string
   ): Promise<void> {
+    // Skip database operations for ephemeral messages
+    if (this.isEphemeralMessage(messageId)) {
+      return;
+    }
+
     const message = await this.db.messages.get(messageId);
     if (!message) {
       throw new Error("Message not found");
@@ -233,6 +252,11 @@ export class DexieChatManager implements ChatManager {
     messageId: string,
     toolCalls: ToolCall[]
   ): Promise<void> {
+    // Skip database operations for ephemeral messages
+    if (this.isEphemeralMessage(messageId)) {
+      return;
+    }
+
     try {
       await this.db.transaction("rw", this.db.messages, async () => {
         const message = await this.db.messages.get(messageId);
@@ -250,6 +274,9 @@ export class DexieChatManager implements ChatManager {
           tool_calls: toolCalls
         });
       });
+
+      // Update the chat's lastUpdated timestamp
+      await this.db.chats.update(chatId, { lastUpdated: new Date() });
     } catch (error) {
       console.error("Error updating message tool calls:", error);
       throw error;
@@ -271,6 +298,11 @@ export class DexieChatManager implements ChatManager {
       tool_calls?: ToolCall[];
     }
   ): Promise<void> {
+    // Skip database operations for ephemeral messages
+    if (this.isEphemeralMessage(messageId)) {
+      return;
+    }
+
     try {
       await this.db.transaction("rw", this.db.messages, async () => {
         const message = await this.db.messages.get(messageId);

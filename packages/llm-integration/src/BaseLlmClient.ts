@@ -323,7 +323,9 @@ If you don't need to use a tool, respond normally without the code block.`;
 
           // Check if this is a tool_calls object
           if (parsed.tool_calls && Array.isArray(parsed.tool_calls)) {
-            return parsed.tool_calls
+            // Process all tool calls in the array and add them to our collection
+            // Instead of returning immediately, we collect all tool calls
+            const parsedToolCalls = parsed.tool_calls
               .map(
                 (tc: {
                   function?: {
@@ -352,7 +354,13 @@ If you don't need to use a tool, respond normally without the code block.`;
                 }
               )
               .filter((tc: unknown) => tc !== null);
+
+            // Add the parsed tool calls to our collection
+            toolCalls = toolCalls.concat(parsedToolCalls);
+            continue; // Process the next match
           }
+
+          // If not a tool_calls array, try to parse it as a direct tool call object
           toolCalls = toolCalls.concat(parsed);
         } catch (error) {
           console.warn("Error parsing mcp-tool-call JSON:", error);
@@ -363,6 +371,7 @@ If you don't need to use a tool, respond normally without the code block.`;
     } catch (error) {
       console.warn("Error extracting tool calls from mcp block:", error);
     }
+
     return toolCalls;
   }
 

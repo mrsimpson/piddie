@@ -87,6 +87,11 @@ vi.mock("dexie", () => {
       stores() {
         return this;
       }
+
+      transaction(_mode: string, _store: any, callback: () => Promise<void>) {
+        // Just execute the callback directly without transaction
+        return callback();
+      }
     }
   };
 });
@@ -279,6 +284,130 @@ describe("ChatManager", () => {
             MessageStatus.SENT
           )
         ).rejects.toThrow("Message not found");
+      });
+
+      it("THEN should not persist ephemeral messages", async () => {
+        const ephemeralMessageId = "temp_msg_1";
+
+        await chatManager.updateMessageStatus(
+          "chat_1",
+          ephemeralMessageId,
+          MessageStatus.SENDING
+        );
+
+        expect(messageMocks.get).not.toHaveBeenCalled();
+        expect(messageMocks.update).not.toHaveBeenCalled();
+        expect(chatMocks.update).not.toHaveBeenCalled();
+      });
+    });
+
+    describe("WHEN updating message content", () => {
+      it("THEN should not persist ephemeral messages", async () => {
+        const ephemeralMessageId = "temp_msg_1";
+
+        await chatManager.updateMessageContent(
+          "chat_1",
+          ephemeralMessageId,
+          "Updated content"
+        );
+
+        expect(messageMocks.get).not.toHaveBeenCalled();
+        expect(messageMocks.update).not.toHaveBeenCalled();
+        expect(chatMocks.update).not.toHaveBeenCalled();
+      });
+
+      it("THEN should update regular message content", async () => {
+        const message: Message = {
+          id: "msg_1",
+          chatId: "chat_1",
+          content: "Test message",
+          role: "user",
+          status: MessageStatus.SENT,
+          created: new Date(),
+          parentId: undefined,
+          username: "user"
+        };
+
+        messageMocks.get.mockResolvedValueOnce(message);
+        messageMocks.update.mockResolvedValueOnce(1);
+        chatMocks.update.mockResolvedValueOnce(1);
+
+        await chatManager.updateMessageContent(
+          message.chatId,
+          message.id,
+          "Updated content"
+        );
+
+        expect(messageMocks.update).toHaveBeenCalledWith(message.id, {
+          content: "Updated content"
+        });
+        expect(chatMocks.update).toHaveBeenCalledWith(message.chatId, {
+          lastUpdated: expect.any(Date)
+        });
+      });
+    });
+
+    describe("WHEN updating message tool calls", () => {
+      it("THEN should not persist ephemeral messages", async () => {
+        const ephemeralMessageId = "temp_msg_1";
+        const toolCalls = [
+          {
+            function: {
+              name: "test_tool",
+              arguments: { param1: "value1" }
+            }
+          }
+        ];
+
+        await chatManager.updateMessageToolCalls(
+          "chat_1",
+          ephemeralMessageId,
+          toolCalls
+        );
+
+        expect(messageMocks.get).not.toHaveBeenCalled();
+        expect(messageMocks.update).not.toHaveBeenCalled();
+        expect(chatMocks.update).not.toHaveBeenCalled();
+      });
+
+      it("THEN should update regular message tool calls", async () => {
+        const message: Message = {
+          id: "msg_1",
+          chatId: "chat_1",
+          content: "Test message",
+          role: "assistant",
+          status: MessageStatus.SENT,
+          created: new Date(),
+          parentId: undefined,
+          username: "assistant",
+          tool_calls: []
+        };
+
+        const toolCalls = [
+          {
+            function: {
+              name: "test_tool",
+              arguments: { param1: "value1" }
+            }
+          }
+        ];
+
+        messageMocks.get.mockResolvedValueOnce(message);
+        messageMocks.update.mockResolvedValueOnce(1);
+        chatMocks.update.mockResolvedValueOnce(1);
+
+        await chatManager.updateMessageToolCalls(
+          message.chatId,
+          message.id,
+          toolCalls
+        );
+
+        expect(messageMocks.update).toHaveBeenCalledWith(message.id, {
+          tool_calls: toolCalls
+        });
+        expect(chatMocks.update).toHaveBeenCalledWith(message.chatId, {
+          lastUpdated: expect.any(Date)
+        });
       });
     });
 

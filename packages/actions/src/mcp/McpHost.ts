@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { CallToolResult } from "@modelcontextprotocol/sdk/types";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
 // Define Tool interface locally to avoid import issues
@@ -10,6 +11,16 @@ export interface Tool {
     type: string;
     properties?: Record<string, unknown> | undefined;
   };
+}
+
+/**
+ * Custom error class for MCP tool execution errors
+ */
+export class McpToolExecutionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "McpToolExecutionError";
+  }
 }
 
 /**
@@ -143,15 +154,17 @@ export class McpHost {
   async callTool(
     name: string,
     params: Record<string, unknown>
-  ): Promise<unknown> {
+  ): Promise<CallToolResult> {
     // Try each connection until we find one that can handle the tool
     for (const [_, connection] of this.connections) {
       try {
-        const result = await connection.client.callTool({
+        const toolParams = {
           name,
           arguments: params
-        });
-        return result;
+        };
+
+        const result = await connection.client.callTool(toolParams);
+        return result as CallToolResult;
       } catch (error) {
         // If it's a "tool not found" error, continue to the next connection
         // Otherwise, rethrow
@@ -176,23 +189,41 @@ export class McpHost {
    * and can treat all tools as if they were provided through a single point of contact
    * @param toolName The name of the tool to call
    * @param args The arguments for the tool
-   * @returns Result of the tool call with additional error information if applicable
+   * @returns Result of the tool call
+   * @throws {McpToolExecutionError} When tool execution fails
    */
   async executeToolCall(
     toolName: string,
     args: Record<string, unknown>
-  ): Promise<{ result: unknown; error?: string }> {
+  ): Promise<unknown> {
     try {
-      const result = await this.callTool(toolName, args);
-      return { result };
+      const response = await this.callTool(toolName, args);
+
+      // Check if the response indicates an error according to MCP protocol
+      if (response.isError) {
+        // Extract error message from content if available
+        let errorMessage = "Tool execution failed";
+        if (response.content && response.content.length > 0) {
+          errorMessage = response.content.map((item) => item.text).join("\n");
+        }
+
+        throw new McpToolExecutionError(errorMessage);
+      }
+
+      return response;
     } catch (error) {
+      // Log the error but rethrow
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       console.error(`[McpHost] Error executing tool call ${toolName}:`, error);
-      return {
-        result: null,
-        error: errorMessage
-      };
+
+      // If it's already a McpToolExecutionError, just rethrow it
+      if (error instanceof McpToolExecutionError) {
+        throw error;
+      }
+
+      // Otherwise, wrap it in our custom error
+      throw new McpToolExecutionError(errorMessage);
     }
   }
 }
