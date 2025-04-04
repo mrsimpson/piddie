@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { MessageStatus, type Message } from "@piddie/chat-management";
-import ToolCall from "./ToolCall.vue";
+import ToolCalls from "./ToolCalls.vue";
 
 const props = defineProps<{
   message: Message;
@@ -58,18 +58,8 @@ function isTemporaryMessage(message: Message): boolean {
       {{ message.content }}
     </div>
 
-    <!-- Display tool calls if present -->
-    <div
-      v-if="message.tool_calls && message.tool_calls.length > 0"
-      class="tool-calls"
-    >
-      <div class="tool-calls-header">Tool Calls:</div>
-      <ToolCall
-        v-for="(toolCall, index) in message.tool_calls"
-        :key="index"
-        :tool-call="toolCall"
-      />
-    </div>
+    <!-- Display tool calls -->
+    <ToolCalls v-if="message.tool_calls" :tool-calls="message.tool_calls" />
   </div>
 </template>
 
@@ -128,18 +118,5 @@ function isTemporaryMessage(message: Message): boolean {
 .message-content {
   white-space: pre-wrap;
   word-break: break-word;
-}
-
-.tool-calls {
-  margin-top: 0.75rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--sl-color-neutral-200);
-}
-
-.tool-calls-header {
-  font-weight: bold;
-  font-size: 0.875rem;
-  margin-bottom: 0.5rem;
-  color: var(--sl-color-neutral-700);
 }
 </style>
