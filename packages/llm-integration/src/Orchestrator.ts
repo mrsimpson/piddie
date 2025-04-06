@@ -16,6 +16,21 @@ import { MessageStatus } from "@piddie/chat-management";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { LlmAdapter } from "./index";
 import { ActionsManager, type Tool } from "@piddie/actions";
+import { AgentManager } from "./AgentManager";
+
+/**
+ * Configuration for agentic behavior
+ */
+export interface AgentConfig {
+  /** Whether agentic behavior is enabled */
+  enabled: boolean;
+  /** Maximum number of agentic roundtrips before terminating */
+  maxRoundtrips: number;
+  /** Whether to continue automatically after tool execution */
+  autoContinue: boolean;
+  /** Custom system prompt to use for agentic communication */
+  customSystemPrompt?: string;
+}
 
 /**
  * A queue for managing tool calls in a FIFO manner with abort functionality
@@ -152,6 +167,8 @@ export class Orchestrator implements LlmAdapter {
   private MCP_TOOL_USE = "json mcp-tool-use";
   // Tool call queue for sequential execution
   private toolCallQueue: ToolCallQueue;
+  // Agent manager for handling agentic flow
+  private agentManager: AgentManager | undefined;
 
   /**
    * Creates a new Orchestrator
@@ -171,6 +188,16 @@ export class Orchestrator implements LlmAdapter {
     // Initialize the tool call queue with the execute tool function
     // This now expects the function to modify the toolCall in place by adding the result
     this.toolCallQueue = new ToolCallQueue(this.executeToolCall.bind(this));
+
+    // Initialize agent manager if chat manager is available
+    if (this.chatManager) {
+      this.agentManager = new AgentManager(
+        this.chatManager,
+        this.getLlmProvider.bind(this),
+        this.getCompletion.bind(this),
+        ""  // Will be set when a provider is used
+      );
+    }
   }
 
   /**
@@ -365,6 +392,43 @@ export class Orchestrator implements LlmAdapter {
   }
 
   /**
+   * Configure agentic behavior for a chat
+   * @param chatId The ID of the chat to configure
+   * @param config Configuration options
+   */
+  configureAgent(chatId: string, config: {
+    enabled: boolean;
+    maxRoundtrips?: number;
+    autoContinue?: boolean;
+    customSystemPrompt?: string;
+  }): void {
+    if (this.agentManager) {
+      this.agentManager.configureAgent(chatId, config);
+    } else {
+      console.warn("[Orchestrator] Agent manager not available, cannot configure agent");
+    }
+  }
+
+  /**
+   * Reset agentic context for a chat
+   * @param chatId The ID of the chat to reset
+   */
+  resetAgent(chatId: string): void {
+    if (this.agentManager) {
+      this.agentManager.resetAgent(chatId);
+    }
+  }
+
+  /**
+   * Check if agent is enabled for a chat
+   * @param chatId The ID of the chat to check
+   * @returns True if agent is enabled, false otherwise
+   */
+  isAgentEnabled(chatId: string): boolean {
+    return this.agentManager ? this.agentManager.isAgentEnabled(chatId) : false;
+  }
+
+  /**
    * Enhances a message with chat history and tools
    * @param message The message to enhance
    * @returns The enhanced message
@@ -384,9 +448,31 @@ export class Orchestrator implements LlmAdapter {
         message.assistantMessageId
       );
 
-      // Add chat history to the message
-      if (chatHistory.length > 0) {
-        enhancedMessage.messages = chatHistory;
+      // Check if this is part of an agentic flow with tool call results to process
+      let systemMessage: string | undefined;
+      if (this.agentManager) {
+        systemMessage = this.agentManager.createToolResultSystemMessage(message.chatId);
+      }
+
+      if (systemMessage) {
+        // Add the system message with tool results to the beginning of the history
+        const systemMessageObj = {
+          role: "system",
+          content: systemMessage
+        };
+
+        if (chatHistory.length > 0) {
+          enhancedMessage.messages = [systemMessageObj, ...chatHistory];
+        } else {
+          enhancedMessage.messages = [systemMessageObj];
+        }
+
+        console.log(`[Orchestrator] Added tool results system message for agentic flow`);
+      } else {
+        // Regular flow - just add the chat history
+        if (chatHistory.length > 0) {
+          enhancedMessage.messages = chatHistory;
+        }
       }
 
       // Add tools to the message if any were retrieved
@@ -416,6 +502,43 @@ export class Orchestrator implements LlmAdapter {
     }
 
     return enhancedMessage;
+  }
+
+  /**
+   * Formats tool calls for inclusion in a system message
+   * @param toolCalls The tool calls to format
+   * @returns Formatted string representation of tool calls and results
+   */
+  private formatToolCallsForSystemMessage(toolCalls: ToolCall[]): string {
+    return toolCalls.map(toolCall => {
+      // Format function name and arguments
+      const toolName = toolCall.function.name;
+      let args = "";
+
+      if (typeof toolCall.function.arguments === "string") {
+        try {
+          args = JSON.stringify(JSON.parse(toolCall.function.arguments), null, 2);
+        } catch {
+          args = toolCall.function.arguments;
+        }
+      } else {
+        args = JSON.stringify(toolCall.function.arguments || {}, null, 2);
+      }
+
+      // Format result
+      let resultFormatted = "No result available";
+      if (toolCall.result) {
+        const status = toolCall.result.status;
+        const value = typeof toolCall.result.value === "object"
+          ? JSON.stringify(toolCall.result.value, null, 2)
+          : String(toolCall.result.value);
+
+        resultFormatted = `${status.toUpperCase()}: ${value}`;
+      }
+
+      // Return formatted tool call
+      return `Tool: ${toolName}\nArguments: ${args}\nResult: ${resultFormatted}`;
+    }).join("\n\n");
   }
 
   /**
@@ -672,6 +795,7 @@ export class Orchestrator implements LlmAdapter {
 
         // Emit the result (without appending to content)
         emitToolResult(toolName, toolCall);
+
         return true;
       } catch (error) {
         console.error(
@@ -881,27 +1005,27 @@ export class Orchestrator implements LlmAdapter {
         // Update the message with the full text and tool calls
         try {
           // Update message in chat manager if available
-          if (this.chatManager) {
-            await this.updateMessageContent(
+          if (this.chatManager && toolCalls.length > 0) {
+            await this.updateMessageToolCalls(
               message.chatId,
               message.id,
-              fullContent
+              toolCalls
             );
 
-            if (toolCalls.length > 0) {
-              await this.updateMessageToolCalls(
-                message.chatId,
-                message.id,
-                toolCalls
-              );
+            // Handle agentic flow if enabled
+            if (this.agentManager && this.agentManager.isAgentEnabled(message.chatId)) {
+              console.log(`[Orchestrator] Agent is enabled for chat ${message.chatId}, processing tool calls`);
+              await this.agentManager.processToolCalls(message.chatId, message.id, toolCalls);
+            } else {
+              console.log(`[Orchestrator] Agent is NOT enabled for chat ${message.chatId}, skipping tool call processing`);
             }
-
-            await this.updateMessageStatus(
-              message.chatId,
-              message.id,
-              MessageStatus.SENT
-            );
           }
+
+          await this.updateMessageStatus(
+            message.chatId,
+            message.id,
+            MessageStatus.SENT
+          );
         } catch (error) {
           console.error("[Orchestrator] Error updating message:", error);
         }
@@ -990,6 +1114,14 @@ export class Orchestrator implements LlmAdapter {
               message.id,
               toolCalls
             );
+
+            // Handle agentic flow if enabled
+            if (this.agentManager && this.agentManager.isAgentEnabled(message.chatId)) {
+              console.log(`[Orchestrator] Agent is enabled for chat ${message.chatId}, processing tool calls`);
+              await this.agentManager.processToolCalls(message.chatId, message.id, toolCalls);
+            } else {
+              console.log(`[Orchestrator] Agent is NOT enabled for chat ${message.chatId}, skipping tool call processing`);
+            }
           }
         } catch (error) {
           console.error("[Orchestrator] Error updating message:", error);

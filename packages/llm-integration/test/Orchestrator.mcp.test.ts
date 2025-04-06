@@ -17,6 +17,7 @@ import type {
 import { MessageStatus } from "@piddie/chat-management";
 import { EventEmitter } from "@piddie/shared-types";
 import { ActionsManager } from "@piddie/actions";
+import { AgentManager } from "../src/AgentManager";
 
 // Mock the ActionsManager
 vi.mock("@piddie/actions", () => {
@@ -90,6 +91,24 @@ vi.mock("@piddie/actions", () => {
   };
 });
 
+// Mock the AgentManager
+vi.mock("../src/AgentManager", () => {
+  return {
+    AgentManager: vi.fn().mockImplementation(() => {
+      return {
+        configureAgent: vi.fn(),
+        resetAgent: vi.fn(),
+        isAgentEnabled: vi.fn().mockReturnValue(false), // Default to false for most tests
+        getAgentContext: vi.fn(),
+        processToolCalls: vi.fn(),
+        continueChatWithToolResults: vi.fn(),
+        createToolResultSystemMessage: vi.fn(),
+        formatToolCallsForSystemMessage: vi.fn()
+      };
+    })
+  };
+});
+
 // Mock ChatManager for testing
 const createMockChatManager = (): ChatManager => {
   return {
@@ -133,6 +152,7 @@ describe("Orchestrator MCP Integration", () => {
   let mockChatManager: ChatManager;
   let mockMcpServer: MockMcpServer;
   let mockActionsManager: ActionsManager;
+  let mockAgentManager: AgentManager;
   let providerConfig: LlmProviderConfig;
 
   beforeEach(() => {
@@ -217,6 +237,9 @@ describe("Orchestrator MCP Integration", () => {
       mockChatManager,
       mockActionsManager
     );
+
+    // Get the mocked AgentManager instance
+    mockAgentManager = (orchestrator as any).agentManager;
 
     // Register provider
     orchestrator.registerLlmProvider(providerConfig);
@@ -1631,8 +1654,7 @@ describe("Orchestrator MCP Integration", () => {
       const completedMessage = await orchestrator.getCompletion(
         userMessage,
         assistantPlaceholder,
-        providerConfig,
-        true // useStreaming
+        providerConfig
       );
 
       // Verify tool was called
@@ -1693,8 +1715,7 @@ describe("Orchestrator MCP Integration", () => {
       const completedMessage = await orchestrator.getCompletion(
         userMessage,
         assistantPlaceholder,
-        providerConfig,
-        false // useStreaming
+        providerConfig
       );
 
       // Verify tool was called
@@ -1752,15 +1773,313 @@ describe("Orchestrator MCP Integration", () => {
 
       const emitter = await orchestrator.processMessageStream(message);
 
-      // Verify ActionsManager was used to execute the tool
+      // Wait for the stream to complete and all tool calls to be processed
+      await new Promise<void>((resolve) => {
+        emitter.on(LlmStreamEvent.END, (response) => {
+          expect(response.content).toContain("test_tool");
+          resolve();
+        });
+      });
+
+      // Now verify ActionsManager was used to execute the tool
       expect(mockActionsManager.executeToolCall).toHaveBeenCalledWith(
         "test_tool",
         { param1: "value1" }
       );
+    });
+  });
 
-      emitter.on(LlmStreamEvent.END, (response) => {
-        expect(response.content).toContain("test_tool");
+  // Add a new test suite for agent integration
+  describe("AgentManager Integration", () => {
+    it("should call agentManager.processToolCalls when tool calls are completed (native tools)", async () => {
+      // Configure the agent to be enabled for this test
+      (mockAgentManager.isAgentEnabled as ReturnType<typeof vi.fn>).mockReturnValue(true);
+
+      // Register tools
+      mockMcpServer.registerTool("test_tool", (args) => {
+        return {
+          result: `Executed test_tool with args: ${JSON.stringify(args)}`
+        };
       });
+
+      await orchestrator.registerMcpServer(mockMcpServer as any, "test-server");
+
+      // Configure mock client with native tool support
+      mockLlmClient.updateMockConfig({
+        supportsTools: true,
+        content: "Using test_tool"
+      });
+
+      // Override the streamMessage implementation to simulate exactly what we need
+      mockLlmClient.streamMessage = (message) => {
+        const emitter = new EventEmitter();
+
+        // Process asynchronously
+        setTimeout(() => {
+          // Emit a chunk with the tool call
+          const toolCallChunk = {
+            content: "Using test_tool",
+            tool_calls: [
+              {
+                function: {
+                  name: "test_tool",
+                  arguments: JSON.stringify({ param1: "value1" })
+                }
+              }
+            ],
+            isFinal: true
+          };
+
+          emitter.emit(LlmStreamEvent.DATA, toolCallChunk);
+
+          // Short delay before ending the stream to simulate real behavior
+          setTimeout(() => {
+            console.log(`[TEST] Emitting end event for chatId: ${message.chatId}`);
+            emitter.emit(LlmStreamEvent.END, {
+              content: "Completed",
+              isFinal: true
+            });
+          }, 50);
+        }, 10);
+
+        return emitter;
+      };
+
+      const message = {
+        id: "test-msg-1",
+        chatId: "chat-1", // Agent enabled for this chat
+        content: "Use test_tool",
+        role: "user" as ChatCompletionRole,
+        status: MessageStatus.SENT,
+        created: new Date(),
+        provider: "test"
+      };
+
+      // Clear tracking and mocks
+      vi.clearAllMocks();
+
+      // This should call the mock AgentManager's processToolCalls
+      const emitter = await orchestrator.processMessageStream(message);
+      await new Promise<void>((resolve) => {
+        emitter.on(LlmStreamEvent.END, () => {
+          setTimeout(resolve, 50); // Give a little extra time for all operations to complete
+        });
+      });
+
+      // Instead of checking capturedToolCalls.length, verify processToolCalls was called with the right arguments
+      expect(mockAgentManager.processToolCalls).toHaveBeenCalledWith(
+        "chat-1",
+        "test-msg-1",
+        expect.arrayContaining([
+          expect.objectContaining({
+            function: expect.objectContaining({
+              name: "test_tool"
+            })
+          })
+        ])
+      );
+    });
+
+    it("should call agentManager.processToolCalls when tool calls are completed (non-native tools)", async () => {
+      // Configure the agent to be enabled for this test
+      (mockAgentManager.isAgentEnabled as ReturnType<typeof vi.fn>).mockReturnValueOnce(true);
+
+      // Register tools
+      mockMcpServer.registerTool("test_tool", (args) => {
+        return {
+          result: `Executed test_tool with args: ${JSON.stringify(args)}`
+        };
+      });
+
+      await orchestrator.registerMcpServer(mockMcpServer as any, "test-server");
+
+      // Configure mock client with content-based tool support
+      mockLlmClient.updateMockConfig({
+        supportsTools: false,
+        toolCalls: [
+          {
+            function: {
+              name: "test_tool",
+              arguments: { param1: "value1" }
+            }
+          }
+        ],
+        content: "Using test_tool with ```json mcp-tool-use\n{\"name\":\"test_tool\",\"arguments\":{\"param1\":\"value1\"}}\n```"
+      });
+
+      const message = {
+        id: "msg-1",
+        chatId: "chat-1",
+        content: "Execute test_tool",
+        role: "user" as ChatCompletionRole,
+        status: MessageStatus.SENT,
+        created: new Date(),
+        provider: "test"
+      };
+
+      // Process message
+      const emitter = await orchestrator.processMessageStream(message);
+
+      // Wait for the stream to complete and all tool calls to be processed
+      await new Promise<void>((resolve) => {
+        emitter.on(LlmStreamEvent.END, () => {
+          resolve();
+        });
+      });
+
+      // Check if agentManager.processToolCalls was called with the expected arguments
+      expect(mockAgentManager.processToolCalls).toHaveBeenCalledWith(
+        "chat-1",
+        "msg-1",
+        [
+          expect.objectContaining({
+            function: {
+              name: "test_tool",
+              arguments: '{"param1":"value1"}'
+            }
+          })
+        ]
+      );
+    });
+
+    it("should enable agent behavior when configured and validate with isAgentEnabled", async () => {
+      // Initially the agent is not enabled for a new chat
+      (mockAgentManager.isAgentEnabled as ReturnType<typeof vi.fn>).mockReturnValue(false);
+      expect(orchestrator.isAgentEnabled("chat-2")).toBe(false);
+
+      // Configure the agent to be enabled
+      (mockAgentManager.isAgentEnabled as ReturnType<typeof vi.fn>).mockImplementation((chatId: string) => {
+        // Return true only for the specific chat we configure
+        console.log(`[TEST] isAgentEnabled called with chatId: ${chatId}, returning: ${chatId === "chat-2"}`);
+        return chatId === "chat-2";
+      });
+
+      // Configure agent for chat-2
+      orchestrator.configureAgent("chat-2", {
+        enabled: true,
+        maxRoundtrips: 5,
+        autoContinue: true
+      });
+
+      // Verify the agent is now enabled for this chat
+      expect(orchestrator.isAgentEnabled("chat-2")).toBe(true);
+      // And still disabled for other chats
+      expect(orchestrator.isAgentEnabled("chat-3")).toBe(false);
+
+      // Register a tool for testing
+      mockMcpServer.registerTool("config_test_tool", (args) => {
+        return {
+          result: `Executed config_test_tool with args: ${JSON.stringify(args)}`
+        };
+      });
+      await orchestrator.registerMcpServer(mockMcpServer as any, "test-server");
+
+      // Create a message for the enabled chat
+      const message = {
+        id: "msg-2",
+        chatId: "chat-2",
+        content: "Execute config_test_tool in chat with agent enabled",
+        role: "user" as ChatCompletionRole,
+        status: MessageStatus.SENT,
+        created: new Date(),
+        provider: "test"
+      };
+
+      // Store the original implementation
+      const originalStreamMessage = mockLlmClient.streamMessage;
+
+      // Override the streamMessage method for this test
+      mockLlmClient.streamMessage = (llmMessage) => {
+        const emitter = new EventEmitter();
+
+        // Use setTimeout to simulate async behavior
+        setTimeout(() => {
+          // Emit tool call in a DATA event
+          emitter.emit(LlmStreamEvent.DATA, {
+            content: "Using config_test_tool in enabled chat",
+            tool_calls: [{
+              function: {
+                name: "config_test_tool",
+                arguments: JSON.stringify({ param1: "from_enabled_chat" })
+              }
+            }],
+            isFinal: false
+          });
+
+          // Emit END event to complete the stream
+          setTimeout(() => {
+            emitter.emit(LlmStreamEvent.END, {
+              content: "Using config_test_tool in enabled chat",
+              tool_calls: [{
+                function: {
+                  name: "config_test_tool",
+                  arguments: JSON.stringify({ param1: "from_enabled_chat" })
+                }
+              }],
+              isFinal: true
+            });
+          }, 50);
+        }, 10);
+
+        return emitter;
+      };
+
+      try {
+        // Process message
+        const emitter = await orchestrator.processMessageStream(message);
+        await new Promise<void>((resolve) => {
+          emitter.on(LlmStreamEvent.END, () => {
+            // Add delay to ensure all async operations complete
+            setTimeout(resolve, 100);
+          });
+        });
+
+        // Verify that processToolCalls was called because agent is enabled
+        expect(mockAgentManager.processToolCalls).toHaveBeenCalledWith(
+          "chat-2",
+          "msg-2",
+          expect.arrayContaining([
+            expect.objectContaining({
+              function: expect.objectContaining({
+                name: "config_test_tool"
+              })
+            })
+          ])
+        );
+
+        // Reset the mocks and recreate our isAgentEnabled mock
+        vi.clearAllMocks();
+        (mockAgentManager.isAgentEnabled as ReturnType<typeof vi.fn>).mockImplementation((chatId: string) => {
+          console.log(`[TEST] isAgentEnabled called with chatId: ${chatId}, returning: ${chatId === "chat-2"}`);
+          return chatId === "chat-2"; // Only enabled for chat-2, not chat-3
+        });
+
+        // Create a message for a different chat where agent is not enabled
+        const message2 = {
+          id: "msg-3",
+          chatId: "chat-3", // Different chat ID where agent is not enabled
+          content: "Execute config_test_tool in chat with agent disabled",
+          role: "user" as ChatCompletionRole,
+          status: MessageStatus.SENT,
+          created: new Date(),
+          provider: "test"
+        };
+
+        // Process the message
+        const emitter2 = await orchestrator.processMessageStream(message2);
+        await new Promise<void>((resolve) => {
+          emitter2.on(LlmStreamEvent.END, () => {
+            // Add delay to ensure all async operations complete
+            setTimeout(resolve, 100);
+          });
+        });
+
+        // In this case, processToolCalls should not be called because the agent is not enabled
+        expect(mockAgentManager.processToolCalls).not.toHaveBeenCalled();
+      } finally {
+        // Restore the original implementation
+        mockLlmClient.streamMessage = originalStreamMessage;
+      }
     });
   });
 });
