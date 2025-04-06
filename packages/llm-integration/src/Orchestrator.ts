@@ -3,20 +3,36 @@ import type {
   LlmClient,
   LlmMessage,
   LlmProviderConfig,
-  LlmResponse,
   LlmStreamChunk
 } from "./types";
 import type {
   ChatManager,
   ToolCall,
-  Message,
-  ToolCallResult
-} from "@piddie/chat-management";
+  Message} from "@piddie/chat-management";
 import { MessageStatus } from "@piddie/chat-management";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { LlmAdapter } from "./index";
 import { ActionsManager, type Tool } from "@piddie/actions";
 import { AgentManager } from "./AgentManager";
+import { ToolCallQueue } from "./utils/ToolCallQueue";
+import { extractToolCallsFromPartialText } from "./utils/toolExtractor";
+import {
+  executeToolCall,
+  getToolCallId,
+  filterValidToolCalls,
+  processToolCall,
+  prepareAndEmitEndEvent
+} from "./utils/toolCallUtils";
+import {
+  updateMessageStatus,
+  updateMessageContent,
+  updateMessageToolCalls
+} from "./utils/chatMessageUpdateUtils";
+import {
+  enhanceMessageWithHistoryAndTools,
+  enhanceMessageWithSystemPrompt
+} from "./utils/messagePreparationUtils";
+import { compileSystemPrompt } from "./utils/systemPromptUtils";
 
 /**
  * Configuration for agentic behavior
@@ -33,138 +49,17 @@ export interface AgentConfig {
 }
 
 /**
- * A queue for managing tool calls in a FIFO manner with abort functionality
- */
-class ToolCallQueue {
-  private queue: Array<{
-    toolCall: ToolCall;
-    resolve: (result: unknown) => void;
-    reject: (error: unknown) => void;
-  }> = [];
-  private isProcessing = false;
-  private aborted = false;
-  private executeToolFn: (toolCall: ToolCall) => Promise<unknown>;
-
-  /**
-   * Creates a new ToolCallQueue
-   * @param executeToolFn Function to execute tool calls
-   */
-  constructor(executeToolFn: (toolCall: ToolCall) => Promise<unknown>) {
-    this.executeToolFn = executeToolFn;
-  }
-
-  /**
-   * Adds a tool call to the queue
-   * @param toolCall The tool call to add
-   * @returns A promise that resolves with the tool call itself (containing the result)
-   */
-  async enqueue(toolCall: ToolCall): Promise<ToolCall> {
-    // If the queue is aborted, reject immediately
-    if (this.aborted) {
-      return Promise.reject(new Error("Tool call queue has been aborted"));
-    }
-
-    // Return a promise that will be resolved when the tool call is executed
-    return new Promise((resolve, reject) => {
-      // Add the tool call to the queue
-      this.queue.push({
-        toolCall,
-        resolve: () => resolve(toolCall),
-        reject
-      });
-
-      // Start processing if not already doing so
-      if (!this.isProcessing) {
-        this.processNext();
-      }
-    });
-  }
-
-  /**
-   * Processes the next tool call in the queue
-   */
-  private async processNext(): Promise<void> {
-    // If the queue is empty or aborted, stop processing
-    if (this.queue.length === 0 || this.aborted) {
-      this.isProcessing = false;
-      return;
-    }
-
-    // Mark as processing
-    this.isProcessing = true;
-
-    // Get the next tool call from the queue
-    const { toolCall, resolve, reject } = this.queue.shift()!;
-
-    try {
-      // Execute the tool call
-      await this.executeToolFn(toolCall);
-      // Resolve the promise with the tool call itself (now containing the result)
-      resolve(toolCall);
-    } catch (error) {
-      // Reject the promise with the error
-      reject(error);
-    } finally {
-      // Process the next tool call
-      this.processNext();
-    }
-  }
-
-  /**
-   * Gets the number of pending tool calls in the queue
-   * @returns The number of pending tool calls
-   */
-  get pendingCount(): number {
-    return this.queue.length;
-  }
-
-  /**
-   * Checks if the queue is currently processing a tool call
-   * @returns True if the queue is processing, false otherwise
-   */
-  get isActive(): boolean {
-    return this.isProcessing;
-  }
-
-  /**
-   * Aborts all pending tool calls in the queue
-   */
-  abort(): void {
-    // Set the aborted flag
-    this.aborted = true;
-
-    // Reject all pending promises
-    for (const { reject } of this.queue) {
-      reject(new Error("Tool call aborted"));
-    }
-
-    // Clear the queue
-    this.queue = [];
-  }
-
-  /**
-   * Resets the queue to its initial state
-   */
-  reset(): void {
-    this.aborted = false;
-    this.isProcessing = false;
-    this.queue = [];
-  }
-}
-
-/**
  * Orchestrator for LLM interactions
  * Manages LLM providers and delegates tool operations to the ActionsManager
  */
 export class Orchestrator implements LlmAdapter {
   private llmProviders: Map<string, LlmProviderConfig> = new Map();
-  private actionsManager: ActionsManager;
   private client: LlmClient;
   private chatManager: ChatManager | undefined;
-  private toolsBuffer: Tool[] | null = null;
+  private actionsManager: ActionsManager;
   // Track executed tool calls to avoid duplicates
   private executedToolCalls = new Set<string>();
-  private MCP_TOOL_USE = "json mcp-tool-use";
+  public readonly MCP_TOOL_USE = "mcp-tool-use";
   // Tool call queue for sequential execution
   private toolCallQueue: ToolCallQueue;
   // Agent manager for handling agentic flow
@@ -186,8 +81,9 @@ export class Orchestrator implements LlmAdapter {
     this.actionsManager = actionsManager;
 
     // Initialize the tool call queue with the execute tool function
-    // This now expects the function to modify the toolCall in place by adding the result
-    this.toolCallQueue = new ToolCallQueue(this.executeToolCall.bind(this));
+    this.toolCallQueue = new ToolCallQueue(
+      (toolCall: ToolCall) => executeToolCall(toolCall, actionsManager)
+    );
 
     // Initialize agent manager if chat manager is available
     if (this.chatManager) {
@@ -223,7 +119,7 @@ export class Orchestrator implements LlmAdapter {
    * @returns True if the provider was unregistered, false if it wasn't registered
    */
   unregisterLlmProvider(name: string): boolean {
-    return this.llmProviders.delete(name);
+    return this.llmProviders.delete(name.toLowerCase());
   }
 
   /**
@@ -233,8 +129,6 @@ export class Orchestrator implements LlmAdapter {
    */
   async registerLocalMcpServer(server: McpServer, name: string): Promise<void> {
     await this.actionsManager.registerServer(server, name);
-    // Invalidate the tools buffer when registering a new server
-    this.toolsBuffer = null;
   }
 
   /**
@@ -261,10 +155,7 @@ export class Orchestrator implements LlmAdapter {
    * @returns True if the server was unregistered, false if it wasn't registered
    */
   unregisterMcpServer(name: string): boolean {
-    const result = this.actionsManager.unregisterServer(name);
-    // Invalidate the tools buffer when unregistering a server
-    this.toolsBuffer = null;
-    return result;
+    return this.actionsManager.unregisterServer(name);
   }
 
   /**
@@ -277,7 +168,6 @@ export class Orchestrator implements LlmAdapter {
     if (!provider || !provider.client) {
       return false;
     }
-
     return provider.client.checkToolSupport();
   }
 
@@ -286,109 +176,12 @@ export class Orchestrator implements LlmAdapter {
    * @returns A promise that resolves to an array of tools
    */
   private async getAvailableTools(): Promise<Tool[]> {
-    if (this.toolsBuffer === null) {
-      try {
-        this.toolsBuffer = await this.actionsManager.getAvailableTools();
-      } catch (error) {
-        console.error("Error listing tools:", error);
-        this.toolsBuffer = [];
-      }
-    }
-    return this.toolsBuffer || [];
-  }
-
-  /**
-   * Retrieves chat history for a message
-   * @param chatId The ID of the chat to retrieve history for
-   * @param assistantMessageId Optional ID of the assistant message to exclude from history
-   * @returns Array of messages in the format expected by the LLM
-   */
-  private async getChatHistory(
-    chatId: string,
-    assistantMessageId?: string
-  ): Promise<Array<{ role: string; content: string }>> {
-    if (!this.chatManager) {
+    try {
+      return await this.actionsManager.getAvailableTools();
+    } catch (error) {
+      console.error("[Orchestrator] Error listing tools:", error);
       return [];
     }
-
-    try {
-      const chat = await this.chatManager.getChat(chatId);
-      const history = chat.messages;
-
-      // Filter out the placeholder assistant message if it exists
-      const filteredHistory = assistantMessageId
-        ? history.filter(
-          (msg) => msg.id !== assistantMessageId || msg.content.trim() !== ""
-        )
-        : history;
-
-      // Map to the format expected by the LLM
-      const chatHistory = filteredHistory.map((msg) => ({
-        role: msg.role,
-        content: msg.content
-      }));
-
-      console.log(`Retrieved ${chatHistory.length} messages from chat history`);
-      return chatHistory;
-    } catch (error) {
-      console.error("Error retrieving chat history:", error);
-      // Continue without history rather than failing
-      return [];
-    }
-  }
-
-  /**
-   * Updates the status of a message
-   * @param chatId The ID of the chat containing the message
-   * @param messageId The ID of the message to update
-   * @param status The new status
-   */
-  private async updateMessageStatus(
-    chatId: string,
-    messageId: string,
-    status: MessageStatus
-  ): Promise<void> {
-    if (!this.chatManager) {
-      console.warn(
-        "[Orchestrator] No chat manager available to update message status"
-      );
-      return;
-    }
-
-    // Skip database updates for temporary messages (they're handled by the chat store)
-    if (messageId.startsWith("temp_")) {
-      console.log(
-        `[Orchestrator] Skipping database update for temporary message ${messageId}`
-      );
-      return;
-    }
-
-    try {
-      await this.chatManager.updateMessageStatus(chatId, messageId, status);
-    } catch (error) {
-      console.error(`Error updating message status for ${messageId}:`, error);
-    }
-  }
-
-  /**
-   * Updates the tool calls of a message
-   * @param chatId The chat ID
-   * @param messageId The message ID
-   * @param toolCalls The tool calls
-   */
-  private updateMessageToolCalls(
-    chatId: string,
-    messageId: string,
-    toolCalls: ToolCall[]
-  ) {
-    if (!this.chatManager) {
-      return;
-    }
-
-    // Use the chat manager to update the message
-    this.chatManager.updateMessage(chatId, messageId, {
-      tool_calls: toolCalls
-    });
   }
 
   /**
@@ -436,210 +229,15 @@ export class Orchestrator implements LlmAdapter {
   private async enhanceMessageWithHistoryAndTools(
     message: LlmMessage
   ): Promise<LlmMessage> {
-    const enhancedMessage: LlmMessage = { ...message };
+    // Get available tools first
+    const availableTools = await this.getAvailableTools();
 
-    try {
-      // Get available tools
-      const tools = await this.getAvailableTools();
-
-      // Get chat history
-      const chatHistory = await this.getChatHistory(
-        message.chatId,
-        message.assistantMessageId
-      );
-
-      // Check if this is part of an agentic flow with tool call results to process
-      let systemMessage: string | undefined;
-      if (this.agentManager) {
-        systemMessage = this.agentManager.createToolResultSystemMessage(message.chatId);
-      }
-
-      if (systemMessage) {
-        // Add the system message with tool results to the beginning of the history
-        const systemMessageObj = {
-          role: "system",
-          content: systemMessage
-        };
-
-        if (chatHistory.length > 0) {
-          enhancedMessage.messages = [systemMessageObj, ...chatHistory];
-        } else {
-          enhancedMessage.messages = [systemMessageObj];
-        }
-
-        console.log(`[Orchestrator] Added tool results system message for agentic flow`);
-      } else {
-        // Regular flow - just add the chat history
-        if (chatHistory.length > 0) {
-          enhancedMessage.messages = chatHistory;
-        }
-      }
-
-      // Add tools to the message if any were retrieved
-      if (tools.length > 0) {
-        enhancedMessage.tools = tools.map((tool) => ({
-          type: "function",
-          function: {
-            name: tool.name,
-            description: tool.description || "",
-            parameters: {
-              type: "object",
-              properties: tool.inputSchema.properties || {},
-              ...(tool.inputSchema.type !== "object"
-                ? { type: tool.inputSchema.type }
-                : {})
-            }
-          }
-        }));
-      } else {
-        enhancedMessage.tools = [];
-      }
-    } catch (error) {
-      console.error("Error enhancing message with history and tools:", error);
-      // Ensure we at least have an empty history if there was an error
-      enhancedMessage.messages = enhancedMessage.messages || [];
-      enhancedMessage.tools = enhancedMessage.tools || [];
-    }
-
-    return enhancedMessage;
-  }
-
-  /**
-   * Formats tool calls for inclusion in a system message
-   * @param toolCalls The tool calls to format
-   * @returns Formatted string representation of tool calls and results
-   */
-  private formatToolCallsForSystemMessage(toolCalls: ToolCall[]): string {
-    return toolCalls.map(toolCall => {
-      // Format function name and arguments
-      const toolName = toolCall.function.name;
-      let args = "";
-
-      if (typeof toolCall.function.arguments === "string") {
-        try {
-          args = JSON.stringify(JSON.parse(toolCall.function.arguments), null, 2);
-        } catch {
-          args = toolCall.function.arguments;
-        }
-      } else {
-        args = JSON.stringify(toolCall.function.arguments || {}, null, 2);
-      }
-
-      // Format result
-      let resultFormatted = "No result available";
-      if (toolCall.result) {
-        const status = toolCall.result.status;
-        const value = typeof toolCall.result.value === "object"
-          ? JSON.stringify(toolCall.result.value, null, 2)
-          : String(toolCall.result.value);
-
-        resultFormatted = `${status.toUpperCase()}: ${value}`;
-      }
-
-      // Return formatted tool call
-      return `Tool: ${toolName}\nArguments: ${args}\nResult: ${resultFormatted}`;
-    }).join("\n\n");
-  }
-
-  /**
-   * Execute a tool call by delegating to the ActionsManager
-   * @param toolCall The tool call to execute
-   * @returns The result of the tool call
-   */
-  private async executeToolCall(toolCall: ToolCall): Promise<ToolCallResult> {
-    if (!toolCall || !toolCall.function || !toolCall.function.name) {
-      throw new Error("Invalid tool call");
-    }
-
-    const toolName = toolCall.function.name;
-    const toolArgs = toolCall.function.arguments || {};
-    let parsedArgs;
-
-    try {
-      // If arguments are provided as a string, parse them to an object
-      if (typeof toolArgs === "string") {
-        parsedArgs = JSON.parse(toolArgs);
-      } else {
-        parsedArgs = toolArgs;
-      }
-
-      // Call the tool via the ActionsManager
-      console.log(`[Orchestrator] Executing tool call: ${toolName}`);
-      const result = await this.actionsManager.executeToolCall(
-        toolName,
-        parsedArgs
-      );
-
-      // Attach the result to the tool call
-      toolCall.result = {
-        status: result.status,
-        value: result.value,
-        contentType: result.contentType,
-        timestamp: result.timestamp
-      };
-
-      console.log(
-        `[Orchestrator] Tool call executed successfully: ${toolName}`,
-        result
-      );
-      return result;
-    } catch (error) {
-      // Attach error result to the tool call
-      toolCall.result = {
-        status: "error",
-        value: error instanceof Error ? error.message : String(error),
-        contentType: "text/plain",
-        timestamp: new Date()
-      };
-
-      // Return the error to be handled by the caller
-      console.error(`[Orchestrator] Error executing tool call:`, error);
-      throw error;
-    }
-  }
-
-  /**
-   * Executes a tool call but wraps the result in a structure
-   * that includes both the result and any error that occurred
-   * This is a synchronous version to support the non-streaming flow
-   * @param toolCall The tool call to execute
-   */
-  private executeToolCallWrapper(toolCall: {
-    function: {
-      name: string;
-      arguments: Record<string, unknown>;
-    };
-  }): { result: unknown; error?: string } {
-    try {
-      // Validate the tool call
-      if (!toolCall.function || !toolCall.function.name) {
-        return {
-          result: null,
-          error: "Invalid tool call: missing function name"
-        };
-      }
-
-      // Extract the name and arguments
-      const { name } = toolCall.function;
-
-      // The actionsManager.executeToolCall returns a Promise, but we need a synchronous result
-      // In the non-streaming flow, we should already have the result cached from the streaming execution
-      // This is a fallback that will return a placeholder
-      return {
-        result: {
-          status: "success",
-          value: `Tool ${name} was executed`,
-          contentType: "text/plain",
-          timestamp: new Date()
-        }
-      };
-    } catch (error) {
-      // Return the error in a structured format
-      return {
-        result: null,
-        error: error instanceof Error ? error.message : String(error)
-      };
-    }
+    return enhanceMessageWithHistoryAndTools(
+      message,
+      this.chatManager,
+      this.agentManager,
+      availableTools
+    );
   }
 
   /**
@@ -702,116 +300,29 @@ export class Orchestrator implements LlmAdapter {
       emitter.emit("tool_result", { toolCall });
     };
 
-    // Helper function to generate a consistent ID for a tool call
-    const getToolCallId = (toolCall: ToolCall): string => {
-      if (!toolCall || !toolCall.function) return "";
-
-      const args =
-        typeof toolCall.function.arguments === "string"
-          ? toolCall.function.arguments
-          : JSON.stringify(toolCall.function.arguments || {});
-
-      return `${toolCall.function.name}-${args}`;
-    };
-
     // Helper function to execute a tool call and emit the result
     const executeAndEmitToolCall = async (
       toolCall: ToolCall
     ): Promise<boolean> => {
-      if (!toolCall || !toolCall.function || !toolCall.function.name) {
-        console.log(`[Orchestrator] Invalid tool call, skipping execution`);
-        return false;
-      }
+      const wasProcessed = await processToolCall(
+        toolCall,
+        processedToolCallIds,
+        toolCalls,
+        this.toolCallQueue
+      );
 
-      const toolName = toolCall.function.name;
+      if (wasProcessed && toolCall.result) {
+        // Add to global tracking
+        this.executedToolCalls.add(getToolCallId(toolCall));
 
-      // Validate that arguments are in a usable form before execution
-      // This prevents executing incomplete tool calls
-      try {
-        // Verify we can parse the arguments if they're a string
-        if (typeof toolCall.function.arguments === "string") {
-          try {
-            JSON.parse(toolCall.function.arguments);
-          } catch (parseError) {
-            console.log(
-              `[Orchestrator] Tool call arguments are not valid JSON, skipping execution: ${toolName}`,
-              parseError
-            );
-            return false;
-          }
-        } else if (
-          !toolCall.function.arguments ||
-          typeof toolCall.function.arguments !== "object"
-        ) {
-          console.log(
-            `[Orchestrator] Tool call has invalid arguments format, skipping execution: ${toolName}`
-          );
-          return false;
-        }
-      } catch (error) {
-        console.error(
-          `[Orchestrator] Error validating tool call arguments: ${toolName}`,
-          error
-        );
-        return false;
-      }
-
-      // Create a unique ID for this tool call
-      const toolCallId = getToolCallId(toolCall);
-
-      // Skip if already executed
-      if (processedToolCallIds.has(toolCallId)) {
-        console.log(
-          `[Orchestrator] Skipping already executed tool: ${toolName}`
-        );
-        return false;
-      }
-
-      // Mark as executed
-      this.executedToolCalls.add(toolCallId);
-      processedToolCallIds.add(toolCallId);
-
-      try {
-        console.log(
-          `[Orchestrator] Starting execution of tool call: ${toolName}`
-        );
-
-        // Enqueue tool call for sequential processing - now returns the toolCall with result
-        await this.toolCallQueue.enqueue(toolCall);
-
-        console.log(`[Orchestrator] Tool call execution complete: ${toolName}`);
+        // Emit the result
+        emitToolResult(toolCall.function.name, toolCall);
 
         // Emit a custom event for tracking tool execution
         emitter.emit("tool_executed", { toolCall });
-
-        // Add to tracking
-        const existingToolCall = toolCalls.find(
-          (tc) => getToolCallId(tc) === toolCallId
-        );
-
-        if (!existingToolCall) {
-          toolCalls.push(toolCall);
-        }
-
-        // Emit the result (without appending to content)
-        emitToolResult(toolName, toolCall);
-
-        return true;
-      } catch (error) {
-        console.error(
-          `[Orchestrator] Error executing tool call: ${toolName}`,
-          error
-        );
-
-        // The error result is already attached to the toolCall object in executeToolCall
-
-        // Emit a custom event for tracking tool execution
-        emitter.emit("tool_executed", { toolCall });
-
-        // Emit the result (which will be an error) without appending to content
-        emitToolResult(toolName, toolCall);
-        return true;
       }
+
+      return wasProcessed;
     };
 
     // Process all tool calls from a chunk, handling partial calls appropriately
@@ -823,58 +334,38 @@ export class Orchestrator implements LlmAdapter {
       );
 
       // Filter out incomplete tool calls to avoid execution failures
-      const completeToolCalls = chunkToolCalls.filter((toolCall) => {
-        try {
-          if (!toolCall.function || !toolCall.function.name) {
-            console.log(
-              `[Orchestrator] Skipping invalid tool call: missing name`
-            );
-            return false;
-          }
-
-          const args = toolCall.function.arguments;
-          // For string arguments, try to parse as JSON
-          if (typeof args === "string") {
-            try {
-              JSON.parse(args);
-            } catch {
-              console.log(
-                `[Orchestrator] Skipping incomplete tool call: ${toolCall.function.name} (invalid JSON arguments)`
-              );
-              return false;
-            }
-          } else if (!args || typeof args !== "object") {
-            console.log(
-              `[Orchestrator] Skipping incomplete tool call: ${toolCall.function.name} (missing arguments)`
-            );
-            return false;
-          }
-
-          return true;
-        } catch (error) {
-          console.error("[Orchestrator] Error filtering tool calls:", error);
-          return false;
-        }
-      });
-
-      if (completeToolCalls.length < chunkToolCalls.length) {
-        console.log(
-          `[Orchestrator] Filtered out ${chunkToolCalls.length - completeToolCalls.length
-          } incomplete tool calls`
-        );
-      }
+      const completeToolCalls = filterValidToolCalls(chunkToolCalls);
 
       for (const toolCall of completeToolCalls) {
         await executeAndEmitToolCall(toolCall);
       }
     };
 
-    // Helper function to process extracted tool calls (simplified now)
+    // Helper function to process extracted tool calls
     const processExtractedToolCalls = async (
       extractedToolCalls: ToolCall[]
     ): Promise<void> => {
-      // Use the same processing flow as chunk tool calls
       await processChunkToolCalls(extractedToolCalls);
+    };
+
+    // Helper function to update messages with tool calls and handle agent processing
+    const updateMessageWithToolCalls = async () => {
+      if (this.chatManager && toolCalls.length > 0) {
+        updateMessageToolCalls(
+          message.chatId,
+          message.id,
+          toolCalls,
+          this.chatManager
+        );
+
+        // Handle agentic flow if enabled
+        if (this.agentManager && this.agentManager.isAgentEnabled(message.chatId)) {
+          console.log(`[Orchestrator] Agent is enabled for chat ${message.chatId}, processing tool calls`);
+          await this.agentManager.processToolCalls(message.chatId, message.id, toolCalls);
+        } else {
+          console.log(`[Orchestrator] Agent is NOT enabled for chat ${message.chatId}, skipping tool call processing`);
+        }
+      }
     };
 
     if (!supportsTools) {
@@ -892,19 +383,15 @@ export class Orchestrator implements LlmAdapter {
           })}`
         );
 
-        // We need to ensure tools are executed sequentially
         // Process any tool calls in this chunk BEFORE emitting to avoid race conditions
         if (chunk.tool_calls && chunk.tool_calls.length > 0) {
           console.log(
             `[Orchestrator] Processing ${chunk.tool_calls.length} chunk tool calls first`
           );
-
-          // Process each tool call in sequence
           await processChunkToolCalls(chunk.tool_calls);
         }
 
         // Emit the chunk immediately to ensure UI updates without delay
-        // This ensures content appears in real-time
         emitter.emit("data", chunk);
         if (onChunk) onChunk(chunk);
 
@@ -912,12 +399,10 @@ export class Orchestrator implements LlmAdapter {
         if (chunk.content) {
           fullContent += chunk.content;
 
-          // Check for complete tool calls in the accumulated content
-          // This happens after emitting the chunk to avoid delaying UI updates
+          // Extract and process any tool calls from accumulated content
           const { content, extractedToolCalls } =
             this.extractToolCallsFromPartialText(fullContent);
 
-          // If we found complete tool calls, update the accumulated content
           if (extractedToolCalls.length > 0) {
             console.log(
               `[Orchestrator] Extracted ${extractedToolCalls.length} tool calls from text`
@@ -927,8 +412,6 @@ export class Orchestrator implements LlmAdapter {
             // Add the extracted tool calls to our tracking array
             for (const extractedToolCall of extractedToolCalls) {
               const toolCallId = getToolCallId(extractedToolCall);
-
-              // Only add if not already in toolCalls array
               if (!toolCalls.some((tc) => getToolCallId(tc) === toolCallId)) {
                 console.log(
                   `[Orchestrator] Adding extracted tool call to tracking: ${extractedToolCall.function.name}`
@@ -937,7 +420,6 @@ export class Orchestrator implements LlmAdapter {
               }
             }
 
-            // Process extracted tool calls using the same flow
             await processExtractedToolCalls(extractedToolCalls);
           }
         }
@@ -945,8 +427,6 @@ export class Orchestrator implements LlmAdapter {
 
       // Stream the message with the wrapped callback
       const originalEmitter = await this.client.streamMessage(enhancedMessage);
-
-      // Add data event handler with the wrapped callback
       originalEmitter.on("data", async (data: unknown) => {
         await wrappedOnChunk(data);
       });
@@ -955,26 +435,20 @@ export class Orchestrator implements LlmAdapter {
       originalEmitter.on("end", async (finalData: LlmStreamChunk) => {
         console.log("[Orchestrator] Stream ended");
 
-        // Check for explicit tool_calls in the finalData
-        if (
-          finalData &&
-          finalData.tool_calls &&
-          finalData.tool_calls.length > 0
-        ) {
+        // Process any explicit tool_calls in finalData
+        if (finalData?.tool_calls && finalData.tool_calls.length > 0) {
           console.log(
             `[Orchestrator] Processing ${finalData.tool_calls.length} tool calls from final data`
           );
-
-          // Process the tool calls
           await processChunkToolCalls(finalData.tool_calls);
         }
 
-        // Check for tool calls embedded in content
-        if (finalData && finalData.content) {
+        // Update content with final data if available
+        if (finalData?.content) {
           fullContent = finalData.content;
         }
 
-        // Optionally extract and process any remaining tool calls from the accumulated content
+        // Extract and process any remaining tool calls from final content
         const { extractedToolCalls } = this.extractToolCallsFromPartialText(
           fullContent,
           true // isFinal
@@ -985,11 +459,8 @@ export class Orchestrator implements LlmAdapter {
             `[Orchestrator] Extracted ${extractedToolCalls.length} remaining tool calls from final content`
           );
 
-          // Add the extracted tool calls to our tracking array
           for (const extractedToolCall of extractedToolCalls) {
             const toolCallId = getToolCallId(extractedToolCall);
-
-            // Only add if not already in toolCalls array
             if (!toolCalls.some((tc) => getToolCallId(tc) === toolCallId)) {
               console.log(
                 `[Orchestrator] Adding final extracted tool call to tracking: ${extractedToolCall.function.name}`
@@ -998,82 +469,51 @@ export class Orchestrator implements LlmAdapter {
             }
           }
 
-          // Process the extracted tool calls
           await processExtractedToolCalls(extractedToolCalls);
         }
 
-        // Update the message with the full text and tool calls
+        // Update message with tool calls and process agent if enabled
         try {
-          // Update message in chat manager if available
-          if (this.chatManager && toolCalls.length > 0) {
-            await this.updateMessageToolCalls(
-              message.chatId,
-              message.id,
-              toolCalls
-            );
+          // Ensure we wait for the update to complete before ending
+          await updateMessageWithToolCalls();
 
-            // Handle agentic flow if enabled
-            if (this.agentManager && this.agentManager.isAgentEnabled(message.chatId)) {
-              console.log(`[Orchestrator] Agent is enabled for chat ${message.chatId}, processing tool calls`);
-              await this.agentManager.processToolCalls(message.chatId, message.id, toolCalls);
-            } else {
-              console.log(`[Orchestrator] Agent is NOT enabled for chat ${message.chatId}, skipping tool call processing`);
-            }
-          }
+          // Add small delay to ensure agent processing completes
+          await new Promise(resolve => setTimeout(resolve, 10));
 
-          await this.updateMessageStatus(
+          updateMessageStatus(
             message.chatId,
             message.id,
-            MessageStatus.SENT
+            MessageStatus.SENT,
+            this.chatManager
           );
         } catch (error) {
           console.error("[Orchestrator] Error updating message:", error);
         }
 
-        // Ensure any pending tool calls are completed before emitting the end event
-        if (
-          this.toolCallQueue.isActive ||
-          this.toolCallQueue.pendingCount > 0
-        ) {
-          console.log(
-            "[Orchestrator] Waiting for pending tool calls to complete before ending stream"
-          );
-
-          // Wait a short period for tool calls to complete
-          await new Promise((resolve) => setTimeout(resolve, 100));
-        }
-
         // Emit end event after all tool calls have been executed
-        console.log(
-          "[Orchestrator] Emitting end event after executing all tool calls"
-        );
-        emitter.emit(
-          "end",
-          finalData || {
-            id: `response-${Date.now()}`,
-            content: fullContent,
-            tool_calls: toolCalls
-          }
+        await prepareAndEmitEndEvent(
+          emitter,
+          this.toolCallQueue,
+          finalData,
+          toolCalls,
+          fullContent
         );
       });
 
       // Handle error event
       originalEmitter.on("error", (error: unknown) => {
-        // Abort any pending tool calls
         this.toolCallQueue.abort();
-
         console.error("[Orchestrator] Stream error:", error);
         emitter.emit("error", error);
       });
     } else {
-      // If the provider supports tools natively, process each chunk
+      // Handle native tool support
       const originalEmitter = await this.client.streamMessage(enhancedMessage);
 
-      // Add data event handler with synchronous processing
+      // Process data chunks
       originalEmitter.on("data", async (data: unknown) => {
         try {
           const chunk = data as LlmStreamChunk;
-
           console.log(
             `[Orchestrator] NATIVE: Received chunk: ${JSON.stringify({
               content:
@@ -1084,17 +524,15 @@ export class Orchestrator implements LlmAdapter {
             })}`
           );
 
-          // Process tool calls BEFORE emitting the chunk (to maintain correct order)
+          // Process tool calls before emitting
           if (chunk.tool_calls && chunk.tool_calls.length > 0) {
             console.log(
               `[Orchestrator] Native tool support: Processing ${chunk.tool_calls.length} tools from chunk`
             );
-
-            // Process each tool call SEQUENTIALLY
             await processChunkToolCalls(chunk.tool_calls);
           }
 
-          // Forward chunk to client after processing any tools
+          // Forward chunk to client
           emitter.emit("data", chunk);
           if (onChunk) onChunk(chunk);
         } catch (error) {
@@ -1106,55 +544,25 @@ export class Orchestrator implements LlmAdapter {
       originalEmitter.on("end", async (data: unknown) => {
         console.log("[Orchestrator] Stream ended");
 
-        // Update message in chat manager if available
+        // Update message with tool calls and process agent if enabled
         try {
-          if (this.chatManager && toolCalls.length > 0) {
-            await this.updateMessageToolCalls(
-              message.chatId,
-              message.id,
-              toolCalls
-            );
-
-            // Handle agentic flow if enabled
-            if (this.agentManager && this.agentManager.isAgentEnabled(message.chatId)) {
-              console.log(`[Orchestrator] Agent is enabled for chat ${message.chatId}, processing tool calls`);
-              await this.agentManager.processToolCalls(message.chatId, message.id, toolCalls);
-            } else {
-              console.log(`[Orchestrator] Agent is NOT enabled for chat ${message.chatId}, skipping tool call processing`);
-            }
-          }
+          await updateMessageWithToolCalls();
         } catch (error) {
           console.error("[Orchestrator] Error updating message:", error);
         }
 
-        // Ensure any pending tool calls are completed before emitting the end event
-        if (
-          this.toolCallQueue.isActive ||
-          this.toolCallQueue.pendingCount > 0
-        ) {
-          console.log(
-            "[Orchestrator] Waiting for pending tool calls to complete before ending stream"
-          );
-
-          // Wait a short period for tool calls to complete
-          await new Promise((resolve) => setTimeout(resolve, 100));
-        }
-
-        // Emit end event after all tool calls have been executed
-        console.log(
-          "[Orchestrator] Emitting end event after executing all tool calls"
+        // Emit end event
+        await prepareAndEmitEndEvent(
+          emitter,
+          this.toolCallQueue,
+          data as LlmStreamChunk,
+          toolCalls
         );
-        emitter.emit("end", {
-          ...(data as LlmStreamChunk),
-          tool_calls: toolCalls
-        });
       });
 
       // Handle error event
       originalEmitter.on("error", (error: unknown) => {
-        // Abort any pending tool calls
         this.toolCallQueue.abort();
-
         console.error("[Orchestrator] Stream error:", error);
         emitter.emit("error", error);
       });
@@ -1173,138 +581,7 @@ export class Orchestrator implements LlmAdapter {
     text: string,
     isFinal: boolean = false
   ): { content: string; extractedToolCalls: ToolCall[] } {
-    // Skip extraction for non-final chunks if text is too short to contain a complete tool call
-    // This optimization prevents unnecessary regex processing on small chunks
-    if (
-      !isFinal &&
-      text.length < 50 &&
-      !text.includes("<tool>") &&
-      !text.includes(`<${this.MCP_TOOL_USE}>`)
-    ) {
-      return { content: text, extractedToolCalls: [] };
-    }
-
-    const extractedToolCalls: ToolCall[] = [];
-    let updatedContent = text;
-
-    // MCP tool use format: ```json mcp-tool-use>...```
-    // Only extract complete tool calls that have both opening and closing ```
-    const completeToolCallRegex = new RegExp(
-      `\`\`\`${this.MCP_TOOL_USE}\n(.*?)\n\`\`\``,
-      "gs"
-    );
-
-    let match;
-    while ((match = completeToolCallRegex.exec(text)) !== null) {
-      try {
-        if (match[1]) {
-          const toolJson = match[1].trim();
-
-          // Only attempt to parse if the JSON appears to be complete
-          if (toolJson.includes('"name"') && toolJson.includes('"arguments"')) {
-            try {
-              const tool = JSON.parse(toolJson);
-
-              // Verify the tool has required fields before adding it
-              if (tool && tool.name) {
-                extractedToolCalls.push({
-                  function: {
-                    name: tool.name,
-                    arguments:
-                      typeof tool.arguments === "string"
-                        ? tool.arguments
-                        : JSON.stringify(tool.arguments || {})
-                  }
-                });
-
-                // Log successfully extracted tool call
-                console.log(
-                  `[Orchestrator] Successfully extracted tool call: ${tool.name}`
-                );
-              }
-            } catch (parseError) {
-              // Only log parsing errors if this is the final chunk
-              if (isFinal) {
-                console.error("Error parsing MCP tool call:", parseError);
-              }
-              // Skip this tool call if parsing fails - it might be incomplete
-              continue;
-            }
-          }
-        }
-      } catch (error) {
-        console.error("Error processing MCP tool call:", error);
-      }
-    }
-
-    // Remove complete tool calls from the content
-    if (extractedToolCalls.length > 0) {
-      // Remove MCP format tools
-      updatedContent = updatedContent.replace(completeToolCallRegex, "");
-    }
-
-    // If this is the final chunk, try to extract incomplete tool calls
-    if (isFinal) {
-      // Check for incomplete MCP tool calls - this is a best effort to extract tools from partial content
-      const incompleteMcpToolRegex = new RegExp(
-        `\`\`\`${this.MCP_TOOL_USE}\n(.*?)(?:\`\`\`|$)`,
-        "s"
-      );
-      const incompleteMcpMatch = incompleteMcpToolRegex.exec(updatedContent);
-
-      if (incompleteMcpMatch && incompleteMcpMatch[1]) {
-        try {
-          const toolJson = incompleteMcpMatch[1].trim();
-          // Only attempt to parse if the JSON appears to be complete
-          if (toolJson.includes('"name"') && toolJson.includes('"arguments"')) {
-            try {
-              const tool = JSON.parse(toolJson);
-
-              if (tool && tool.name) {
-                extractedToolCalls.push({
-                  function: {
-                    name: tool.name,
-                    arguments:
-                      typeof tool.arguments === "string"
-                        ? tool.arguments
-                        : JSON.stringify(tool.arguments || {})
-                  }
-                });
-
-                // Remove the tool call from the content
-                updatedContent = updatedContent.replace(
-                  incompleteMcpToolRegex,
-                  ""
-                );
-                console.log(
-                  `[Orchestrator] Extracted incomplete tool call in final chunk: ${tool.name}`
-                );
-              }
-            } catch {
-              // Ignore parsing errors for incomplete tool calls in final chunk
-              console.log(
-                `[Orchestrator] Failed to parse incomplete tool call JSON in final chunk`
-              );
-            }
-          }
-        } catch {
-          // Ignore general errors for incomplete tool calls
-        }
-      }
-    }
-
-    // Log when we extract tools (helpful for debugging)
-    if (extractedToolCalls.length > 0) {
-      console.log(
-        `[Orchestrator] Extracted ${extractedToolCalls.length} tool calls from text`
-      );
-      console.log(
-        `[Orchestrator] Tool calls:`,
-        extractedToolCalls.map((tc) => tc.function?.name)
-      );
-    }
-
-    return { content: updatedContent.trim(), extractedToolCalls };
+    return extractToolCallsFromPartialText(text, this.MCP_TOOL_USE, isFinal);
   }
 
   /**
@@ -1313,27 +590,8 @@ export class Orchestrator implements LlmAdapter {
    * @returns The enhanced message
    */
   enhanceMessage(message: LlmMessage): LlmMessage {
-    // Add system prompt if not present
-    const enhancedMessage = { ...message };
 
-    if (!enhancedMessage.systemPrompt) {
-      // Check if the provider supports tools
-      const provider = this.getLlmProvider(message.provider);
-      let supportsTools = true;
-
-      if (provider?.client?.checkToolSupport) {
-        try {
-          // We can't await here, so we'll use a default value
-          supportsTools = true;
-        } catch (error) {
-          console.error("Error checking tool support:", error);
-        }
-      }
-
-      enhancedMessage.systemPrompt = this.generateSystemPrompt(supportsTools);
-    }
-
-    return enhancedMessage;
+    return enhanceMessageWithSystemPrompt(message, !!this.client.checkToolSupport, this.MCP_TOOL_USE);
   }
 
   /**
@@ -1342,70 +600,7 @@ export class Orchestrator implements LlmAdapter {
    * @returns The system prompt
    */
   generateSystemPrompt(supportsTools: boolean = true): string {
-    let systemPrompt = `You are a helpful coding assistant.
-    I want you to help me analyze and structure existing code as well as new artifacts.
-
-    USE THE TOOLS!
-    I will provide you with tools you can use to interact with my development environment. 
-    If you utilize a tool, explain that you are doing it and why you do it.
-    Make sure you populate all required parameters with the required data types of each tool you use
-    You can use multiple tools in a single message if needed.
-    After using a tool, continue your response based on the tool's output.
-    `;
-
-    // If the LLM doesn't support tools natively, add instructions for using tools
-    if (!supportsTools) {
-      systemPrompt += `\n\n
-              
-        When you use a tool, format EACH tool call in your response like this (one block per tool call!):
-
-        \`\`\`${this.MCP_TOOL_USE}
-        {
-          "name": "tool_name",
-          "arguments": {
-            "arg1": "value1",
-            "arg2": "value2"
-          }
-        }
-        \`\`\`
-
-        Simple example:
-
-        \`\`\`${this.MCP_TOOL_USE}
-        {
-          "name": "search",
-          "arguments": {
-            "query": "What is the capital of France?"
-          }
-        }
-        \`\`\`
-
-        Multiple tool calls example using the same tool twice:
-        \`\`\`${this.MCP_TOOL_USE}
-        {
-          "name": "tool1",
-          "arguments": {
-            "arg1": "one",
-            "arg2": "two"
-          }
-        }
-        \`\`\`
-
-        \`\`\`${this.MCP_TOOL_USE}
-        {
-          "name": "tool1",
-          "arguments": {
-            "arg1": "three",
-            "arg2": "four"
-          }
-        }
-        \`\`\`
-
-        Always format your tool calls exactly as shown above.
-`;
-    }
-
-    return systemPrompt;
+    return compileSystemPrompt(supportsTools, this.MCP_TOOL_USE);
   }
 
   /**
@@ -1413,7 +608,6 @@ export class Orchestrator implements LlmAdapter {
    * @param userMessage The user message
    * @param assistantPlaceholder The assistant placeholder message
    * @param providerConfig The LLM provider configuration
-   * @param useStreaming Whether to use streaming
    * @returns The completed assistant message
    */
   async getCompletion(
@@ -1451,7 +645,6 @@ export class Orchestrator implements LlmAdapter {
       let accumulatedContent = "";
       const accumulatedToolCalls: ToolCall[] = [];
 
-      // Process with streaming
       const emitter = await this.processMessageStream(enhancedMessage);
 
       // Create a promise that resolves when streaming is complete
@@ -1466,10 +659,11 @@ export class Orchestrator implements LlmAdapter {
 
             // Update the assistant placeholder content
             if (this.chatManager) {
-              this.updateMessageContent(
+              updateMessageContent(
                 assistantPlaceholder.chatId,
                 assistantPlaceholder.id,
-                accumulatedContent
+                accumulatedContent,
+                this.chatManager
               );
             }
           }
@@ -1498,10 +692,11 @@ export class Orchestrator implements LlmAdapter {
 
             // Update the assistant placeholder tool calls
             if (this.chatManager) {
-              this.updateMessageToolCalls(
+              updateMessageToolCalls(
                 assistantPlaceholder.chatId,
                 assistantPlaceholder.id,
-                accumulatedToolCalls
+                accumulatedToolCalls,
+                this.chatManager
               );
             }
           }
@@ -1539,10 +734,11 @@ export class Orchestrator implements LlmAdapter {
         emitter.on("error", (error: unknown) => {
           // Update the assistant placeholder status
           if (this.chatManager) {
-            this.updateMessageStatus(
+            updateMessageStatus(
               assistantPlaceholder.chatId,
               assistantPlaceholder.id,
-              MessageStatus.ERROR
+              MessageStatus.ERROR,
+              this.chatManager
             );
           }
 
@@ -1554,47 +750,15 @@ export class Orchestrator implements LlmAdapter {
 
       // Update the assistant placeholder status
       if (this.chatManager) {
-        this.updateMessageStatus(
+        updateMessageStatus(
           assistantPlaceholder.chatId,
           assistantPlaceholder.id,
-          MessageStatus.ERROR
+          MessageStatus.ERROR,
+          this.chatManager
         );
       }
 
       throw error;
-    }
-  }
-
-  /**
-   * Update a message's content
-   * @param chatId The ID of the chat containing the message
-   * @param messageId The ID of the message to update
-   * @param content The new content
-   */
-  private async updateMessageContent(
-    chatId: string,
-    messageId: string,
-    content: string
-  ): Promise<void> {
-    if (!this.chatManager) {
-      console.warn(
-        "[Orchestrator] No chat manager available to update message content"
-      );
-      return;
-    }
-
-    // Skip database updates for temporary messages (they're handled by the chat store)
-    if (messageId.startsWith("temp_")) {
-      console.log(
-        `[Orchestrator] Skipping database update for temporary message ${messageId}`
-      );
-      return;
-    }
-
-    try {
-      await this.chatManager.updateMessageContent(chatId, messageId, content);
-    } catch (error) {
-      console.error(`Error updating message content for ${messageId}:`, error);
     }
   }
 }

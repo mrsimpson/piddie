@@ -7,7 +7,7 @@ import type {
   LlmClient,
   LlmMessage,
   LlmProviderConfig,
-  LlmResponse,
+  _LlmResponse,
   LlmStreamChunk
 } from "./types";
 import { EventEmitter } from "@piddie/shared-types";

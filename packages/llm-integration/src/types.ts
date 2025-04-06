@@ -82,6 +82,9 @@ export interface LlmResponse {
   tool_results?: Record<string, unknown>;
 }
 
+// Alias for linting purposes
+export type _LlmResponse = LlmResponse;
+
 /**
  * Interface for LLM client
  */
