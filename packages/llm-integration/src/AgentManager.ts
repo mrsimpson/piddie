@@ -177,13 +177,16 @@ export class AgentManager {
     }
 
     /**
-     * Processes tool calls and handles agent continuation if needed
-     * @param chatId The chat ID
-     * @param messageId The message ID containing tool calls
+     * Process tool calls for a chat and potentially generate a follow-up message
+     * @param chatId The ID of the chat
+     * @param messageId The ID of the message containing the tool calls
      * @param toolCalls The tool calls to process
-     * @returns Promise that resolves when processing is complete
      */
-    async processToolCalls(chatId: string, messageId: string, toolCalls: ToolCall[]): Promise<void> {
+    async processToolCalls(
+        chatId: string,
+        _messageId: string,
+        toolCalls: ToolCall[]
+    ): Promise<void> {
         // Get the agent context for this chat
         const context = this.contexts.get(chatId);
 
