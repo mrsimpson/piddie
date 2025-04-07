@@ -11,7 +11,7 @@ import type {
   LlmStreamChunk
 } from "./types";
 import { EventEmitter } from "@piddie/shared-types";
-import type { ChatManager, Message } from "@piddie/chat-management";
+import type { ChatManager } from "@piddie/chat-management";
 import { LlmProviderFactory } from "./adapters/LlmProviderFactory";
 import { ActionsManager } from "@piddie/actions";
 
@@ -83,12 +83,15 @@ export interface LlmAdapter {
    * @param chatId The ID of the chat to configure
    * @param config Configuration options
    */
-  configureAgent(chatId: string, config: {
-    enabled: boolean;
-    maxRoundtrips?: number;
-    autoContinue?: boolean;
-    customSystemPrompt?: string;
-  }): void;
+  configureAgent(
+    chatId: string,
+    config: {
+      enabled: boolean;
+      maxRoundtrips?: number;
+      autoContinue?: boolean;
+      customSystemPrompt?: string;
+    }
+  ): void;
 
   /**
    * Reset agentic context for a chat

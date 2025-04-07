@@ -5,11 +5,7 @@ import type {
   LlmProviderConfig,
   LlmStreamChunk
 } from "./types";
-import type {
-  ChatManager,
-  ToolCall,
-  Message
-} from "@piddie/chat-management";
+import type { ChatManager, ToolCall } from "@piddie/chat-management";
 import { MessageStatus } from "@piddie/chat-management";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { LlmAdapter } from "./index";
@@ -26,7 +22,6 @@ import {
 } from "./utils/toolCallUtils";
 import {
   updateMessageStatus,
-  updateMessageContent,
   updateMessageToolCalls
 } from "./utils/chatMessageUpdateUtils";
 import {
@@ -82,8 +77,8 @@ export class Orchestrator implements LlmAdapter {
     this.actionsManager = actionsManager;
 
     // Initialize the tool call queue with the execute tool function
-    this.toolCallQueue = new ToolCallQueue(
-      (toolCall: ToolCall) => executeToolCall(toolCall, actionsManager)
+    this.toolCallQueue = new ToolCallQueue((toolCall: ToolCall) =>
+      executeToolCall(toolCall, actionsManager)
     );
 
     // Initialize agent manager if chat manager is available
@@ -212,16 +207,21 @@ export class Orchestrator implements LlmAdapter {
    * @param chatId The ID of the chat to configure
    * @param config Configuration options
    */
-  configureAgent(chatId: string, config: {
-    enabled: boolean;
-    maxRoundtrips?: number;
-    autoContinue?: boolean;
-    customSystemPrompt?: string;
-  }): void {
+  configureAgent(
+    chatId: string,
+    config: {
+      enabled: boolean;
+      maxRoundtrips?: number;
+      autoContinue?: boolean;
+      customSystemPrompt?: string;
+    }
+  ): void {
     if (this.agentManager) {
       this.agentManager.configureAgent(chatId, config);
     } else {
-      console.warn("[Orchestrator] Agent manager not available, cannot configure agent");
+      console.warn(
+        "[Orchestrator] Agent manager not available, cannot configure agent"
+      );
     }
   }
 
@@ -255,10 +255,7 @@ export class Orchestrator implements LlmAdapter {
     // Get available tools first
     const availableTools = await this.getAvailableTools();
 
-    return addTools(
-      message,
-      availableTools
-    );
+    return addTools(message, availableTools);
   }
 
   /**
@@ -286,8 +283,7 @@ export class Orchestrator implements LlmAdapter {
     const emitter = new EventEmitter();
 
     // Enhance the message with history and tools
-    const enhancedMessage =
-      await this.enhanceMessageWithTools(message);
+    const enhancedMessage = await this.enhanceMessageWithTools(message);
 
     // Track accumulated content for extracting tool calls
     let fullContent = "";
@@ -599,8 +595,11 @@ export class Orchestrator implements LlmAdapter {
    * @returns The enhanced message
    */
   enhanceMessage(message: LlmMessage): LlmMessage {
-
-    return enhanceMessageWithSystemPrompt(message, !!this.client.checkToolSupport, this.MCP_TOOL_USE);
+    return enhanceMessageWithSystemPrompt(
+      message,
+      !!this.client.checkToolSupport,
+      this.MCP_TOOL_USE
+    );
   }
 
   /**
@@ -649,10 +648,13 @@ export class Orchestrator implements LlmAdapter {
     // Get agent reaction if available
     if (this.agentManager && this.chatManager) {
       // Ensure we have all tool calls with results
-      const completedToolCalls = toolCalls.filter(tc => tc.result);
-      const agentResult = await this.agentManager.react(message, completedToolCalls);
+      const completedToolCalls = toolCalls.filter((tc) => tc.result);
+      const agentResult = await this.agentManager.react(
+        message,
+        completedToolCalls
+      );
 
-      if (agentResult.type === 'continue' && agentResult.systemMessage) {
+      if (agentResult.type === "continue" && agentResult.systemMessage) {
         // Create continuation messages
         const assistantMessage = await this.chatManager.addMessage(
           message.chatId,

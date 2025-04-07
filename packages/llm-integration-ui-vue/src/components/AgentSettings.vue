@@ -43,7 +43,9 @@ const currentChatId = computed(() => chatStore.currentChat?.id);
 onMounted(async () => {
   if (currentChatId.value) {
     try {
-      const storedSettings = await llmStore.getAgentSettings(currentChatId.value);
+      const storedSettings = await llmStore.getAgentSettings(
+        currentChatId.value
+      );
       if (storedSettings) {
         settings.value = storedSettings;
       }
@@ -56,12 +58,12 @@ onMounted(async () => {
 // Update settings through the store
 async function updateSettings(updates: Partial<AgentConfig>) {
   if (!currentChatId.value) return;
-  
+
   const newSettings = {
     ...settings.value,
     ...updates
   };
-  
+
   try {
     await llmStore.configureAgent(currentChatId.value, newSettings);
     settings.value = newSettings;
@@ -73,14 +75,14 @@ async function updateSettings(updates: Partial<AgentConfig>) {
 // Reset to defaults
 async function resetToDefaults() {
   if (!currentChatId.value) return;
-  
+
   const defaults: AgentConfig = {
     enabled: false,
     maxRoundtrips: 10,
     autoContinue: true,
     customSystemPrompt: undefined
   };
-  
+
   try {
     await llmStore.configureAgent(currentChatId.value, defaults);
     settings.value = defaults;
@@ -96,30 +98,33 @@ async function resetToDefaults() {
       <div slot="header" class="card-header">
         <h3>Agent Settings</h3>
       </div>
-      
+
       <div class="settings-content">
         <!-- Enable/Disable Agent -->
         <div class="setting-row">
           <div class="setting-info">
             <div class="setting-label">
               <span>Enable Agent</span>
-              <sl-tooltip content="When enabled, the AI can execute multiple tool calls in succession without user interaction">
+              <sl-tooltip
+                content="When enabled, the AI can execute multiple tool calls in succession without user interaction"
+              >
                 <sl-icon name="info-circle"></sl-icon>
               </sl-tooltip>
             </div>
             <div class="setting-description">
-              Allow the AI to autonomously execute tool calls based on previous results
+              Allow the AI to autonomously execute tool calls based on previous
+              results
             </div>
           </div>
           <div class="setting-control">
-            <sl-switch 
-              :checked="settings.enabled" 
+            <sl-switch
+              :checked="settings.enabled"
               @sl-change="updateSettings({ enabled: $event.target.checked })"
               :disabled="!currentChatId"
             ></sl-switch>
           </div>
         </div>
-        
+
         <!-- Advanced Settings Toggle -->
         <div class="setting-row">
           <div class="setting-info">
@@ -128,23 +133,25 @@ async function resetToDefaults() {
             </div>
           </div>
           <div class="setting-control">
-            <sl-switch 
-              :checked="showAdvancedSettings" 
+            <sl-switch
+              :checked="showAdvancedSettings"
               @sl-change="showAdvancedSettings = $event.target.checked"
             ></sl-switch>
           </div>
         </div>
-        
+
         <!-- Advanced Settings Section -->
         <div v-if="showAdvancedSettings" class="advanced-settings">
           <sl-divider></sl-divider>
-          
+
           <!-- Maximum Roundtrips -->
           <div class="setting-row">
             <div class="setting-info">
               <div class="setting-label">
                 <span>Maximum Roundtrips</span>
-                <sl-tooltip content="The maximum number of consecutive tool calls the agent can make">
+                <sl-tooltip
+                  content="The maximum number of consecutive tool calls the agent can make"
+                >
                   <sl-icon name="info-circle"></sl-icon>
                 </sl-tooltip>
               </div>
@@ -153,45 +160,56 @@ async function resetToDefaults() {
               </div>
             </div>
             <div class="setting-control">
-              <sl-input 
-                type="number" 
-                min="1" 
-                max="50" 
-                :value="settings.maxRoundtrips" 
-                @sl-input="updateSettings({ maxRoundtrips: parseInt($event.target.value) })"
+              <sl-input
+                type="number"
+                min="1"
+                max="50"
+                :value="settings.maxRoundtrips"
+                @sl-input="
+                  updateSettings({
+                    maxRoundtrips: parseInt($event.target.value)
+                  })
+                "
                 :disabled="!settings.enabled"
               ></sl-input>
             </div>
           </div>
-          
+
           <!-- Auto Continue -->
           <div class="setting-row">
             <div class="setting-info">
               <div class="setting-label">
                 <span>Auto Continue</span>
-                <sl-tooltip content="Automatically continue the conversation after tool calls">
+                <sl-tooltip
+                  content="Automatically continue the conversation after tool calls"
+                >
                   <sl-icon name="info-circle"></sl-icon>
                 </sl-tooltip>
               </div>
               <div class="setting-description">
-                Continue the AI conversation automatically after tools are executed
+                Continue the AI conversation automatically after tools are
+                executed
               </div>
             </div>
             <div class="setting-control">
-              <sl-switch 
-                :checked="settings.autoContinue" 
-                @sl-change="updateSettings({ autoContinue: $event.target.checked })"
+              <sl-switch
+                :checked="settings.autoContinue"
+                @sl-change="
+                  updateSettings({ autoContinue: $event.target.checked })
+                "
                 :disabled="!settings.enabled"
               ></sl-switch>
             </div>
           </div>
-          
+
           <!-- Custom System Prompt -->
           <div class="setting-row custom-prompt-row">
             <div class="setting-info">
               <div class="setting-label">
                 <span>Custom System Prompt</span>
-                <sl-tooltip content="Custom instructions to guide the agent's behavior">
+                <sl-tooltip
+                  content="Custom instructions to guide the agent's behavior"
+                >
                   <sl-icon name="info-circle"></sl-icon>
                 </sl-tooltip>
               </div>
@@ -200,21 +218,23 @@ async function resetToDefaults() {
               </div>
             </div>
             <div class="setting-control full-width">
-              <sl-textarea 
-                rows="4" 
-                :value="settings.customSystemPrompt" 
-                @sl-input="updateSettings({ customSystemPrompt: $event.target.value })"
+              <sl-textarea
+                rows="4"
+                :value="settings.customSystemPrompt"
+                @sl-input="
+                  updateSettings({ customSystemPrompt: $event.target.value })
+                "
                 placeholder="Enter custom instructions for the agent..."
                 :disabled="!settings.enabled"
               ></sl-textarea>
             </div>
           </div>
-          
+
           <!-- Action Buttons -->
           <div class="action-buttons">
-            <sl-button 
-              variant="neutral" 
-              @click="resetToDefaults" 
+            <sl-button
+              variant="neutral"
+              @click="resetToDefaults"
               :disabled="!currentChatId"
             >
               Reset to Defaults
@@ -223,7 +243,7 @@ async function resetToDefaults() {
         </div>
       </div>
     </sl-card>
-    
+
     <div v-else class="embedded-content">
       <!-- Same content as above but for embedded view -->
       <!-- Enable/Disable Agent -->
@@ -231,23 +251,26 @@ async function resetToDefaults() {
         <div class="setting-info">
           <div class="setting-label">
             <span>Enable Agent</span>
-            <sl-tooltip content="When enabled, the AI can execute multiple tool calls in succession without user interaction">
+            <sl-tooltip
+              content="When enabled, the AI can execute multiple tool calls in succession without user interaction"
+            >
               <sl-icon name="info-circle"></sl-icon>
             </sl-tooltip>
           </div>
           <div class="setting-description">
-            Allow the AI to autonomously execute tool calls based on previous results
+            Allow the AI to autonomously execute tool calls based on previous
+            results
           </div>
         </div>
         <div class="setting-control">
-          <sl-switch 
-            :checked="settings.enabled" 
+          <sl-switch
+            :checked="settings.enabled"
             @sl-change="updateSettings({ enabled: $event.target.checked })"
             :disabled="!currentChatId"
           ></sl-switch>
         </div>
       </div>
-      
+
       <!-- Advanced Settings Toggle -->
       <div class="setting-row">
         <div class="setting-info">
@@ -256,24 +279,26 @@ async function resetToDefaults() {
           </div>
         </div>
         <div class="setting-control">
-          <sl-switch 
-            :checked="showAdvancedSettings" 
+          <sl-switch
+            :checked="showAdvancedSettings"
             @sl-change="showAdvancedSettings = $event.target.checked"
           ></sl-switch>
         </div>
       </div>
-      
+
       <!-- Advanced Settings Section -->
       <div v-if="showAdvancedSettings" class="advanced-settings">
         <sl-divider></sl-divider>
-        
+
         <!-- Same advanced settings as above -->
         <!-- Maximum Roundtrips -->
         <div class="setting-row">
           <div class="setting-info">
             <div class="setting-label">
               <span>Maximum Roundtrips</span>
-              <sl-tooltip content="The maximum number of consecutive tool calls the agent can make">
+              <sl-tooltip
+                content="The maximum number of consecutive tool calls the agent can make"
+              >
                 <sl-icon name="info-circle"></sl-icon>
               </sl-tooltip>
             </div>
@@ -282,45 +307,54 @@ async function resetToDefaults() {
             </div>
           </div>
           <div class="setting-control">
-            <sl-input 
-              type="number" 
-              min="1" 
-              max="50" 
-              :value="settings.maxRoundtrips" 
-              @sl-input="updateSettings({ maxRoundtrips: parseInt($event.target.value) })"
+            <sl-input
+              type="number"
+              min="1"
+              max="50"
+              :value="settings.maxRoundtrips"
+              @sl-input="
+                updateSettings({ maxRoundtrips: parseInt($event.target.value) })
+              "
               :disabled="!settings.enabled"
             ></sl-input>
           </div>
         </div>
-        
+
         <!-- Auto Continue -->
         <div class="setting-row">
           <div class="setting-info">
             <div class="setting-label">
               <span>Auto Continue</span>
-              <sl-tooltip content="Automatically continue the conversation after tool calls">
+              <sl-tooltip
+                content="Automatically continue the conversation after tool calls"
+              >
                 <sl-icon name="info-circle"></sl-icon>
               </sl-tooltip>
             </div>
             <div class="setting-description">
-              Continue the AI conversation automatically after tools are executed
+              Continue the AI conversation automatically after tools are
+              executed
             </div>
           </div>
           <div class="setting-control">
-            <sl-switch 
-              :checked="settings.autoContinue" 
-              @sl-change="updateSettings({ autoContinue: $event.target.checked })"
+            <sl-switch
+              :checked="settings.autoContinue"
+              @sl-change="
+                updateSettings({ autoContinue: $event.target.checked })
+              "
               :disabled="!settings.enabled"
             ></sl-switch>
           </div>
         </div>
-        
+
         <!-- Custom System Prompt -->
         <div class="setting-row custom-prompt-row">
           <div class="setting-info">
             <div class="setting-label">
               <span>Custom System Prompt</span>
-              <sl-tooltip content="Custom instructions to guide the agent's behavior">
+              <sl-tooltip
+                content="Custom instructions to guide the agent's behavior"
+              >
                 <sl-icon name="info-circle"></sl-icon>
               </sl-tooltip>
             </div>
@@ -329,21 +363,23 @@ async function resetToDefaults() {
             </div>
           </div>
           <div class="setting-control full-width">
-            <sl-textarea 
-              rows="4" 
-              :value="settings.customSystemPrompt" 
-              @sl-input="updateSettings({ customSystemPrompt: $event.target.value })"
+            <sl-textarea
+              rows="4"
+              :value="settings.customSystemPrompt"
+              @sl-input="
+                updateSettings({ customSystemPrompt: $event.target.value })
+              "
               placeholder="Enter custom instructions for the agent..."
               :disabled="!settings.enabled"
             ></sl-textarea>
           </div>
         </div>
-        
+
         <!-- Action Buttons -->
         <div class="action-buttons">
-          <sl-button 
-            variant="neutral" 
-            @click="resetToDefaults" 
+          <sl-button
+            variant="neutral"
+            @click="resetToDefaults"
             :disabled="!currentChatId"
           >
             Reset to Defaults
@@ -438,4 +474,4 @@ async function resetToDefaults() {
 sl-alert {
   margin-top: 1rem;
 }
-</style> 
+</style>

@@ -5,10 +5,10 @@
  * @returns The system prompt
  */
 export function compileSystemPrompt(
-    supportsTools: boolean = true,
-    mcpToolUseIndicator: string
+  supportsTools: boolean = true,
+  mcpToolUseIndicator: string
 ): string {
-    let systemPrompt = `You are a helpful coding assistant.
+  let systemPrompt = `You are a helpful coding assistant.
   I want you to help me analyze and structure existing code as well as new artifacts.
 
   USE THE TOOLS!
@@ -19,9 +19,9 @@ export function compileSystemPrompt(
   After using a tool, continue your response based on the tool's output.
   `;
 
-    // If the LLM doesn't support tools natively, add instructions for using tools
-    if (!supportsTools) {
-        systemPrompt += `\n\n
+  // If the LLM doesn't support tools natively, add instructions for using tools
+  if (!supportsTools) {
+    systemPrompt += `\n\n
             
       When you use a tool, format EACH tool call in your response like this (one block per tool call!):
 
@@ -69,7 +69,7 @@ export function compileSystemPrompt(
 
       Always format your tool calls exactly as shown above.
 `;
-    }
+  }
 
-    return systemPrompt;
-} 
+  return systemPrompt;
+}

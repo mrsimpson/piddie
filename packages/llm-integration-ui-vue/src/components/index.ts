@@ -1,5 +1,3 @@
-import AgentSettings from './AgentSettings.vue';
+import AgentSettings from "./AgentSettings.vue";
 
-export {
-    AgentSettings,
-}; 
+export { AgentSettings };

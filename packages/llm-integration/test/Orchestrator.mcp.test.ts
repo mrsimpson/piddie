@@ -10,14 +10,12 @@ import type {
 import { LlmStreamEvent } from "../src/types";
 import type {
   ChatManager,
-  Message,
   ChatCompletionRole,
   ToolCall
 } from "@piddie/chat-management";
 import { MessageStatus } from "@piddie/chat-management";
 import { EventEmitter } from "@piddie/shared-types";
 import { ActionsManager } from "@piddie/actions";
-import { AgentManager } from "../src/AgentManager";
 
 // Mock the ActionsManager
 vi.mock("@piddie/actions", () => {
@@ -100,6 +98,7 @@ vi.mock("../src/AgentManager", () => {
         resetAgent: vi.fn(),
         isAgentEnabled: vi.fn().mockReturnValue(false), // Default to false for most tests
         getAgentContext: vi.fn(),
+        react: vi.fn().mockResolvedValue({ type: "complete" }), // Add the react method
         processToolCalls: vi.fn(),
         continueChatWithToolResults: vi.fn(),
         createToolResultSystemMessage: vi.fn(),
@@ -152,7 +151,6 @@ describe("Orchestrator MCP Integration", () => {
   let mockChatManager: ChatManager;
   let mockMcpServer: MockMcpServer;
   let mockActionsManager: ActionsManager;
-  let mockAgentManager: AgentManager;
   let providerConfig: LlmProviderConfig;
 
   beforeEach(() => {
@@ -238,9 +236,6 @@ describe("Orchestrator MCP Integration", () => {
       mockActionsManager
     );
 
-    // Get the mocked AgentManager instance
-    mockAgentManager = (orchestrator as any).agentManager;
-
     // Register provider
     orchestrator.registerLlmProvider(providerConfig);
   });
@@ -274,7 +269,6 @@ describe("Orchestrator MCP Integration", () => {
       expect(result).toBe(false);
     });
   });
-
 
   describe("Tool Execution - Streaming", () => {
     let emittedChunks: LlmStreamChunk[] = [];

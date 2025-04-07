@@ -11,58 +11,55 @@ import { ToolCallQueue } from "./ToolCallQueue";
  * @returns The result of the tool call
  */
 export async function executeToolCall(
-    toolCall: ToolCall,
-    actionsManager: ActionsManager
+  toolCall: ToolCall,
+  actionsManager: ActionsManager
 ): Promise<ToolCallResult> {
-    if (!toolCall || !toolCall.function || !toolCall.function.name) {
-        throw new Error("Invalid tool call");
+  if (!toolCall || !toolCall.function || !toolCall.function.name) {
+    throw new Error("Invalid tool call");
+  }
+
+  const toolName = toolCall.function.name;
+  const toolArgs = toolCall.function.arguments || {};
+  let parsedArgs;
+
+  try {
+    // If arguments are provided as a string, parse them to an object
+    if (typeof toolArgs === "string") {
+      parsedArgs = JSON.parse(toolArgs);
+    } else {
+      parsedArgs = toolArgs;
     }
 
-    const toolName = toolCall.function.name;
-    const toolArgs = toolCall.function.arguments || {};
-    let parsedArgs;
+    // Call the tool via the ActionsManager
+    console.log(`[Orchestrator] Executing tool call: ${toolName}`);
+    const result = await actionsManager.executeToolCall(toolName, parsedArgs);
 
-    try {
-        // If arguments are provided as a string, parse them to an object
-        if (typeof toolArgs === "string") {
-            parsedArgs = JSON.parse(toolArgs);
-        } else {
-            parsedArgs = toolArgs;
-        }
+    // Attach the result to the tool call
+    toolCall.result = {
+      status: result.status,
+      value: result.value,
+      contentType: result.contentType,
+      timestamp: result.timestamp
+    };
 
-        // Call the tool via the ActionsManager
-        console.log(`[Orchestrator] Executing tool call: ${toolName}`);
-        const result = await actionsManager.executeToolCall(
-            toolName,
-            parsedArgs
-        );
+    console.log(
+      `[Orchestrator] Tool call executed successfully: ${toolName}`,
+      result
+    );
+    return result;
+  } catch (error) {
+    // Attach error result to the tool call
+    toolCall.result = {
+      status: "error",
+      value: error instanceof Error ? error.message : String(error),
+      contentType: "text/plain",
+      timestamp: new Date()
+    };
 
-        // Attach the result to the tool call
-        toolCall.result = {
-            status: result.status,
-            value: result.value,
-            contentType: result.contentType,
-            timestamp: result.timestamp
-        };
-
-        console.log(
-            `[Orchestrator] Tool call executed successfully: ${toolName}`,
-            result
-        );
-        return result;
-    } catch (error) {
-        // Attach error result to the tool call
-        toolCall.result = {
-            status: "error",
-            value: error instanceof Error ? error.message : String(error),
-            contentType: "text/plain",
-            timestamp: new Date()
-        };
-
-        // Return the error to be handled by the caller
-        console.error(`[Orchestrator] Error executing tool call:`, error);
-        throw error;
-    }
+    // Return the error to be handled by the caller
+    console.error(`[Orchestrator] Error executing tool call:`, error);
+    throw error;
+  }
 }
 
 /**
@@ -71,14 +68,14 @@ export async function executeToolCall(
  * @returns A string identifier for the tool call
  */
 export function getToolCallId(toolCall: ToolCall): string {
-    if (!toolCall || !toolCall.function) return "";
+  if (!toolCall || !toolCall.function) return "";
 
-    const args =
-        typeof toolCall.function.arguments === "string"
-            ? toolCall.function.arguments
-            : JSON.stringify(toolCall.function.arguments || {});
+  const args =
+    typeof toolCall.function.arguments === "string"
+      ? toolCall.function.arguments
+      : JSON.stringify(toolCall.function.arguments || {});
 
-    return `${toolCall.function.name}-${args}`;
+  return `${toolCall.function.name}-${args}`;
 }
 
 /**
@@ -87,29 +84,29 @@ export function getToolCallId(toolCall: ToolCall): string {
  * @returns True if the tool call is valid, false otherwise
  */
 export function isValidToolCall(toolCall: ToolCall): boolean {
-    if (!toolCall.function || !toolCall.function.name) {
-        console.log(`[Orchestrator] Skipping invalid tool call: missing name`);
-        return false;
-    }
+  if (!toolCall.function || !toolCall.function.name) {
+    console.log(`[Orchestrator] Skipping invalid tool call: missing name`);
+    return false;
+  }
 
-    const args = toolCall.function.arguments;
-    if (typeof args === "string") {
-        try {
-            JSON.parse(args);
-        } catch {
-            console.log(
-                `[Orchestrator] Skipping incomplete tool call: ${toolCall.function.name} (invalid JSON arguments)`
-            );
-            return false;
-        }
-    } else if (!args || typeof args !== "object") {
-        console.log(
-            `[Orchestrator] Skipping incomplete tool call: ${toolCall.function.name} (missing arguments)`
-        );
-        return false;
+  const args = toolCall.function.arguments;
+  if (typeof args === "string") {
+    try {
+      JSON.parse(args);
+    } catch {
+      console.log(
+        `[Orchestrator] Skipping incomplete tool call: ${toolCall.function.name} (invalid JSON arguments)`
+      );
+      return false;
     }
+  } else if (!args || typeof args !== "object") {
+    console.log(
+      `[Orchestrator] Skipping incomplete tool call: ${toolCall.function.name} (missing arguments)`
+    );
+    return false;
+  }
 
-    return true;
+  return true;
 }
 
 /**
@@ -118,15 +115,15 @@ export function isValidToolCall(toolCall: ToolCall): boolean {
  * @returns Array of valid tool calls
  */
 export function filterValidToolCalls(toolCalls: ToolCall[]): ToolCall[] {
-    const validCalls = toolCalls.filter(toolCall => isValidToolCall(toolCall));
+  const validCalls = toolCalls.filter((toolCall) => isValidToolCall(toolCall));
 
-    if (validCalls.length < toolCalls.length) {
-        console.log(
-            `[Orchestrator] Filtered out ${toolCalls.length - validCalls.length} incomplete tool calls`
-        );
-    }
+  if (validCalls.length < toolCalls.length) {
+    console.log(
+      `[Orchestrator] Filtered out ${toolCalls.length - validCalls.length} incomplete tool calls`
+    );
+  }
 
-    return validCalls;
+  return validCalls;
 }
 
 /**
@@ -138,45 +135,54 @@ export function filterValidToolCalls(toolCalls: ToolCall[]): ToolCall[] {
  * @returns True if the tool was processed, false if skipped
  */
 export async function processToolCall(
-    toolCall: ToolCall,
-    processedIds: Set<string>,
-    toolCalls: ToolCall[],
-    toolCallQueue: ToolCallQueue
+  toolCall: ToolCall,
+  processedIds: Set<string>,
+  toolCalls: ToolCall[],
+  toolCallQueue: ToolCallQueue
 ): Promise<boolean> {
-    // Skip invalid tool calls
-    if (!isValidToolCall(toolCall)) {
-        return false;
+  // Skip invalid tool calls
+  if (!isValidToolCall(toolCall)) {
+    return false;
+  }
+
+  const toolCallId = getToolCallId(toolCall);
+
+  // Skip if already processed
+  if (processedIds.has(toolCallId)) {
+    console.log(
+      `[Orchestrator] Skipping already executed tool: ${toolCall.function.name}`
+    );
+    return false;
+  }
+
+  // Mark as processed
+  processedIds.add(toolCallId);
+
+  try {
+    console.log(
+      `[Orchestrator] Starting execution of tool call: ${toolCall.function.name}`
+    );
+
+    // Enqueue for execution
+    await toolCallQueue.enqueue(toolCall);
+
+    console.log(
+      `[Orchestrator] Tool call execution complete: ${toolCall.function.name}`
+    );
+
+    // Track if not already tracked
+    if (!toolCalls.some((tc) => getToolCallId(tc) === toolCallId)) {
+      toolCalls.push(toolCall);
     }
 
-    const toolCallId = getToolCallId(toolCall);
-
-    // Skip if already processed
-    if (processedIds.has(toolCallId)) {
-        console.log(`[Orchestrator] Skipping already executed tool: ${toolCall.function.name}`);
-        return false;
-    }
-
-    // Mark as processed
-    processedIds.add(toolCallId);
-
-    try {
-        console.log(`[Orchestrator] Starting execution of tool call: ${toolCall.function.name}`);
-
-        // Enqueue for execution
-        await toolCallQueue.enqueue(toolCall);
-
-        console.log(`[Orchestrator] Tool call execution complete: ${toolCall.function.name}`);
-
-        // Track if not already tracked
-        if (!toolCalls.some(tc => getToolCallId(tc) === toolCallId)) {
-            toolCalls.push(toolCall);
-        }
-
-        return true;
-    } catch (error) {
-        console.error(`[Orchestrator] Error executing tool call: ${toolCall.function.name}`, error);
-        return true; // We still consider it processed
-    }
+    return true;
+  } catch (error) {
+    console.error(
+      `[Orchestrator] Error executing tool call: ${toolCall.function.name}`,
+      error
+    );
+    return true; // We still consider it processed
+  }
 }
 
 /**
@@ -188,37 +194,45 @@ export async function processToolCall(
  * @param fallbackContent Fallback content if no final data is available
  */
 export async function prepareAndEmitEndEvent(
-    emitter: EventEmitter,
-    toolCallQueue: ToolCallQueue,
-    finalData: LlmStreamChunk | null,
-    toolCalls: ToolCall[],
-    fallbackContent: string = ""
+  emitter: EventEmitter,
+  toolCallQueue: ToolCallQueue,
+  finalData: LlmStreamChunk | null,
+  toolCalls: ToolCall[],
+  fallbackContent: string = ""
 ): Promise<void> {
-    // Ensure any pending tool calls are completed
-    if (toolCallQueue.isActive || toolCallQueue.pendingCount > 0) {
-        console.log("[Orchestrator] Waiting for pending tool calls to complete before ending stream");
-        await new Promise(resolve => setTimeout(resolve, 100));
-    }
+  // Ensure any pending tool calls are completed
+  if (toolCallQueue.isActive || toolCallQueue.pendingCount > 0) {
+    console.log(
+      "[Orchestrator] Waiting for pending tool calls to complete before ending stream"
+    );
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
 
-    console.log("[Orchestrator] Emitting end event after executing all tool calls");
-    console.log(`[Orchestrator] Tool calls included in end event: ${toolCalls.length}`);
+  console.log(
+    "[Orchestrator] Emitting end event after executing all tool calls"
+  );
+  console.log(
+    `[Orchestrator] Tool calls included in end event: ${toolCalls.length}`
+  );
 
-    if (toolCalls.length > 0) {
-        console.log(`[Orchestrator] Tool names: ${toolCalls.map(tc => tc.function.name).join(', ')}`);
-    }
+  if (toolCalls.length > 0) {
+    console.log(
+      `[Orchestrator] Tool names: ${toolCalls.map((tc) => tc.function.name).join(", ")}`
+    );
+  }
 
-    if (finalData) {
-        emitter.emit("end", {
-            ...finalData,
-            tool_calls: toolCalls
-        });
-    } else {
-        emitter.emit("end", {
-            id: `response-${Date.now()}`,
-            content: fallbackContent,
-            tool_calls: toolCalls
-        });
-    }
+  if (finalData) {
+    emitter.emit("end", {
+      ...finalData,
+      tool_calls: toolCalls
+    });
+  } else {
+    emitter.emit("end", {
+      id: `response-${Date.now()}`,
+      content: fallbackContent,
+      tool_calls: toolCalls
+    });
+  }
 }
 
 /**
@@ -227,33 +241,40 @@ export async function prepareAndEmitEndEvent(
  * @returns Formatted string for system message
  */
 export function formatToolCallsForSystemMessage(toolCalls: ToolCall[]): string {
-    return toolCalls.map(toolCall => {
-        // Format function name and arguments
-        const toolName = toolCall.function.name;
-        let args = "";
+  return toolCalls
+    .map((toolCall) => {
+      // Format function name and arguments
+      const toolName = toolCall.function.name;
+      let args = "";
 
-        if (typeof toolCall.function.arguments === "string") {
-            try {
-                args = JSON.stringify(JSON.parse(toolCall.function.arguments), null, 2);
-            } catch {
-                args = toolCall.function.arguments;
-            }
-        } else {
-            args = JSON.stringify(toolCall.function.arguments || {}, null, 2);
+      if (typeof toolCall.function.arguments === "string") {
+        try {
+          args = JSON.stringify(
+            JSON.parse(toolCall.function.arguments),
+            null,
+            2
+          );
+        } catch {
+          args = toolCall.function.arguments;
         }
+      } else {
+        args = JSON.stringify(toolCall.function.arguments || {}, null, 2);
+      }
 
-        // Format result
-        let resultFormatted = "No result available";
-        if (toolCall.result) {
-            const status = toolCall.result.status;
-            const value = typeof toolCall.result.value === "object"
-                ? JSON.stringify(toolCall.result.value, null, 2)
-                : String(toolCall.result.value);
+      // Format result
+      let resultFormatted = "No result available";
+      if (toolCall.result) {
+        const status = toolCall.result.status;
+        const value =
+          typeof toolCall.result.value === "object"
+            ? JSON.stringify(toolCall.result.value, null, 2)
+            : String(toolCall.result.value);
 
-            resultFormatted = `${status.toUpperCase()}: ${value}`;
-        }
+        resultFormatted = `${status.toUpperCase()}: ${value}`;
+      }
 
-        // Return formatted tool call
-        return `Tool: ${toolName}\nArguments: ${args}\nResult: ${resultFormatted}`;
-    }).join("\n\n");
+      // Return formatted tool call
+      return `Tool: ${toolName}\nArguments: ${args}\nResult: ${resultFormatted}`;
+    })
+    .join("\n\n");
 }

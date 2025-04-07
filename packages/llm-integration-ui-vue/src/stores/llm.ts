@@ -286,10 +286,7 @@ export const useLlmStore = defineStore("llm", () => {
    * @param chatId The ID of the chat to send the message to
    * @param useStreaming Whether to use streaming for the response
    */
-  async function sendMessage(
-    content: string,
-    chatId: string,
-  ) {
+  async function sendMessage(content: string, chatId: string) {
     try {
       // Check if API key is set
       if (!workbenchConfig.apiKey && workbenchConfig.provider === "litellm") {
@@ -399,7 +396,7 @@ export const useLlmStore = defineStore("llm", () => {
                       (tc) =>
                         tc.function.name === functionName &&
                         JSON.stringify(tc.function.arguments) ===
-                        JSON.stringify(functionArgs)
+                          JSON.stringify(functionArgs)
                     );
 
                     if (existingIndex === -1) {
@@ -471,7 +468,7 @@ export const useLlmStore = defineStore("llm", () => {
                 (tc) =>
                   tc.function.name === toolCall.function.name &&
                   JSON.stringify(tc.function.arguments) ===
-                  JSON.stringify(toolCall.function.arguments)
+                    JSON.stringify(toolCall.function.arguments)
               );
 
               if (existingToolCall) {
@@ -543,7 +540,7 @@ export const useLlmStore = defineStore("llm", () => {
                     (tc) =>
                       tc.function.name === functionName &&
                       JSON.stringify(tc.function.arguments) ===
-                      JSON.stringify(functionArgs)
+                        JSON.stringify(functionArgs)
                   );
 
                   if (existingIndex === -1) {
@@ -582,7 +579,7 @@ export const useLlmStore = defineStore("llm", () => {
                 (tc) =>
                   tc.function.name === functionName &&
                   JSON.stringify(tc.function.arguments) ===
-                  JSON.stringify(toolCall.function.arguments)
+                    JSON.stringify(toolCall.function.arguments)
               );
 
               if (existingIndex === -1) {
@@ -633,10 +630,7 @@ export const useLlmStore = defineStore("llm", () => {
       } catch (err: unknown) {
         console.error("Error setting up streaming:", err);
         error.value = err instanceof Error ? err : new Error(String(err));
-        chatStore.updateMessageStatus(
-          assistantMessage.id,
-          MessageStatus.ERROR
-        );
+        chatStore.updateMessageStatus(assistantMessage.id, MessageStatus.ERROR);
         await finalizeProcessing();
       }
     } catch (err: unknown) {
