@@ -7,54 +7,20 @@ import { getChatHistory } from "./getChatHistory";
 
 /**
  * Enhances a message with chat history and tools
+ * 
  * @param message The message to enhance
  * @param chatManager Chat manager for history retrieval
  * @param agentManager Optional agent manager for tool results
  * @param availableTools Array of available tools to include
  * @returns The enhanced message
  */
-export async function enhanceMessageWithHistoryAndTools(
+export async function addTools(
     message: LlmMessage,
-    chatManager?: ChatManager,
-    agentManager?: AgentManager,
     availableTools: Tool[] = []
 ): Promise<LlmMessage> {
     const enhancedMessage: LlmMessage = { ...message };
 
     try {
-        // Get chat history
-        const chatHistory = await getChatHistory(
-            message.chatId,
-            message.assistantMessageId,
-            chatManager
-        );
-
-        // Check if this is part of an agentic flow with tool call results to process
-        let systemMessage: string | undefined;
-        if (agentManager) {
-            systemMessage = agentManager.createToolResultSystemMessage(message.chatId);
-        }
-
-        if (systemMessage) {
-            // Add the system message with tool results to the beginning of the history
-            const systemMessageObj = {
-                role: "system",
-                content: systemMessage
-            };
-
-            if (chatHistory.length > 0) {
-                enhancedMessage.messages = [systemMessageObj, ...chatHistory];
-            } else {
-                enhancedMessage.messages = [systemMessageObj];
-            }
-
-            console.log(`[Orchestrator] Added tool results system message for agentic flow`);
-        } else {
-            // Regular flow - just add the chat history
-            if (chatHistory.length > 0) {
-                enhancedMessage.messages = chatHistory;
-            }
-        }
 
         // Add tools to the message if any were provided
         if (availableTools.length > 0) {

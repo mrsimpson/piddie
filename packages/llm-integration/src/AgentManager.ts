@@ -33,6 +33,15 @@ interface AgentContext {
 }
 
 /**
+ * Result of agent processing
+ */
+export interface AgentResult {
+    type: 'continue' | 'complete' | 'error';
+    systemMessage?: string;
+    error?: Error;
+}
+
+/**
  * Manages agentic behavior for LLM interactions with tools
  */
 export class AgentManager {
@@ -45,23 +54,6 @@ export class AgentManager {
 
     /** Agent contexts for each chat */
     private contexts: Map<string, AgentContext> = new Map();
-
-    /**
-     * Creates a new AgentManager
-     * @param chatManager Chat manager for message handling
-     * @param getLlmProvider Function to get an LLM provider by name
-     * @param processMessageStreamFn Function to process a message stream
-     * @param defaultProviderName Default LLM provider name to use
-     */
-    constructor(
-        private readonly chatManager: ChatManager,
-        private readonly getLlmProvider: (name: string) => LlmProviderConfig | undefined,
-        private readonly processMessageStreamFn: (
-            message: LlmMessage,
-            onChunk?: (chunk: LlmStreamChunk) => void
-        ) => Promise<EventEmitter>,
-        private readonly defaultProviderName: string = ""
-    ) { }
 
     /**
      * Initializes agent configuration from stored settings
@@ -194,47 +186,23 @@ export class AgentManager {
     }
 
     /**
-     * Creates a system message with tool call results for agentic continuation
-     * @param chatId The chat ID
-     * @returns System message content or undefined if agent not configured or no tool calls
+     * Process a message and its tool calls to determine next action
+     * @param message The message that was processed
+     * @param toolCalls The tool calls that were executed
+     * @returns Agent result indicating next action
      */
-    createToolResultSystemMessage(chatId: string): string | undefined {
-        const context = this.contexts.get(chatId);
+    async react(message: LlmMessage, toolCalls: ToolCall[]): Promise<AgentResult> {
+        const context = this.contexts.get(message.chatId);
 
-        if (!context?.config.enabled || context.lastToolCalls.length === 0) {
-            return undefined;
-        }
-
-        const toolCallSummary = this.formatToolCallsForSystemMessage(context.lastToolCalls);
-        const roundtripInfo = `(Roundtrip ${context.roundtrips}/${context.config.maxRoundtrips})`;
-
-        return context.config.customSystemPrompt ||
-            `${roundtripInfo} You previously executed these tool calls:\n\n${toolCallSummary}\n\nContinue based on these results. You may call additional tools if needed or provide a final response to the user.`;
-    }
-
-    /**
-     * Process tool calls for a chat and potentially generate a follow-up message
-     * @param chatId The ID of the chat
-     * @param messageId The ID of the message containing the tool calls
-     * @param toolCalls The tool calls to process
-     */
-    async processToolCalls(
-        chatId: string,
-        _messageId: string,
-        toolCalls: ToolCall[]
-    ): Promise<void> {
-        // Get the agent context for this chat
-        const context = this.contexts.get(chatId);
-
-        // Skip if agent is not enabled or there are no tool calls
+        // Skip if agent not enabled or no tool calls
         if (!context?.config.enabled || toolCalls.length === 0) {
-            return;
+            return { type: 'complete' };
         }
 
         // Filter to only include tool calls with results
         const completedToolCalls = toolCalls.filter(tc => tc.result);
         if (completedToolCalls.length === 0) {
-            return;
+            return { type: 'complete' };
         }
 
         // Increment the roundtrip counter
@@ -243,122 +211,27 @@ export class AgentManager {
 
         // Check if we've reached the maximum roundtrips
         if (context.roundtrips >= context.config.maxRoundtrips) {
-            console.log(
-                `[AgentManager] Reached maximum roundtrips (${context.config.maxRoundtrips}) for chat ${chatId}`
-            );
-
-            // Add a system message noting that the maximum roundtrips were reached
-            await this.chatManager.addMessage(
-                chatId,
-                `The agent reached the maximum allowed roundtrips (${context.config.maxRoundtrips}).`,
-                "system",
-                "system"
-            );
-
             // Reset the agent
-            this.resetAgent(chatId);
-            return;
+            this.resetAgent(message.chatId);
+            return {
+                type: 'complete',
+                systemMessage: `The agent reached the maximum allowed roundtrips (${context.config.maxRoundtrips}).`
+            };
         }
 
-        // Store the tool calls for the next roundtrip
+        // Store the tool calls for context
         context.lastToolCalls = completedToolCalls;
-        this.contexts.set(chatId, context);
+        this.contexts.set(message.chatId, context);
 
-        // If auto-continue is enabled, create a continuation
+        // If auto-continue is enabled, prepare continuation
         if (context.config.autoContinue) {
-            await this.continueChatWithToolResults(chatId);
-        }
-    }
-
-    /**
-     * Continues a chat with tool results
-     * @param chatId The chat ID to continue
-     * @returns Promise that resolves when continuation is complete
-     */
-    async continueChatWithToolResults(chatId: string): Promise<void> {
-        const context = this.contexts.get(chatId);
-
-        if (!context?.config.enabled || !context.isActive || context.lastToolCalls.length === 0) {
-            return;
+            const systemMessage = this.formatToolCallsForSystemMessage(completedToolCalls);
+            return {
+                type: 'continue',
+                systemMessage: `(Roundtrip ${context.roundtrips}/${context.config.maxRoundtrips}) ${systemMessage}\n\nContinue based on these results. You may call additional tools if needed or provide a final response to the user.`
+            };
         }
 
-        console.log(
-            `[AgentManager] Auto-continuing agentic flow for chat ${chatId} (roundtrip ${context.roundtrips})`
-        );
-
-        try {
-            // Create an assistant placeholder message directly
-            const assistantMessage = await this.chatManager.addMessage(
-                chatId,
-                "",
-                "assistant",
-                "assistant",
-                undefined
-            );
-
-            // Update the status to pending
-            await this.chatManager.updateMessageStatus(
-                chatId,
-                assistantMessage.id,
-                MessageStatus.SENDING
-            );
-
-            // Create a virtual user message to continue the flow
-            const virtualMessage = await this.chatManager.addMessage(
-                chatId,
-                "[Auto-continuation]",
-                "user",
-                "system" // Use system as username to distinguish from actual user messages
-            );
-
-            // Get the provider to use
-            const provider = this.getLlmProvider(this.defaultProviderName);
-            if (!provider) {
-                throw new Error("No LLM provider configured");
-            }
-
-            // Create LLM message with necessary context
-            const llmMessage = {
-                id: virtualMessage.id,
-                chatId: virtualMessage.chatId,
-                content: virtualMessage.content,
-                role: virtualMessage.role,
-                status: MessageStatus.SENT,
-                created: virtualMessage.created instanceof Date
-                    ? virtualMessage.created
-                    : new Date(virtualMessage.created),
-                parentId: virtualMessage.parentId || "",
-                provider: provider.provider,
-                assistantMessageId: assistantMessage.id
-            } as LlmMessage;
-
-            // Process the message stream directly
-            const emitter = await this.processMessageStreamFn(llmMessage);
-
-            // Wait for the stream to complete
-            await new Promise<void>((resolve, reject) => {
-                emitter.on("end", () => {
-                    resolve();
-                });
-
-                emitter.on("error", (error) => {
-                    console.error("[AgentManager] Error processing message stream:", error);
-                    reject(error);
-                });
-            });
-        } catch (error) {
-            console.error("[AgentManager] Error auto-continuing agentic flow:", error);
-
-            // Add an error message to the chat
-            await this.chatManager.addMessage(
-                chatId,
-                "Error continuing agentic flow: " + (error instanceof Error ? error.message : String(error)),
-                "system",
-                "system"
-            );
-
-            // Reset the agent context
-            this.resetAgent(chatId);
-        }
+        return { type: 'complete' };
     }
 } 

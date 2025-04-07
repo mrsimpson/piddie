@@ -30,7 +30,7 @@ import {
   updateMessageToolCalls
 } from "./utils/chatMessageUpdateUtils";
 import {
-  enhanceMessageWithHistoryAndTools,
+  addTools,
   enhanceMessageWithSystemPrompt
 } from "./utils/messagePreparationUtils";
 import { compileSystemPrompt } from "./utils/systemPromptUtils";
@@ -88,12 +88,7 @@ export class Orchestrator implements LlmAdapter {
 
     // Initialize agent manager if chat manager is available
     if (this.chatManager) {
-      this.agentManager = new AgentManager(
-        this.chatManager,
-        this.getLlmProvider.bind(this),
-        this.processMessageStream.bind(this),
-        ""  // Will be set when a provider is used
-      );
+      this.agentManager = new AgentManager();
     }
   }
 
@@ -254,16 +249,14 @@ export class Orchestrator implements LlmAdapter {
    * @param message The message to enhance
    * @returns The enhanced message
    */
-  private async enhanceMessageWithHistoryAndTools(
+  private async enhanceMessageWithTools(
     message: LlmMessage
   ): Promise<LlmMessage> {
     // Get available tools first
     const availableTools = await this.getAvailableTools();
 
-    return enhanceMessageWithHistoryAndTools(
+    return addTools(
       message,
-      this.chatManager,
-      this.agentManager,
       availableTools
     );
   }
@@ -294,7 +287,7 @@ export class Orchestrator implements LlmAdapter {
 
     // Enhance the message with history and tools
     const enhancedMessage =
-      await this.enhanceMessageWithHistoryAndTools(message);
+      await this.enhanceMessageWithTools(message);
 
     // Track accumulated content for extracting tool calls
     let fullContent = "";
@@ -369,6 +362,14 @@ export class Orchestrator implements LlmAdapter {
       // Filter out incomplete tool calls to avoid execution failures
       const completeToolCalls = filterValidToolCalls(chunkToolCalls);
 
+      // Add tool calls to tracking before processing. This ensures we track them even if they fail in execution lateron
+      for (const toolCall of completeToolCalls) {
+        const toolCallId = getToolCallId(toolCall);
+        if (!toolCalls.some((tc) => getToolCallId(tc) === toolCallId)) {
+          toolCalls.push(toolCall);
+        }
+      }
+
       for (const toolCall of completeToolCalls) {
         await executeAndEmitToolCall(toolCall);
       }
@@ -390,14 +391,6 @@ export class Orchestrator implements LlmAdapter {
           toolCalls,
           this.chatManager
         );
-
-        // Handle agentic flow if enabled
-        if (this.agentManager && this.agentManager.isAgentEnabled(message.chatId)) {
-          console.log(`[Orchestrator] Agent is enabled for chat ${message.chatId}, processing tool calls`);
-          await this.agentManager.processToolCalls(message.chatId, message.id, toolCalls);
-        } else {
-          console.log(`[Orchestrator] Agent is NOT enabled for chat ${message.chatId}, skipping tool call processing`);
-        }
       }
     };
 
@@ -505,30 +498,12 @@ export class Orchestrator implements LlmAdapter {
           await processExtractedToolCalls(extractedToolCalls);
         }
 
-        // Update message with tool calls and process agent if enabled
-        try {
-          // Ensure we wait for the update to complete before ending
-          await updateMessageWithToolCalls();
-
-          // Add small delay to ensure agent processing completes
-          await new Promise(resolve => setTimeout(resolve, 10));
-
-          updateMessageStatus(
-            message.chatId,
-            message.id,
-            MessageStatus.SENT,
-            this.chatManager
-          );
-        } catch (error) {
-          console.error("[Orchestrator] Error updating message:", error);
-        }
-
         // Emit end event after all tool calls have been executed
-        await prepareAndEmitEndEvent(
+        await this.handleEndEvent(
           emitter,
-          this.toolCallQueue,
-          finalData,
+          message,
           toolCalls,
+          finalData,
           fullContent
         );
       });
@@ -585,11 +560,12 @@ export class Orchestrator implements LlmAdapter {
         }
 
         // Emit end event
-        await prepareAndEmitEndEvent(
+        await this.handleEndEvent(
           emitter,
-          this.toolCallQueue,
+          message,
+          toolCalls,
           data as LlmStreamChunk,
-          toolCalls
+          fullContent
         );
       });
 
@@ -636,4 +612,84 @@ export class Orchestrator implements LlmAdapter {
     return compileSystemPrompt(supportsTools, this.MCP_TOOL_USE);
   }
 
+  private async handleEndEvent(
+    emitter: EventEmitter,
+    message: LlmMessage,
+    toolCalls: ToolCall[],
+    finalData: LlmStreamChunk | null,
+    fullContent: string = ""
+  ): Promise<void> {
+    // Update message status
+    updateMessageStatus(
+      message.chatId,
+      message.id,
+      MessageStatus.SENT,
+      this.chatManager
+    );
+
+    // Update tool calls in message if any exist
+    if (this.chatManager && toolCalls.length > 0) {
+      await updateMessageToolCalls(
+        message.chatId,
+        message.id,
+        toolCalls,
+        this.chatManager
+      );
+    }
+
+    // Emit end event with all accumulated tool calls
+    await prepareAndEmitEndEvent(
+      emitter,
+      this.toolCallQueue,
+      finalData,
+      toolCalls,
+      fullContent
+    );
+
+    // Get agent reaction if available
+    if (this.agentManager && this.chatManager) {
+      // Ensure we have all tool calls with results
+      const completedToolCalls = toolCalls.filter(tc => tc.result);
+      const agentResult = await this.agentManager.react(message, completedToolCalls);
+
+      if (agentResult.type === 'continue' && agentResult.systemMessage) {
+        // Create continuation messages
+        const assistantMessage = await this.chatManager.addMessage(
+          message.chatId,
+          "",
+          "assistant",
+          "assistant"
+        );
+
+        const virtualMessage = await this.chatManager.addMessage(
+          message.chatId,
+          "[Auto-continuation]",
+          "user",
+          "system"
+        );
+
+        // Create and process LLM message
+        const llmMessage: LlmMessage = {
+          id: virtualMessage.id,
+          chatId: message.chatId,
+          content: virtualMessage.content,
+          role: virtualMessage.role,
+          status: MessageStatus.SENT,
+          created: new Date(),
+          parentId: virtualMessage.parentId || "",
+          provider: message.provider,
+          assistantMessageId: assistantMessage.id
+        };
+
+        await this.processMessageStream(llmMessage);
+      } else if (agentResult.systemMessage) {
+        await this.chatManager.addMessage(
+          message.chatId,
+          agentResult.systemMessage,
+          "system",
+          "system"
+        );
+      }
+    }
+  }
 }
