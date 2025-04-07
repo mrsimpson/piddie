@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from "vue";
 import { useChatStore } from "@piddie/chat-management-ui-vue";
-import { useLlmStore } from "@piddie/llm-integration-ui-vue";
+import { AgentSettings, useLlmStore } from "@piddie/llm-integration-ui-vue";
 import { useProjectStore } from "@piddie/project-management-ui-vue";
 import { MessagesList, SimpleChatInput } from "@piddie/chat-management-ui-vue";
 import { CollapsiblePanel } from "@piddie/common-ui-vue";
@@ -32,6 +32,7 @@ const messages = computed(() => chatStore.messages);
 const currentChat = computed(() => chatStore.currentChat);
 const currentProject = computed(() => projectStore.currentProject);
 const showSettings = ref(false);
+const showAgentSettings = ref(false);
 
 // Computed properties for LLM settings
 const isModelSelected = computed(() => !!llmStore.config.defaultModel);
@@ -77,6 +78,47 @@ watch(
   { immediate: true }
 );
 
+// Add new ref for agent settings state
+const agentEnabled = ref(false);
+
+// Update the agent icon class computed
+const agentIconClass = computed(() => {
+  if (!currentChat.value) return "";
+  return agentEnabled.value ? "agent-enabled" : "";
+});
+
+// Watch for chat changes to update agent state
+watch(
+  () => currentChat.value?.id,
+  async (chatId) => {
+    if (chatId) {
+      try {
+        const settings = await llmStore.getAgentSettings(chatId);
+        agentEnabled.value = settings?.enabled ?? false;
+      } catch (error) {
+        console.error("Error loading agent settings:", error);
+        agentEnabled.value = false;
+      }
+    } else {
+      agentEnabled.value = false;
+    }
+  },
+  { immediate: true }
+);
+
+// Watch for agent settings changes
+watch(showAgentSettings, async (show) => {
+  if (!show && currentChat.value?.id) {
+    // When closing settings panel, refresh agent state
+    try {
+      const settings = await llmStore.getAgentSettings(currentChat.value.id);
+      agentEnabled.value = settings?.enabled ?? false;
+    } catch (error) {
+      console.error("Error refreshing agent settings:", error);
+    }
+  }
+});
+
 // Send a message to the LLM
 async function sendMessage(content: string) {
   if (
@@ -98,6 +140,19 @@ function cancelStreaming() {
 // Toggle LLM settings visibility
 function toggleSettings() {
   showSettings.value = !showSettings.value;
+  // Close agent settings if opening model settings
+  if (showSettings.value) {
+    showAgentSettings.value = false;
+  }
+}
+
+// Toggle agent settings visibility
+function toggleAgentSettings() {
+  showAgentSettings.value = !showAgentSettings.value;
+  // Close model settings if opening agent settings
+  if (showAgentSettings.value) {
+    showSettings.value = false;
+  }
 }
 
 // Handle panel collapse
@@ -133,6 +188,11 @@ function handleCollapse(isCollapsed: boolean) {
           <LlmSettings :embedded="true" />
         </div>
 
+        <!-- Agent Settings Panel (conditionally shown) -->
+        <div v-if="showAgentSettings" class="settings-container">
+          <AgentSettings :embedded="true" />
+        </div>
+
         <!-- Chat Input -->
         <div class="chat-input-wrapper">
           <SimpleChatInput
@@ -143,18 +203,42 @@ function handleCollapse(isCollapsed: boolean) {
 
         <!-- Model Selection and Actions Row -->
         <div class="model-and-actions-row">
-          <!-- Model Selection Button -->
-          <div
-            class="model-selector"
-            @click="toggleSettings"
-            :class="{ 'model-not-selected': !isModelSelected }"
-          >
-            <sl-icon name="cpu" class="model-icon"></sl-icon>
-            <span class="model-name">{{ selectedModelName }}</span>
-            <sl-icon
-              :name="showSettings ? 'chevron-down' : 'chevron-right'"
-              class="expand-icon"
-            ></sl-icon>
+          <!-- Selectors Container -->
+          <div class="selectors-container">
+            <!-- Model Selection Button -->
+            <div
+              class="model-selector"
+              @click="toggleSettings"
+              :class="{
+                'model-not-selected': !isModelSelected,
+                active: showSettings
+              }"
+            >
+              <sl-icon name="cpu" class="model-icon"></sl-icon>
+              <span class="model-name">{{ selectedModelName }}</span>
+              <sl-icon
+                :name="showSettings ? 'chevron-down' : 'chevron-right'"
+                class="expand-icon"
+              ></sl-icon>
+            </div>
+
+            <!-- Agent Settings Button -->
+            <div
+              class="agent-selector"
+              @click="toggleAgentSettings"
+              :class="{ active: showAgentSettings }"
+            >
+              <sl-icon
+                name="robot"
+                class="agent-icon"
+                :class="agentIconClass"
+              ></sl-icon>
+              <span class="agent-name">Agent</span>
+              <sl-icon
+                :name="showAgentSettings ? 'chevron-down' : 'chevron-right'"
+                class="expand-icon"
+              ></sl-icon>
+            </div>
           </div>
 
           <!-- Cancel Button -->
@@ -223,7 +307,17 @@ function handleCollapse(isCollapsed: boolean) {
   box-sizing: border-box;
 }
 
-.model-selector {
+.selectors-container {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 60%;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.model-selector,
+.agent-selector {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -232,13 +326,18 @@ function handleCollapse(isCollapsed: boolean) {
   border-radius: var(--sl-border-radius-medium);
   cursor: pointer;
   transition: background-color 0.2s;
-  max-width: 60%;
-  overflow: hidden;
   box-sizing: border-box;
 }
 
-.model-selector:hover {
+.model-selector:hover,
+.agent-selector:hover {
   background-color: var(--sl-color-neutral-200);
+}
+
+.model-selector.active,
+.agent-selector.active {
+  background-color: var(--sl-color-primary-100);
+  color: var(--sl-color-primary-700);
 }
 
 .model-not-selected {
@@ -246,13 +345,15 @@ function handleCollapse(isCollapsed: boolean) {
   color: var(--sl-color-warning-700);
 }
 
-.model-icon {
+.model-icon,
+.agent-icon {
   font-size: 1rem;
   color: var(--sl-color-primary-600);
   flex-shrink: 0;
 }
 
-.model-name {
+.model-name,
+.agent-name {
   font-size: 0.875rem;
   font-weight: 500;
   white-space: nowrap;
@@ -319,5 +420,13 @@ button {
   width: 100%;
   box-sizing: border-box;
   padding: 0;
+}
+
+.agent-icon.agent-enabled {
+  color: var(--sl-color-primary-600);
+}
+
+.agent-icon:not(.agent-enabled) {
+  color: var(--sl-color-neutral-600);
 }
 </style>
