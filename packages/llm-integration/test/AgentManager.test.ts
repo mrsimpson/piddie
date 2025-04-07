@@ -1,31 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { AgentManager, AgentConfig } from "../src/AgentManager";
 import { ChatCompletionRole } from "openai/resources/chat";
-import { MessageStatus } from "@piddie/chat-management";
-import type { Message, ToolCall, ToolCallResult } from "@piddie/chat-management";
-import type { LlmMessage, LlmStreamChunk } from "../src/types";
-import { EventEmitter } from "events";
-
-// Mock types
-interface MockChatManager {
-    addMessage: (
-        chatId: string,
-        content: string,
-        role: ChatCompletionRole,
-        username: string,
-        parentId?: string
-    ) => Promise<Message>;
-    updateMessageStatus: (
-        chatId: string,
-        messageId: string,
-        status: MessageStatus
-    ) => Promise<void>;
-    updateMessage: (
-        chatId: string,
-        messageId: string,
-        update: Partial<Message>
-    ) => Promise<void>;
-}
+import { Message, MessageStatus, ToolCall, ToolCallResult, ChatManager, Chat } from "@piddie/chat-management";
+import { EventEmitter } from "@piddie/shared-types";
+import { LlmMessage, LlmStreamChunk, LlmProviderConfig } from "../src/types";
+import { Mock } from "vitest";
 
 // Test helpers
 const createMockToolCall = (
@@ -58,10 +37,6 @@ const createMockMessage = (
 });
 
 describe("AgentManager", () => {
-    // Mock providers
-    let mockChatManager: MockChatManager;
-    let mockGetLlmProvider: (name: string) => any;
-    let mockProcessMessageStreamFn: (message: LlmMessage, onChunk?: ((chunk: LlmStreamChunk) => void)) => Promise<EventEmitter>;
     let agentManager: AgentManager;
 
     // Testing constants
@@ -69,43 +44,7 @@ describe("AgentManager", () => {
     const DEFAULT_PROVIDER = "test-provider";
 
     beforeEach(() => {
-        // Create mocks
-        mockChatManager = {
-            addMessage: vi.fn().mockImplementation((chatId, content, role, username, parentId) => {
-                return Promise.resolve(createMockMessage(
-                    "msg-" + Math.random().toString(36).substr(2, 9),
-                    chatId,
-                    content,
-                    role as ChatCompletionRole
-                ));
-            }),
-            updateMessageStatus: vi.fn().mockResolvedValue(undefined),
-            updateMessage: vi.fn().mockResolvedValue(undefined)
-        };
-
-        mockGetLlmProvider = vi.fn().mockImplementation((name) => {
-            return { provider: name };
-        });
-
-        // Create a mock EventEmitter that emits an end event after a delay
-        mockProcessMessageStreamFn = vi.fn().mockImplementation((message) => {
-            const emitter = new EventEmitter();
-
-            // Simulate the stream ending
-            setTimeout(() => {
-                emitter.emit("end");
-            }, 50);
-
-            return Promise.resolve(emitter);
-        });
-
-        // Create instance
-        agentManager = new AgentManager(
-            mockChatManager as any,
-            mockGetLlmProvider,
-            mockProcessMessageStreamFn,
-            DEFAULT_PROVIDER
-        );
+        agentManager = new AgentManager();
     });
 
     afterEach(() => {
@@ -278,295 +217,91 @@ describe("AgentManager", () => {
         });
     });
 
-    describe("createToolResultSystemMessage", () => {
-        it("should return undefined when agent is not enabled", () => {
-            agentManager.configureAgent(TEST_CHAT_ID, { enabled: false });
+    describe("react", () => {
+        const mockMessage: LlmMessage = {
+            id: "test-message",
+            chatId: "test-chat",
+            content: "test content",
+            role: "assistant",
+            status: MessageStatus.SENT,
+            created: new Date(),
+            provider: DEFAULT_PROVIDER,
+            assistantMessageId: "test-assistant"
+        };
 
-            // Manually set tool calls to test
-            const context = agentManager.getAgentContext(TEST_CHAT_ID)!;
-            context.lastToolCalls = [
-                createMockToolCall("test-tool", { test: "arg" }, {
-                    status: "success",
-                    value: "result",
-                    timestamp: new Date()
-                })
-            ];
+        const mockToolCalls: ToolCall[] = [
+            createMockToolCall("test-tool", { arg: "value" }, {
+                status: "success",
+                value: "result"
+            })
+        ];
 
-            expect(agentManager.createToolResultSystemMessage(TEST_CHAT_ID)).toBeUndefined();
+        it("returns complete if agent is not enabled", async () => {
+            const result = await agentManager.react(mockMessage, mockToolCalls);
+            expect(result.type).toBe("complete");
         });
 
-        it("should return undefined when no tool calls exist", () => {
-            agentManager.configureAgent(TEST_CHAT_ID, { enabled: true });
-            expect(agentManager.createToolResultSystemMessage(TEST_CHAT_ID)).toBeUndefined();
+        it("returns complete if no tool calls provided", async () => {
+            await agentManager.configureAgent("test-chat", { enabled: true });
+            const result = await agentManager.react(mockMessage, []);
+            expect(result.type).toBe("complete");
         });
 
-        it("should create a system message with tool results", () => {
-            agentManager.configureAgent(TEST_CHAT_ID, { enabled: true });
-
-            // Manually set context values
-            const context = agentManager.getAgentContext(TEST_CHAT_ID)!;
-            context.roundtrips = 2;
-            context.lastToolCalls = [
-                createMockToolCall("search", { query: "test" }, {
-                    status: "success",
-                    value: "Test result",
-                    timestamp: new Date()
-                })
-            ];
-
-            const message = agentManager.createToolResultSystemMessage(TEST_CHAT_ID);
-
-            expect(message).toBeDefined();
-            expect(message).toContain("Roundtrip 2/10");
-            expect(message).toContain("Tool: search");
-            expect(message).toContain('"query": "test"');
-            expect(message).toContain("SUCCESS: Test result");
-            expect(message).toContain("Continue based on these results");
+        it("returns complete if no completed tool calls", async () => {
+            await agentManager.configureAgent("test-chat", { enabled: true });
+            const result = await agentManager.react(mockMessage, [
+                createMockToolCall("test-tool", { arg: "value" })
+            ]);
+            expect(result.type).toBe("complete");
         });
 
-        it("should use custom system prompt when provided", () => {
-            agentManager.configureAgent(TEST_CHAT_ID, {
+        it("returns complete if max roundtrips reached", async () => {
+            await agentManager.configureAgent("test-chat", {
                 enabled: true,
-                customSystemPrompt: "Custom prompt with {toolCalls}"
+                maxRoundtrips: 1
             });
 
-            // Manually set context values
-            const context = agentManager.getAgentContext(TEST_CHAT_ID)!;
-            context.lastToolCalls = [
-                createMockToolCall("test-tool", { test: "arg" }, {
-                    status: "success",
-                    value: "result",
-                    timestamp: new Date()
-                })
-            ];
+            // First call
+            await agentManager.react(mockMessage, mockToolCalls);
+            // Second call should hit max roundtrips
+            const result = await agentManager.react(mockMessage, mockToolCalls);
 
-            const message = agentManager.createToolResultSystemMessage(TEST_CHAT_ID);
-            expect(message).toBe("Custom prompt with {toolCalls}");
-        });
-    });
-
-    describe("processToolCalls", () => {
-        it("should not process calls when agent is disabled", async () => {
-            agentManager.configureAgent(TEST_CHAT_ID, { enabled: false });
-
-            const toolCalls = [
-                createMockToolCall("test-tool", { test: "arg" }, {
-                    status: "success",
-                    value: "result",
-                    timestamp: new Date()
-                })
-            ];
-
-            await agentManager.processToolCalls(TEST_CHAT_ID, "message-id", toolCalls);
-
-            // Check that the context wasn't modified
-            const context = agentManager.getAgentContext(TEST_CHAT_ID);
-            expect(context?.roundtrips).toBe(0);
-            expect(context?.lastToolCalls).toEqual([]);
-
-            // Verify continueChatWithToolResults wasn't called
-            expect(mockChatManager.addMessage).not.toHaveBeenCalled();
+            expect(result.type).toBe("complete");
+            expect(result.systemMessage).toContain("roundtrips");
         });
 
-        it("should not process empty tool calls", async () => {
-            agentManager.configureAgent(TEST_CHAT_ID, { enabled: true });
-            await agentManager.processToolCalls(TEST_CHAT_ID, "message-id", []);
-
-            // Check that the context wasn't modified
-            const context = agentManager.getAgentContext(TEST_CHAT_ID);
-            expect(context?.roundtrips).toBe(0);
-            expect(context?.lastToolCalls).toEqual([]);
-        });
-
-        it("should not process tool calls without results", async () => {
-            agentManager.configureAgent(TEST_CHAT_ID, { enabled: true });
-
-            const toolCalls = [
-                createMockToolCall("test-tool", { test: "arg" }) // No result
-            ];
-
-            await agentManager.processToolCalls(TEST_CHAT_ID, "message-id", toolCalls);
-
-            // Check that the context wasn't modified
-            const context = agentManager.getAgentContext(TEST_CHAT_ID);
-            expect(context?.roundtrips).toBe(0);
-            expect(context?.lastToolCalls).toEqual([]);
-        });
-
-        it("should increment roundtrips and store tool calls", async () => {
-            agentManager.configureAgent(TEST_CHAT_ID, {
-                enabled: true,
-                autoContinue: false // Disable auto-continue for this test
-            });
-
-            const toolCalls = [
-                createMockToolCall("test-tool", { test: "arg" }, {
-                    status: "success",
-                    value: "result",
-                    timestamp: new Date()
-                })
-            ];
-
-            await agentManager.processToolCalls(TEST_CHAT_ID, "message-id", toolCalls);
-
-            // Check that the context was updated
-            const context = agentManager.getAgentContext(TEST_CHAT_ID);
-            expect(context?.roundtrips).toBe(1);
-            expect(context?.lastToolCalls).toEqual(toolCalls);
-            expect(context?.isActive).toBe(true);
-
-            // Verify no continuation happened
-            expect(mockChatManager.addMessage).not.toHaveBeenCalled();
-        });
-
-        it("should stop and add message when reaching max roundtrips", async () => {
-            agentManager.configureAgent(TEST_CHAT_ID, {
-                enabled: true,
-                maxRoundtrips: 3
-            });
-
-            // Manually set roundtrips to just below the limit
-            const context = agentManager.getAgentContext(TEST_CHAT_ID)!;
-            context.roundtrips = 2;
-
-            const toolCalls = [
-                createMockToolCall("test-tool", { test: "arg" }, {
-                    status: "success",
-                    value: "result",
-                    timestamp: new Date()
-                })
-            ];
-
-            await agentManager.processToolCalls(TEST_CHAT_ID, "message-id", toolCalls);
-
-            // Check that we added a system message
-            expect(mockChatManager.addMessage).toHaveBeenCalledWith(
-                TEST_CHAT_ID,
-                expect.stringContaining("maximum allowed roundtrips"),
-                "system",
-                "system"
-            );
-
-            // Check that context was reset
-            const resetContext = agentManager.getAgentContext(TEST_CHAT_ID);
-            expect(resetContext?.roundtrips).toBe(0);
-            expect(resetContext?.isActive).toBe(false);
-        });
-
-        it("should auto-continue when enabled", async () => {
-            agentManager.configureAgent(TEST_CHAT_ID, {
+        it("returns continue with system message when auto-continue enabled", async () => {
+            await agentManager.configureAgent("test-chat", {
                 enabled: true,
                 autoContinue: true
             });
 
-            const toolCalls = [
-                createMockToolCall("test-tool", { test: "arg" }, {
-                    status: "success",
-                    value: "result",
-                    timestamp: new Date()
-                })
-            ];
+            const result = await agentManager.react(mockMessage, mockToolCalls);
 
-            await agentManager.processToolCalls(TEST_CHAT_ID, "message-id", toolCalls);
-
-            // Verify continuation was triggered
-            expect(mockChatManager.addMessage).toHaveBeenCalledTimes(2); // Assistant + User, no third call in this test
-            expect(mockProcessMessageStreamFn).toHaveBeenCalled();
-        });
-    });
-
-    describe("continueChatWithToolResults", () => {
-        it("should not continue when agent is disabled", async () => {
-            agentManager.configureAgent(TEST_CHAT_ID, { enabled: false });
-            await agentManager.continueChatWithToolResults(TEST_CHAT_ID);
-
-            expect(mockChatManager.addMessage).not.toHaveBeenCalled();
-            expect(mockProcessMessageStreamFn).not.toHaveBeenCalled();
+            expect(result.type).toBe("continue");
+            expect(result.systemMessage).toBeDefined();
         });
 
-        it("should not continue when agent is not active", async () => {
-            agentManager.configureAgent(TEST_CHAT_ID, { enabled: true });
-            // Agent is configured but not active
-            await agentManager.continueChatWithToolResults(TEST_CHAT_ID);
+        it("returns complete when auto-continue disabled", async () => {
+            await agentManager.configureAgent("test-chat", {
+                enabled: true,
+                autoContinue: false
+            });
 
-            expect(mockChatManager.addMessage).not.toHaveBeenCalled();
-            expect(mockProcessMessageStreamFn).not.toHaveBeenCalled();
+            const result = await agentManager.react(mockMessage, mockToolCalls);
+
+            expect(result.type).toBe("complete");
         });
 
-        it("should not continue without tool calls", async () => {
-            agentManager.configureAgent(TEST_CHAT_ID, { enabled: true });
+        it("increments roundtrips and stores tool calls in context", async () => {
+            await agentManager.configureAgent("test-chat", { enabled: true });
 
-            // Set agent as active but with no tool calls
-            const context = agentManager.getAgentContext(TEST_CHAT_ID)!;
-            context.isActive = true;
+            await agentManager.react(mockMessage, mockToolCalls);
 
-            await agentManager.continueChatWithToolResults(TEST_CHAT_ID);
-
-            expect(mockChatManager.addMessage).not.toHaveBeenCalled();
-            expect(mockProcessMessageStreamFn).not.toHaveBeenCalled();
+            const context = agentManager.getAgentContext("test-chat");
+            expect(context?.roundtrips).toBe(1);
+            expect(context?.lastToolCalls).toEqual(mockToolCalls);
         });
 
-
-
-        it("should handle errors during continuation", async () => {
-            agentManager.configureAgent(TEST_CHAT_ID, { enabled: true });
-
-            // Set up context
-            const context = agentManager.getAgentContext(TEST_CHAT_ID)!;
-            context.isActive = true;
-            context.lastToolCalls = [
-                createMockToolCall("test-tool", { test: "arg" }, {
-                    status: "success",
-                    value: "result",
-                    timestamp: new Date()
-                })
-            ];
-
-            // Make the completion function fail
-            mockProcessMessageStreamFn.mockRejectedValueOnce(new Error("Test error"));
-
-            await agentManager.continueChatWithToolResults(TEST_CHAT_ID);
-
-            // Check that we added an error message
-            expect(mockChatManager.addMessage).toHaveBeenCalledWith(
-                TEST_CHAT_ID,
-                expect.stringContaining("Error continuing agentic flow: Test error"),
-                "system",
-                "system"
-            );
-
-            // Check that agent was reset
-            const resetContext = agentManager.getAgentContext(TEST_CHAT_ID);
-            expect(resetContext?.isActive).toBe(false);
-            expect(resetContext?.roundtrips).toBe(0);
-        });
-
-        it("should handle missing provider", async () => {
-            agentManager.configureAgent(TEST_CHAT_ID, { enabled: true });
-
-            // Set up context
-            const context = agentManager.getAgentContext(TEST_CHAT_ID)!;
-            context.isActive = true;
-            context.lastToolCalls = [
-                createMockToolCall("test-tool", { test: "arg" }, {
-                    status: "success",
-                    value: "result",
-                    timestamp: new Date()
-                })
-            ];
-
-            // Make provider lookup return undefined
-            mockGetLlmProvider.mockReturnValueOnce(undefined);
-
-            await agentManager.continueChatWithToolResults(TEST_CHAT_ID);
-
-            // Check that we added an error message
-            expect(mockChatManager.addMessage).toHaveBeenCalledWith(
-                TEST_CHAT_ID,
-                expect.stringContaining("Error continuing agentic flow: No LLM provider configured"),
-                "system",
-                "system"
-            );
-        });
     });
 }); 
