@@ -74,7 +74,10 @@ export interface AgentSettings {
 /**
  * Default agent settings
  */
-export const DEFAULT_AGENT_SETTINGS: Omit<AgentSettings, "chatId" | "lastUpdated"> = {
+export const DEFAULT_AGENT_SETTINGS: Omit<
+  AgentSettings,
+  "chatId" | "lastUpdated"
+> = {
   enabled: false,
   maxRoundtrips: 10,
   autoContinue: true
@@ -158,12 +161,11 @@ export class SettingsDatabase extends Dexie {
       });
 
     // Add version 8 with agent settings
-    this.version(8)
-      .stores({
-        llmConfig: "provider",
-        workbench: "key, lastUpdated",
-        agentSettings: "chatId, lastUpdated"
-      });
+    this.version(8).stores({
+      llmConfig: "provider",
+      workbench: "key, lastUpdated",
+      agentSettings: "chatId, lastUpdated"
+    });
   }
 }
 
