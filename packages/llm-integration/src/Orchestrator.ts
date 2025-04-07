@@ -8,7 +8,8 @@ import type {
 import type {
   ChatManager,
   ToolCall,
-  Message} from "@piddie/chat-management";
+  Message
+} from "@piddie/chat-management";
 import { MessageStatus } from "@piddie/chat-management";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { LlmAdapter } from "./index";
@@ -90,9 +91,36 @@ export class Orchestrator implements LlmAdapter {
       this.agentManager = new AgentManager(
         this.chatManager,
         this.getLlmProvider.bind(this),
-        this.getCompletion.bind(this),
+        this.processMessageStream.bind(this),
         ""  // Will be set when a provider is used
       );
+    }
+  }
+
+  /**
+   * Initialize agent settings for a chat
+   * @param chatId The ID of the chat to initialize settings for
+   */
+  private async initializeAgentSettings(chatId: string): Promise<void> {
+    if (!this.agentManager) return;
+
+    try {
+      // Check if settings already exist
+      const isConfigured = !!this.agentManager.getAgentContext(chatId);
+
+      if (!isConfigured) {
+        // No settings found, use and save defaults
+        const defaults = {
+          enabled: true,
+          maxRoundtrips: 10,
+          autoContinue: true,
+          customSystemPrompt: undefined
+        };
+
+        await this.agentManager.configureAgent(chatId, defaults);
+      }
+    } catch (error) {
+      console.error("[Orchestrator] Error initializing agent settings:", error);
     }
   }
 
@@ -251,6 +279,11 @@ export class Orchestrator implements LlmAdapter {
     onChunk?: (chunk: LlmStreamChunk) => void
   ): Promise<EventEmitter> {
     console.log("[Orchestrator] Processing message stream");
+
+    // Initialize agent settings for this chat if not already loaded
+    if (this.agentManager) {
+      await this.initializeAgentSettings(message.chatId);
+    }
 
     // Reset the executed tool calls set and tool call queue for this stream
     this.executedToolCalls.clear();
@@ -603,162 +636,4 @@ export class Orchestrator implements LlmAdapter {
     return compileSystemPrompt(supportsTools, this.MCP_TOOL_USE);
   }
 
-  /**
-   * Get a completion for a user message and update the assistant placeholder
-   * @param userMessage The user message
-   * @param assistantPlaceholder The assistant placeholder message
-   * @param providerConfig The LLM provider configuration
-   * @returns The completed assistant message
-   */
-  async getCompletion(
-    userMessage: Message,
-    assistantPlaceholder: Message,
-    providerConfig: LlmProviderConfig,
-  ): Promise<Message> {
-    try {
-      // Register the provider if not already registered
-      if (!this.getLlmProvider(providerConfig.provider)) {
-        this.registerLlmProvider(providerConfig);
-      }
-
-      // Create LLM message with all necessary context
-      const llmMessage = {
-        id: userMessage.id,
-        chatId: userMessage.chatId,
-        content: userMessage.content,
-        role: userMessage.role,
-        status: MessageStatus.SENT,
-        created:
-          userMessage.created instanceof Date
-            ? userMessage.created
-            : new Date(userMessage.created),
-        parentId: userMessage.parentId || "",
-        provider: providerConfig.provider,
-        assistantMessageId: assistantPlaceholder.id
-      } as LlmMessage;
-
-      // Enhance the message with history and tools
-      const enhancedMessage =
-        await this.enhanceMessageWithHistoryAndTools(llmMessage);
-
-      // Track accumulated content and tool calls
-      let accumulatedContent = "";
-      const accumulatedToolCalls: ToolCall[] = [];
-
-      const emitter = await this.processMessageStream(enhancedMessage);
-
-      // Create a promise that resolves when streaming is complete
-      return new Promise((resolve, reject) => {
-        // Handle data chunks
-        emitter.on("data", (data: unknown) => {
-          const chunk = data as LlmStreamChunk;
-
-          // Accumulate content
-          if (chunk.content) {
-            accumulatedContent += chunk.content;
-
-            // Update the assistant placeholder content
-            if (this.chatManager) {
-              updateMessageContent(
-                assistantPlaceholder.chatId,
-                assistantPlaceholder.id,
-                accumulatedContent,
-                this.chatManager
-              );
-            }
-          }
-
-          // Handle tool calls
-          if (chunk.tool_calls && chunk.tool_calls.length > 0) {
-            // Look for new tool calls that we haven't seen before
-            for (const newToolCall of chunk.tool_calls) {
-              // Skip if we already have this tool call
-              const existingToolCall = accumulatedToolCalls.find(
-                (tc) =>
-                  tc.function.name === newToolCall.function.name &&
-                  JSON.stringify(tc.function.arguments) ===
-                  JSON.stringify(newToolCall.function.arguments)
-              );
-
-              if (!existingToolCall) {
-                // This is a new tool call, add it to our tracking
-                accumulatedToolCalls.push(newToolCall);
-              } else if (newToolCall.result && !existingToolCall.result) {
-                // We've seen this tool call before but now it has a result
-                // Update the existing tool call with the result
-                existingToolCall.result = newToolCall.result;
-              }
-            }
-
-            // Update the assistant placeholder tool calls
-            if (this.chatManager) {
-              updateMessageToolCalls(
-                assistantPlaceholder.chatId,
-                assistantPlaceholder.id,
-                accumulatedToolCalls,
-                this.chatManager
-              );
-            }
-          }
-        });
-
-        // Handle completion
-        emitter.on("end", async () => {
-          try {
-            // Persist the assistant placeholder
-            if (this.chatManager) {
-              await this.chatManager.updateMessage(
-                assistantPlaceholder.chatId,
-                assistantPlaceholder.id,
-                {
-                  content: accumulatedContent,
-                  status: MessageStatus.SENT,
-                  tool_calls: accumulatedToolCalls
-                }
-              );
-            }
-
-            // Return the completed message
-            resolve({
-              ...assistantPlaceholder,
-              content: accumulatedContent,
-              status: MessageStatus.SENT,
-              tool_calls: accumulatedToolCalls
-            });
-          } catch (error) {
-            reject(error);
-          }
-        });
-
-        // Handle errors
-        emitter.on("error", (error: unknown) => {
-          // Update the assistant placeholder status
-          if (this.chatManager) {
-            updateMessageStatus(
-              assistantPlaceholder.chatId,
-              assistantPlaceholder.id,
-              MessageStatus.ERROR,
-              this.chatManager
-            );
-          }
-
-          reject(error);
-        });
-      });
-    } catch (error) {
-      console.error("[Orchestrator] Error getting completion:", error);
-
-      // Update the assistant placeholder status
-      if (this.chatManager) {
-        updateMessageStatus(
-          assistantPlaceholder.chatId,
-          assistantPlaceholder.id,
-          MessageStatus.ERROR,
-          this.chatManager
-        );
-      }
-
-      throw error;
-    }
-  }
 }

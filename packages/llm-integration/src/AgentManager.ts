@@ -1,6 +1,8 @@
-import type { ChatManager, Message, ToolCall } from "@piddie/chat-management";
+import { EventEmitter } from "@piddie/shared-types";
+import type { ChatManager, Message } from "@piddie/chat-management";
 import { MessageStatus } from "@piddie/chat-management";
-import type { LlmProviderConfig } from "./types";
+import type { LlmProviderConfig, LlmMessage, LlmStreamChunk, ToolCall } from "./types";
+import { settingsManager } from "@piddie/settings";
 
 /**
  * Configuration for agentic behavior
@@ -48,26 +50,47 @@ export class AgentManager {
      * Creates a new AgentManager
      * @param chatManager Chat manager for message handling
      * @param getLlmProvider Function to get an LLM provider by name
-     * @param getCompletionFn Function to get a completion for a message
+     * @param processMessageStreamFn Function to process a message stream
      * @param defaultProviderName Default LLM provider name to use
      */
     constructor(
         private readonly chatManager: ChatManager,
         private readonly getLlmProvider: (name: string) => LlmProviderConfig | undefined,
-        private readonly getCompletionFn: (
-            userMessage: Message,
-            assistantPlaceholder: Message,
-            providerConfig: LlmProviderConfig
-        ) => Promise<Message>,
+        private readonly processMessageStreamFn: (
+            message: LlmMessage,
+            onChunk?: (chunk: LlmStreamChunk) => void
+        ) => Promise<EventEmitter>,
         private readonly defaultProviderName: string = ""
     ) { }
+
+    /**
+     * Initializes agent configuration from stored settings
+     * @param chatId The chat ID to initialize
+     */
+    public async initializeFromStoredSettings(chatId: string): Promise<void> {
+        try {
+            const storedSettings = await settingsManager.getAgentSettings(chatId);
+
+            this.configureAgent(chatId, {
+                enabled: storedSettings.enabled,
+                maxRoundtrips: storedSettings.maxRoundtrips,
+                autoContinue: storedSettings.autoContinue,
+                customSystemPrompt: storedSettings.customSystemPrompt
+            });
+
+            console.log(`[AgentManager] Initialized agent for chat ${chatId} from stored settings:`, storedSettings);
+        } catch (error) {
+            console.error(`[AgentManager] Error initializing agent for chat ${chatId}:`, error);
+        }
+    }
 
     /**
      * Configures the agent for a specific chat
      * @param chatId The ID of the chat to configure
      * @param config Configuration options to apply
      */
-    configureAgent(chatId: string, config: Partial<AgentConfig>): void {
+    async configureAgent(chatId: string, config: Partial<AgentConfig>): Promise<void> {
+        // Update in-memory settings first
         const existingContext = this.contexts.get(chatId) || {
             roundtrips: 0,
             config: { ...this.defaultConfig },
@@ -82,7 +105,20 @@ export class AgentManager {
         };
 
         this.contexts.set(chatId, existingContext);
-        console.log(`[AgentManager] Agent configured for chat ${chatId}:`, existingContext.config);
+
+        // Then persist to storage
+        try {
+            await settingsManager.updateAgentSettings(chatId, {
+                enabled: existingContext.config.enabled,
+                maxRoundtrips: existingContext.config.maxRoundtrips,
+                autoContinue: existingContext.config.autoContinue,
+                customSystemPrompt: existingContext.config.customSystemPrompt
+            });
+
+            console.log(`[AgentManager] Agent configured for chat ${chatId}:`, existingContext.config);
+        } catch (error) {
+            console.error(`[AgentManager] Error persisting agent settings for chat ${chatId}:`, error);
+        }
     }
 
     /**
@@ -251,8 +287,8 @@ export class AgentManager {
         );
 
         try {
-            // Create a temporary assistant placeholder message
-            const assistantPlaceholder = await this.chatManager.addMessage(
+            // Create an assistant placeholder message directly
+            const assistantMessage = await this.chatManager.addMessage(
                 chatId,
                 "",
                 "assistant",
@@ -263,7 +299,7 @@ export class AgentManager {
             // Update the status to pending
             await this.chatManager.updateMessageStatus(
                 chatId,
-                assistantPlaceholder.id,
+                assistantMessage.id,
                 MessageStatus.SENDING
             );
 
@@ -281,8 +317,35 @@ export class AgentManager {
                 throw new Error("No LLM provider configured");
             }
 
-            // Continue the flow with the virtual message
-            await this.getCompletionFn(virtualMessage, assistantPlaceholder, provider);
+            // Create LLM message with necessary context
+            const llmMessage = {
+                id: virtualMessage.id,
+                chatId: virtualMessage.chatId,
+                content: virtualMessage.content,
+                role: virtualMessage.role,
+                status: MessageStatus.SENT,
+                created: virtualMessage.created instanceof Date
+                    ? virtualMessage.created
+                    : new Date(virtualMessage.created),
+                parentId: virtualMessage.parentId || "",
+                provider: provider.provider,
+                assistantMessageId: assistantMessage.id
+            } as LlmMessage;
+
+            // Process the message stream directly
+            const emitter = await this.processMessageStreamFn(llmMessage);
+
+            // Wait for the stream to complete
+            await new Promise<void>((resolve, reject) => {
+                emitter.on("end", () => {
+                    resolve();
+                });
+
+                emitter.on("error", (error) => {
+                    console.error("[AgentManager] Error processing message stream:", error);
+                    reject(error);
+                });
+            });
         } catch (error) {
             console.error("[AgentManager] Error auto-continuing agentic flow:", error);
 

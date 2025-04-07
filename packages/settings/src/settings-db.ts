@@ -60,12 +60,34 @@ export interface LayoutSetting {
 }
 
 /**
+ * Interface for agent settings per chat
+ */
+export interface AgentSettings {
+  chatId: string;
+  enabled: boolean;
+  maxRoundtrips: number;
+  autoContinue: boolean;
+  customSystemPrompt?: string;
+  lastUpdated: Date;
+}
+
+/**
+ * Default agent settings
+ */
+export const DEFAULT_AGENT_SETTINGS: Omit<AgentSettings, "chatId" | "lastUpdated"> = {
+  enabled: false,
+  maxRoundtrips: 10,
+  autoContinue: true
+};
+
+/**
  * Database schema for application settings
  */
 export class SettingsDatabase extends Dexie {
   llmConfig!: Dexie.Table<LlmProviderConfig, string>;
   workbench!: Dexie.Table<WorkbenchSetting, WorkbenchSettingKey>;
   layout!: Dexie.Table<LayoutSetting, LayoutSettingKey>; // Keep for migration
+  agentSettings!: Dexie.Table<AgentSettings, string>; // Indexed by chatId
 
   constructor() {
     super("piddie-settings");
@@ -133,6 +155,14 @@ export class SettingsDatabase extends Dexie {
         await tx.table("workbench").bulkAdd(workbenchSettings);
 
         console.log("Migration complete");
+      });
+
+    // Add version 8 with agent settings
+    this.version(8)
+      .stores({
+        llmConfig: "provider",
+        workbench: "key, lastUpdated",
+        agentSettings: "chatId, lastUpdated"
       });
   }
 }
@@ -345,6 +375,59 @@ export class SettingsManager {
   async resetLlmConfig(): Promise<LlmProviderConfig> {
     await this.db.llmConfig.clear();
     return this.updateLlmConfig(DEFAULT_LLM_CONFIG);
+  }
+
+  /**
+   * Gets agent settings for a chat
+   * @param chatId The chat ID
+   * @returns Agent settings for the chat, or default settings if not configured
+   */
+  async getAgentSettings(chatId: string): Promise<AgentSettings> {
+    try {
+      const settings = await this.db.agentSettings.get(chatId);
+
+      if (!settings) {
+        return {
+          chatId,
+          ...DEFAULT_AGENT_SETTINGS,
+          lastUpdated: new Date()
+        };
+      }
+
+      return settings;
+    } catch (error) {
+      console.error("Error getting agent settings:", error);
+      return {
+        chatId,
+        ...DEFAULT_AGENT_SETTINGS,
+        lastUpdated: new Date()
+      };
+    }
+  }
+
+  /**
+   * Updates agent settings for a chat
+   * @param chatId The chat ID
+   * @param settings The settings to update
+   */
+  async updateAgentSettings(
+    chatId: string,
+    settings: Partial<Omit<AgentSettings, "chatId" | "lastUpdated">>
+  ): Promise<void> {
+    try {
+      const currentSettings = await this.getAgentSettings(chatId);
+
+      const updatedSettings = {
+        ...currentSettings,
+        ...settings,
+        lastUpdated: new Date()
+      };
+
+      await this.db.agentSettings.put(updatedSettings);
+    } catch (error) {
+      console.error("Error updating agent settings:", error);
+      throw error;
+    }
   }
 }
 
