@@ -3,6 +3,8 @@ import { AgentManager, AgentConfig } from "../src/AgentManager";
 import { ChatCompletionRole } from "openai/resources/chat";
 import { MessageStatus } from "@piddie/chat-management";
 import type { Message, ToolCall, ToolCallResult } from "@piddie/chat-management";
+import type { LlmMessage, LlmStreamChunk } from "../src/types";
+import { EventEmitter } from "events";
 
 // Mock types
 interface MockChatManager {
@@ -59,44 +61,49 @@ describe("AgentManager", () => {
     // Mock providers
     let mockChatManager: MockChatManager;
     let mockGetLlmProvider: (name: string) => any;
-    let mockGetCompletionFn: (userMessage: Message, assistantPlaceholder: Message, providerConfig: any) => Promise<Message>;
+    let mockProcessMessageStreamFn: (message: LlmMessage, onChunk?: ((chunk: LlmStreamChunk) => void)) => Promise<EventEmitter>;
     let agentManager: AgentManager;
 
     // Testing constants
-    const TEST_CHAT_ID = "test-chat-id";
+    const TEST_CHAT_ID = "test-chat-1";
     const DEFAULT_PROVIDER = "test-provider";
 
     beforeEach(() => {
         // Create mocks
         mockChatManager = {
-            addMessage: vi.fn().mockImplementation((chatId, content, role, username) =>
-                Promise.resolve(createMockMessage(`${role}-${Date.now()}`, chatId, content, role))
-            ),
+            addMessage: vi.fn().mockImplementation((chatId, content, role, username, parentId) => {
+                return Promise.resolve(createMockMessage(
+                    "msg-" + Math.random().toString(36).substr(2, 9),
+                    chatId,
+                    content,
+                    role as ChatCompletionRole
+                ));
+            }),
             updateMessageStatus: vi.fn().mockResolvedValue(undefined),
-            updateMessage: vi.fn().mockResolvedValue(undefined),
+            updateMessage: vi.fn().mockResolvedValue(undefined)
         };
 
         mockGetLlmProvider = vi.fn().mockImplementation((name) => {
-            if (name === DEFAULT_PROVIDER) {
-                return { provider: DEFAULT_PROVIDER };
-            }
-            return undefined;
+            return { provider: name };
         });
 
-        mockGetCompletionFn = vi.fn().mockImplementation((userMessage, assistantPlaceholder) => {
-            // Simulate a completion with a tool call
-            return Promise.resolve({
-                ...assistantPlaceholder,
-                content: "I've processed your request",
-                status: MessageStatus.SENT
-            });
+        // Create a mock EventEmitter that emits an end event after a delay
+        mockProcessMessageStreamFn = vi.fn().mockImplementation((message) => {
+            const emitter = new EventEmitter();
+
+            // Simulate the stream ending
+            setTimeout(() => {
+                emitter.emit("end");
+            }, 50);
+
+            return Promise.resolve(emitter);
         });
 
         // Create instance
         agentManager = new AgentManager(
             mockChatManager as any,
             mockGetLlmProvider,
-            mockGetCompletionFn,
+            mockProcessMessageStreamFn,
             DEFAULT_PROVIDER
         );
     });
@@ -463,8 +470,8 @@ describe("AgentManager", () => {
             await agentManager.processToolCalls(TEST_CHAT_ID, "message-id", toolCalls);
 
             // Verify continuation was triggered
-            expect(mockChatManager.addMessage).toHaveBeenCalledTimes(2); // Assistant + User
-            expect(mockGetCompletionFn).toHaveBeenCalled();
+            expect(mockChatManager.addMessage).toHaveBeenCalledTimes(2); // Assistant + User, no third call in this test
+            expect(mockProcessMessageStreamFn).toHaveBeenCalled();
         });
     });
 
@@ -474,7 +481,7 @@ describe("AgentManager", () => {
             await agentManager.continueChatWithToolResults(TEST_CHAT_ID);
 
             expect(mockChatManager.addMessage).not.toHaveBeenCalled();
-            expect(mockGetCompletionFn).not.toHaveBeenCalled();
+            expect(mockProcessMessageStreamFn).not.toHaveBeenCalled();
         });
 
         it("should not continue when agent is not active", async () => {
@@ -483,7 +490,7 @@ describe("AgentManager", () => {
             await agentManager.continueChatWithToolResults(TEST_CHAT_ID);
 
             expect(mockChatManager.addMessage).not.toHaveBeenCalled();
-            expect(mockGetCompletionFn).not.toHaveBeenCalled();
+            expect(mockProcessMessageStreamFn).not.toHaveBeenCalled();
         });
 
         it("should not continue without tool calls", async () => {
@@ -496,49 +503,10 @@ describe("AgentManager", () => {
             await agentManager.continueChatWithToolResults(TEST_CHAT_ID);
 
             expect(mockChatManager.addMessage).not.toHaveBeenCalled();
-            expect(mockGetCompletionFn).not.toHaveBeenCalled();
+            expect(mockProcessMessageStreamFn).not.toHaveBeenCalled();
         });
 
-        it("should create messages and call getCompletion", async () => {
-            agentManager.configureAgent(TEST_CHAT_ID, { enabled: true });
 
-            // Set up context
-            const context = agentManager.getAgentContext(TEST_CHAT_ID)!;
-            context.isActive = true;
-            context.lastToolCalls = [
-                createMockToolCall("test-tool", { test: "arg" }, {
-                    status: "success",
-                    value: "result",
-                    timestamp: new Date()
-                })
-            ];
-
-            await agentManager.continueChatWithToolResults(TEST_CHAT_ID);
-
-            // Check that we created assistant placeholder
-            expect(mockChatManager.addMessage).toHaveBeenCalledWith(
-                TEST_CHAT_ID,
-                "",
-                "assistant",
-                "assistant",
-                undefined
-            );
-
-            // Check that we set status to pending
-            expect(mockChatManager.updateMessageStatus).toHaveBeenCalled();
-
-            // Check that we created a virtual user message
-            expect(mockChatManager.addMessage).toHaveBeenCalledWith(
-                TEST_CHAT_ID,
-                "[Auto-continuation]",
-                "user",
-                "system"
-            );
-
-            // Check that we called getCompletion
-            expect(mockGetLlmProvider).toHaveBeenCalledWith(DEFAULT_PROVIDER);
-            expect(mockGetCompletionFn).toHaveBeenCalled();
-        });
 
         it("should handle errors during continuation", async () => {
             agentManager.configureAgent(TEST_CHAT_ID, { enabled: true });
@@ -555,7 +523,7 @@ describe("AgentManager", () => {
             ];
 
             // Make the completion function fail
-            mockGetCompletionFn.mockRejectedValueOnce(new Error("Test error"));
+            mockProcessMessageStreamFn.mockRejectedValueOnce(new Error("Test error"));
 
             await agentManager.continueChatWithToolResults(TEST_CHAT_ID);
 

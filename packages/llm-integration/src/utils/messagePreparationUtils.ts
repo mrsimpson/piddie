@@ -2,7 +2,7 @@ import type { LlmMessage } from "../types";
 import type { ChatManager, Message } from "@piddie/chat-management";
 import type { Tool } from "@piddie/actions";
 import type { AgentManager } from "../AgentManager";
-import { generateSystemPrompt } from "./systemPromptUtils";
+import { compileSystemPrompt } from "./systemPromptUtils";
 import { getChatHistory } from "./getChatHistory";
 
 /**
@@ -100,7 +100,7 @@ export function enhanceMessageWithSystemPrompt(
     const enhancedMessage = { ...message };
 
     if (!enhancedMessage.systemPrompt) {
-        enhancedMessage.systemPrompt = generateSystemPrompt(supportsTools, mcpToolUseIndicator);
+        enhancedMessage.systemPrompt = compileSystemPrompt(supportsTools, mcpToolUseIndicator);
     }
 
     return enhancedMessage;

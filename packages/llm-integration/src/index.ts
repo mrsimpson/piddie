@@ -79,32 +79,29 @@ export interface LlmAdapter {
   ): Promise<EventEmitter>;
 
   /**
-   * Get a completion for a user message and update the assistant placeholder
-   * @param userMessage The user message
-   * @param assistantPlaceholder The assistant placeholder message
-   * @param providerConfig The LLM provider configuration
-   * @param useStreaming Whether to use streaming
-   * @returns The completed assistant message
+   * Configure agentic behavior for a chat
+   * @param chatId The ID of the chat to configure
+   * @param config Configuration options
    */
-  getCompletion(
-    userMessage: Message,
-    assistantPlaceholder: Message,
-    providerConfig: LlmProviderConfig,
-    useStreaming?: boolean
-  ): Promise<Message>;
+  configureAgent(chatId: string, config: {
+    enabled: boolean;
+    maxRoundtrips?: number;
+    autoContinue?: boolean;
+    customSystemPrompt?: string;
+  }): void;
 
   /**
-   * Enhance a message with system prompt and tools
-   * @param message The message to enhance
-   * @returns The enhanced message
+   * Reset agentic context for a chat
+   * @param chatId The ID of the chat to reset
    */
-  enhanceMessage(message: LlmMessage): LlmMessage;
+  resetAgent(chatId: string): void;
 
   /**
-   * Generate a system prompt
-   * @returns The system prompt
+   * Check if agent is enabled for a chat
+   * @param chatId The ID of the chat to check
+   * @returns True if agent is enabled, false otherwise
    */
-  generateSystemPrompt(): string;
+  isAgentEnabled(chatId: string): boolean;
 }
 
 /**
