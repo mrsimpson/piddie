@@ -35,41 +35,51 @@ For a detailed architectural overview, please refer to our [arc42 Architecture D
 
 ## Project Components
 
-### Core AI Components
-
-#### LLM Integration Package](/packages/llm-integration/README.md)
-
-Core orchestrator (MCP Host) that coordinates context, prompts, and tools to enhance LLM interactions. Provides unified interface for multiple LLM providers.
-
-#### Chat Management Package](/packages/chat-management/README.md)
-
-Manages chat history and message flow, providing a clean interface for user-LLM communication.
-
-#### Prompt Management Package](/packages/prompt-management/README.md)
-
-MCP server that handles prompt enhancement and optimization to improve LLM interactions.
-
-#### Context Management Package](/packages/context-management/README.md)
-
-MCP server that provides relevant context from files, workspace, and project state.
-
-#### Actions Package](/packages/actions/README.md)
-
-MCP server that implements tool interfaces that LLMs can use to interact with the system.
-
 ### Development Environment
 
 #### Files Management Package](/packages/files-management/README.md)
 
 Implements file system operations and synchronization between browser and local environments.
+Provides a mechanism for typical version control (commits, branches, ...).
 
-#### Workbench Package](/apps/workbench/README.md)
+#### Chat Management Package](/packages/chat-management/README.md)
 
-Manages the IDE interface and user workspace state.
+Manages chat history and message flow, providing a clean interface for user-LLM communication. It persists the conversation in the Browser and refers to file-snapshots for time-travel-capabilities.
 
 #### Project Management Package](/packages/project-management/README.md)
 
-Handles project configuration, dependencies, and resource management.
+Each project refers to a chat and a file system. This package handles project configuration, dependencies, and resource management.
+
+### Core AI Components
+
+#### [LLM Integration](/packages/llm-integration/README.md)
+
+Interaction with the LLMs, providing necessary adapters.
+At its core, an orchestrator with an MCP host coordinates context, prompts, and tools to enhance LLM interactions.
+
+#### [Prompt Management](/packages/prompt-management/README.md)
+
+Handles prompt enhancement and optimization to improve LLM interactions.
+
+#### [Context Management](/packages/context-management/README.md)
+
+Provides relevant context from files, workspace, and project state.
+
+#### [Actions](/packages/actions/README.md)
+
+Provides an MCP host to register internal and additional tools. Executes the tools and interprets the results.
+
+### Apps
+
+The repository comes with the following user interfaces
+
+#### [Workbench](/apps/workbench/README.md)
+
+The main IDE interface, integrating chat, files management and a webcontainer based runtime.
+
+#### [Files Management Demo](/apps/demo-files-management/README.md)
+
+I sophisticated UI demonstrating the capabilities of the file management system, synchronisation and gitignore-integration.
 
 ## Project Setup and Monorepo Design Decisions
 
