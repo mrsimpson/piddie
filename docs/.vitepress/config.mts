@@ -58,7 +58,7 @@ export default withMermaid(
   defineConfig({
     title: "Project Documentation",
     description: "Project Architecture & Documentation",
-
+    base: "/piddie/",
     srcDir: "..",
 
     // Add this to handle the root path
