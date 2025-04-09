@@ -19,8 +19,8 @@ pnpm dev       # Builds and watches all packages in the monorepo
 
 Piddie is organized as a monorepo using pnpm workspaces. Key packages include:
 
-- `packages/files-management-ui`: File management interface (dev server: localhost:9001)
-- `packages/workbench`: Development workspace (dev server: localhost:9999)
+- `apps/files-management-ui`: File management interface (dev server: localhost:9001)
+- `apps/workbench`: Development workspace (dev server: localhost:9999)
 - Additional packages for AI integration, context management, and more
 
 ## Development Setup
