@@ -46,7 +46,7 @@ MCP server that implements tool interfaces that LLMs can use to interact with th
 
 Implements file system operations and synchronization between browser and local environments.
 
-#### 7. [Workbench Package](/packages/workbench/README.md)
+#### 7. [Workbench Package](/apps/workbench/README.md)
 
 Manages the IDE interface and user workspace state.
 
