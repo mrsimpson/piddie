@@ -37,16 +37,17 @@ For a detailed architectural overview, please refer to our [arc42 Architecture D
 
 ### Development Environment
 
-#### Files Management Package](/packages/files-management/README.md)
+#### [Files Management Package](/packages/files-management/README.md)
+
 
 Implements file system operations and synchronization between browser and local environments.
 Provides a mechanism for typical version control (commits, branches, ...).
 
-#### Chat Management Package](/packages/chat-management/README.md)
+#### [Chat Management Package](/packages/chat-management/README.md)
 
 Manages chat history and message flow, providing a clean interface for user-LLM communication. It persists the conversation in the Browser and refers to file-snapshots for time-travel-capabilities.
 
-#### Project Management Package](/packages/project-management/README.md)
+#### [Project Management Package](/packages/project-management/README.md)
 
 Each project refers to a chat and a file system. This package handles project configuration, dependencies, and resource management.
 
