@@ -254,27 +254,3 @@ class ErrorHandler {
   static handleProtocolError(error: Error): void;
 }
 ```
-
-## Testing
-
-### Unit Tests
-```typescript
-describe('ActionsServer', () => {
-  it('should register client tools', async () => {
-    // Test implementation
-  });
-  
-  it('should proxy tool execution', async () => {
-    // Test implementation
-  });
-});
-```
-
-### Integration Tests
-```typescript
-describe('ActionsServer Integration', () => {
-  it('should handle full tool lifecycle', async () => {
-    // Test implementation
-  });
-});
-```

@@ -39,7 +39,6 @@ For a detailed architectural overview, please refer to our [arc42 Architecture D
 
 #### [Files Management Package](/packages/files-management/README.md)
 
-
 Implements file system operations and synchronization between browser and local environments.
 Provides a mechanism for typical version control (commits, branches, ...).
 
