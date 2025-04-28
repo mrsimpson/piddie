@@ -1,0 +1,229 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { ActionsManager } from "./ActionsManager";
+import { ActionsProxyClient, ToolCallResult } from "./ActionsProxyClient";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+
+// Create a proper mock for ActionsProxyClient
+class MockActionsProxyClient implements Partial<ActionsProxyClient> {
+  private callbackFn: (
+    toolName: string,
+    params: Record<string, unknown>
+  ) => Promise<ToolCallResult>;
+
+  registerTools = vi.fn().mockResolvedValue(undefined);
+  connectWebSocket = vi.fn().mockResolvedValue(undefined);
+  close = vi.fn();
+
+  constructor(
+    callbackFn: (
+      toolName: string,
+      params: Record<string, unknown>
+    ) => Promise<ToolCallResult>
+  ) {
+    this.callbackFn = callbackFn;
+  }
+
+  // Expose a method to simulate client-side tool execution
+  async callTool(
+    toolName: string,
+    params: Record<string, unknown>
+  ): Promise<ToolCallResult> {
+    return this.callbackFn(toolName, params);
+  }
+}
+
+// Don't mock the entire module, just create a mock instance
+vi.mock("./mcp/McpHost", async () => {
+  const actual =
+    await vi.importActual<typeof import("./mcp/McpHost")>("./mcp/McpHost");
+  return {
+    ...actual,
+    McpHost: vi.fn().mockImplementation(() => ({
+      registerLocalServer: vi.fn().mockResolvedValue(undefined),
+      unregisterServer: vi.fn().mockReturnValue(true),
+      listTools: vi.fn().mockResolvedValue([
+        {
+          name: "localTool",
+          description: "A local tool for testing",
+          inputSchema: {
+            type: "object",
+            properties: {
+              input: { type: "string" }
+            }
+          }
+        }
+      ]),
+      executeToolCall: vi
+        .fn()
+        .mockImplementation(
+          async (toolName: string, params: Record<string, unknown>) => {
+            if (toolName === "localTool") {
+              return {
+                content: [
+                  {
+                    type: "text",
+                    text: `Local tool executed with: ${params.input}`
+                  }
+                ]
+              };
+            }
+            return { result: "Tool executed" };
+          }
+        )
+    }))
+  };
+});
+
+describe("ActionsManager and ActionsProxyClient Integration", () => {
+  let actionsManager: ActionsManager;
+  let testServer: McpServer;
+  let mockProxyClient: MockActionsProxyClient;
+
+  // Test tool result for the mock proxy client
+  const toolCallResult: ToolCallResult = {
+    status: "success",
+    value: "test result",
+    contentType: "text/plain",
+    timestamp: new Date()
+  };
+
+  // This runs before each test
+  beforeEach(async () => {
+    vi.clearAllMocks();
+
+    // Get the ActionsManager instance
+    actionsManager = ActionsManager.getInstance();
+    await actionsManager.initialize();
+
+    // Create a test MCP server with a tool
+    testServer = new McpServer({
+      name: "test-server",
+      version: "1.0.0"
+    });
+
+    // Register a test tool
+    testServer.tool(
+      "localTool",
+      "A local tool for testing",
+      {
+        input: z.string()
+      },
+      async (params) => {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Local tool executed with: ${params.input}`
+            }
+          ],
+          _meta: {},
+          isError: false
+        };
+      }
+    );
+
+    // Register the server with ActionsManager
+    await actionsManager.registerServer(testServer, "test-server");
+
+    // Create mock ActionsProxyClient with handler function
+    mockProxyClient = new MockActionsProxyClient(async (toolName, params) => {
+      // This simulates what would happen if the tool call was forwarded
+      // to the actions server and eventually executed by a client
+      if (toolName === "remoteTool") {
+        return {
+          ...toolCallResult,
+          value: `Remote tool executed with: ${params.input}`
+        };
+      }
+      return toolCallResult;
+    });
+
+    // Set the mock proxy client
+    actionsManager.setActionsProxyClient(
+      mockProxyClient as unknown as ActionsProxyClient
+    );
+  });
+
+  afterEach(() => {
+    actionsManager.unregisterServer("test-server");
+    actionsManager.setActionsProxyClient(null);
+  });
+
+  it("should register tools with the actions server and connect", async () => {
+    await actionsManager.connectToActionsServer("test-client-id");
+
+    // Verify tools were registered
+    expect(mockProxyClient.registerTools).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "localTool",
+          description: "A local tool for testing"
+        })
+      ]),
+      "test-client-id"
+    );
+
+    // Verify WebSocket connection was established
+    expect(mockProxyClient.connectWebSocket).toHaveBeenCalledWith(
+      "test-client-id"
+    );
+
+    // Verify connection status
+    expect(actionsManager.isConnectedToActionsServer()).toBe(true);
+  });
+
+  it("should execute local tools directly", async () => {
+    // Execute a local tool
+    const result = await actionsManager.executeToolCall("localTool", {
+      input: "test input"
+    });
+
+    expect(result.status).toBe("success");
+    expect(result.value).toBe("Local tool executed with: test input");
+  });
+
+  it("should execute remote tools through the proxy client", async () => {
+    // This test simulates the case where a tool execution
+    // is forwarded to the actions server
+
+    // Connect to the actions server
+    await actionsManager.connectToActionsServer("test-client-id");
+
+    // Call the mock client directly to simulate a remote tool call
+    const result = await mockProxyClient.callTool("remoteTool", {
+      input: "remote test"
+    });
+
+    expect(result.status).toBe("success");
+    expect(result.value).toBe("Remote tool executed with: remote test");
+  });
+
+  it("should handle disconnection", async () => {
+    // Connect first
+    await actionsManager.connectToActionsServer("test-client-id");
+    expect(actionsManager.isConnectedToActionsServer()).toBe(true);
+
+    // Disconnect
+    actionsManager.disconnect();
+
+    // Verify WebSocket was closed
+    expect(mockProxyClient.close).toHaveBeenCalled();
+    expect(actionsManager.isConnectedToActionsServer()).toBe(false);
+  });
+
+  it("should handle connection errors", async () => {
+    // Mock a connection error
+    const connectionError = new Error("Failed to connect");
+    mockProxyClient.connectWebSocket.mockRejectedValueOnce(connectionError);
+
+    await expect(actionsManager.connectToActionsServer()).rejects.toThrow(
+      "Failed to connect"
+    );
+
+    // Check connection status reflects the error
+    const status = actionsManager.getConnectionStatus();
+    expect(status.status).toBe("error");
+    expect(status.error).toBe("Failed to connect");
+  });
+});

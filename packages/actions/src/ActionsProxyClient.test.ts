@@ -1,0 +1,136 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { ActionsProxyClient } from "./ActionsProxyClient";
+import type { ClientTool, ToolRequestMessage } from "@piddie/actions-server";
+
+describe("ActionsProxyClient", () => {
+  let client: ActionsProxyClient;
+  const mockOnToolCall = vi.fn();
+
+  beforeEach(() => {
+    client = new ActionsProxyClient("http://localhost:3000", mockOnToolCall);
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should register tools", async () => {
+    const tools: ClientTool[] = [
+      {
+        name: "test",
+        description: "test",
+        parameters: {} as any // Mock for test
+      }
+    ];
+    const clientId = "test-client";
+
+    const mockResponse = new Response(JSON.stringify({}), {
+      status: 200,
+      statusText: "OK"
+    });
+
+    global.fetch = vi.fn().mockResolvedValue(mockResponse);
+
+    await client.registerTools(tools, clientId);
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://localhost:3000/register-tools",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ tools, clientId })
+      })
+    );
+  });
+
+  it("should handle tool calls", async () => {
+    const mockResult = {
+      status: "success" as const,
+      value: "result",
+      timestamp: new Date()
+    };
+
+    mockOnToolCall.mockResolvedValue(mockResult);
+
+    const mockWs = {
+      send: vi.fn(),
+      close: vi.fn(),
+      onopen: null as any,
+      onerror: null as any,
+      onclose: null as any,
+      onmessage: null as any
+    };
+
+    // Mock WebSocket constructor
+    global.WebSocket = vi.fn().mockImplementation(() => mockWs);
+
+    const clientId = "test-client";
+    const connectPromise = client.connectWebSocket(clientId);
+
+    // Simulate WebSocket open
+    mockWs.onopen();
+    await connectPromise;
+
+    const toolCall: ToolRequestMessage = {
+      type: "TOOL_REQUEST",
+      payload: {
+        toolName: "test",
+        parameters: { param: "value" },
+        requestId: "123"
+      }
+    };
+
+    // Simulate receiving a tool call
+    await mockWs.onmessage({ data: JSON.stringify(toolCall) });
+
+    expect(mockOnToolCall).toHaveBeenCalledWith("test", { param: "value" });
+    expect(mockWs.send).toHaveBeenCalledWith(
+      expect.stringContaining('"type":"TOOL_RESPONSE"')
+    );
+
+    // Test close
+    client.close();
+    expect(mockWs.close).toHaveBeenCalled();
+  });
+
+  it("should handle tool call errors", async () => {
+    const error = new Error("Test error");
+    mockOnToolCall.mockRejectedValue(error);
+
+    const mockWs = {
+      send: vi.fn(),
+      close: vi.fn(),
+      onopen: null as any,
+      onerror: null as any,
+      onclose: null as any,
+      onmessage: null as any
+    };
+
+    global.WebSocket = vi.fn().mockImplementation(() => mockWs);
+
+    const clientId = "test-client";
+    const connectPromise = client.connectWebSocket(clientId);
+    mockWs.onopen();
+    await connectPromise;
+
+    const toolCall: ToolRequestMessage = {
+      type: "TOOL_REQUEST",
+      payload: {
+        toolName: "test",
+        parameters: { param: "value" },
+        requestId: "123"
+      }
+    };
+
+    await mockWs.onmessage({ data: JSON.stringify(toolCall) });
+
+    expect(mockOnToolCall).toHaveBeenCalledWith("test", { param: "value" });
+    expect(mockWs.send).toHaveBeenCalledWith(
+      expect.stringContaining('"error":"Test error"')
+    );
+
+    // Test close
+    client.close();
+    expect(mockWs.close).toHaveBeenCalled();
+  });
+});

@@ -1,5 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { McpHost, Tool, McpToolExecutionError } from "./mcp/McpHost";
+import { ActionsProxyClient } from "./ActionsProxyClient";
+import { ZodObject, z } from "zod";
+import type { ClientTool } from "@piddie/actions-server";
 
 /**
  * Represents a tool call result for external consumers
@@ -21,6 +24,10 @@ export class ActionsManager {
   private servers: Map<string, McpServer> = new Map();
   private initialized = false;
   private toolsBuffer: Tool[] | null = null;
+  private actionsProxyClient: ActionsProxyClient | null = null;
+  private connectionStatus: "connected" | "disconnected" | "error" =
+    "disconnected";
+  private connectionError: string | null = null;
 
   /**
    * Private constructor to enforce singleton pattern
@@ -52,6 +59,115 @@ export class ActionsManager {
 
     this.initialized = true;
     console.log("[ActionsManager] Initialized successfully");
+  }
+
+  /**
+   * Set the ActionsProxyClient for remote tool execution
+   * @param client The ActionsProxyClient instance
+   */
+  public setActionsProxyClient(client: ActionsProxyClient | null): void {
+    if (this.actionsProxyClient) {
+      this.disconnect();
+    }
+
+    this.actionsProxyClient = client;
+  }
+
+  /**
+   * Convert a Tool to a ClientTool
+   * @param tool The Tool to convert
+   * @returns A ClientTool representation
+   */
+  private toolToClientTool(tool: Tool): ClientTool {
+    // Create a zod schema from the inputSchema
+    const properties = tool.inputSchema.properties || {};
+    const zodSchema: Record<string, any> = {};
+
+    // Convert each property to a zod schema
+    Object.entries(properties).forEach(([key, value]) => {
+      const propType = (value as any)?.type;
+      if (propType === "string") {
+        zodSchema[key] = z.string();
+      } else if (propType === "number") {
+        zodSchema[key] = z.number();
+      } else if (propType === "boolean") {
+        zodSchema[key] = z.boolean();
+      } else {
+        // Default to any
+        zodSchema[key] = z.any();
+      }
+    });
+
+    return {
+      name: tool.name,
+      description: tool.description || "No description provided",
+      parameters: z.object(zodSchema)
+    };
+  }
+
+  /**
+   * Connect to the actions server using the configured client
+   * @param clientId Optional client ID to use for connection
+   * @returns Promise that resolves when connected or rejects on error
+   */
+  public async connectToActionsServer(clientId?: string): Promise<void> {
+    if (!this.actionsProxyClient) {
+      throw new Error("ActionsProxyClient not configured");
+    }
+
+    try {
+      // Get all available tools
+      const tools = await this.getAvailableTools();
+      const clientTools = tools.map((tool) => this.toolToClientTool(tool));
+
+      // Register tools with server
+      await this.actionsProxyClient.registerTools(clientTools, clientId || "");
+
+      // Connect WebSocket
+      await this.actionsProxyClient.connectWebSocket(clientId || "");
+
+      this.connectionStatus = "connected";
+      this.connectionError = null;
+
+      console.log("[ActionsManager] Connected to actions server successfully");
+    } catch (error) {
+      this.connectionStatus = "error";
+      this.connectionError =
+        error instanceof Error ? error.message : String(error);
+      console.error(
+        "[ActionsManager] Failed to connect to actions server:",
+        error
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Get the current connection status
+   */
+  public getConnectionStatus(): { status: string; error: string | null } {
+    return {
+      status: this.connectionStatus,
+      error: this.connectionError
+    };
+  }
+
+  /**
+   * Check if connected to actions server
+   */
+  public isConnectedToActionsServer(): boolean {
+    return this.connectionStatus === "connected";
+  }
+
+  /**
+   * Disconnect from the actions server
+   */
+  public disconnect(): void {
+    if (this.actionsProxyClient) {
+      this.actionsProxyClient.close();
+    }
+
+    this.connectionStatus = "disconnected";
   }
 
   /**

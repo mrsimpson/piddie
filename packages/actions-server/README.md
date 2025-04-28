@@ -3,6 +3,7 @@
 ## Purpose
 
 The Actions Server enables server-side LLM agents to safely interact with client-side tools running in browser sandboxes. It:
+
 - Provides a WebSocket endpoint for client connections
 - Manages client-specific tool registrations
 - Exposes client tools to server-side agents
@@ -11,6 +12,7 @@ The Actions Server enables server-side LLM agents to safely interact with client
 ## System Flow
 
 ### 1. Initial Setup & Tool Registration
+
 ```mermaid
 sequenceDiagram
     participant Client
@@ -27,6 +29,7 @@ sequenceDiagram
 ```
 
 ### 2. Tool Execution
+
 ```mermaid
 sequenceDiagram
     participant LLM
@@ -48,17 +51,18 @@ sequenceDiagram
 ## Core Components
 
 ### 1. WebSocket Connection Manager
+
 ```typescript
 interface ClientConnection {
   clientId: string;
   connection: WebSocket;
   tools: Map<string, ProxiedTool>;
-  status: 'connected' | 'disconnected';
+  status: "connected" | "disconnected";
 }
 
 class WebSocketManager {
   private connections: Map<string, ClientConnection>;
-  
+
   async handleConnection(ws: WebSocket, clientId: string): Promise<void>;
   async handleDisconnection(clientId: string): Promise<void>;
   async sendToClient(clientId: string, message: ServerMessage): Promise<void>;
@@ -66,6 +70,7 @@ class WebSocketManager {
 ```
 
 ### 2. Tool Registry
+
 ```typescript
 interface ProxiedTool {
   name: string;
@@ -77,7 +82,7 @@ interface ProxiedTool {
 
 class ToolRegistry {
   private tools: Map<string, ProxiedTool>;
-  
+
   async registerTools(clientId: string, tools: Tool[]): Promise<void>;
   async getToolsForClient(clientId: string): Promise<ProxiedTool[]>;
   async unregisterClientTools(clientId: string): Promise<void>;
@@ -85,6 +90,7 @@ class ToolRegistry {
 ```
 
 ### 3. MCP Server Integration
+
 ```typescript
 interface McpToolDefinition {
   name: string;
@@ -98,7 +104,7 @@ interface McpToolDefinition {
 
 class McpServer {
   private toolRegistry: ToolRegistry;
-  
+
   async registerTools(tools: McpToolDefinition[]): Promise<void>;
   async executeTool(toolName: string, params: unknown): Promise<unknown>;
 }
@@ -107,6 +113,7 @@ class McpServer {
 ## Security Implementation
 
 ### 1. Client Registration
+
 ```typescript
 interface RegistrationResponse {
   clientId: string;
@@ -121,8 +128,8 @@ class ActionsManager {
   }
 
   async registerTools(tools: McpToolDefinition[]): Promise<void> {
-    const response = await fetch('/api/register-tools', {
-      method: 'POST',
+    const response = await fetch("/api/register-tools", {
+      method: "POST",
       body: JSON.stringify(tools)
     });
     const { clientId } = await response.json();
@@ -140,16 +147,20 @@ class ActionsManager {
 ```
 
 ### 2. Tool Execution Validation
+
 ```typescript
 class ActionsManager {
   private validateToolExecution(params: unknown): boolean {
-    const { clientId, clientSecret } = params as { clientId: string; clientSecret: string };
+    const { clientId, clientSecret } = params as {
+      clientId: string;
+      clientSecret: string;
+    };
     return clientId === this.clientId && clientSecret === this.clientSecret;
   }
 
   async handleToolExecution(params: unknown): Promise<unknown> {
     if (!this.validateToolExecution(params)) {
-      throw new Error('Invalid client credentials');
+      throw new Error("Invalid client credentials");
     }
     // Execute tool...
   }
@@ -159,9 +170,10 @@ class ActionsManager {
 ## Message Protocol
 
 ### Client Messages
+
 ```typescript
 interface ClientMessage {
-  type: 'TOOL_RESPONSE' | 'ERROR';
+  type: "TOOL_RESPONSE" | "ERROR";
   payload: {
     clientId: string;
     tools?: Tool[];
@@ -172,9 +184,10 @@ interface ClientMessage {
 ```
 
 ### Server Messages
+
 ```typescript
 interface ServerMessage {
-  type: 'TOOL_REQUEST' | 'ERROR';
+  type: "TOOL_REQUEST" | "ERROR";
   payload: {
     toolName: string;
     parameters: {
@@ -190,6 +203,7 @@ interface ServerMessage {
 ## Implementation Example
 
 ### 1. Server Setup
+
 ```typescript
 const server = new ActionsServer({
   port: 3000,
@@ -202,18 +216,19 @@ await server.start();
 ```
 
 ### 2. Client Connection
+
 ```typescript
 const client = new ActionsClient(ws, {
-  clientId: 'unique-client-id',
+  clientId: "unique-client-id",
   tools: [
     {
-      name: 'writeFile',
-      description: 'Write to sandboxed filesystem',
+      name: "writeFile",
+      description: "Write to sandboxed filesystem",
       parameters: {
-        type: 'object',
+        type: "object",
         properties: {
-          path: { type: 'string' },
-          content: { type: 'string' }
+          path: { type: "string" },
+          content: { type: "string" }
         }
       }
     }
@@ -222,17 +237,19 @@ const client = new ActionsClient(ws, {
 ```
 
 ### 3. Agent Usage
+
 ```typescript
 const actions = ActionsManager.getInstance();
-const result = await actions.executeToolCall('writeFile', {
-  path: '/example.txt',
-  content: 'Hello'
+const result = await actions.executeToolCall("writeFile", {
+  path: "/example.txt",
+  content: "Hello"
 });
 ```
 
 ## Security & Error Handling
 
 ### Authentication
+
 ```typescript
 interface AuthConfig {
   token: string;
@@ -247,6 +264,7 @@ class AuthManager {
 ```
 
 ### Error Handling
+
 ```typescript
 class ErrorHandler {
   static handleConnectionError(error: Error): void;
