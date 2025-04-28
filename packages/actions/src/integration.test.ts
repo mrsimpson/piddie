@@ -11,7 +11,7 @@ class MockActionsProxyClient implements Partial<ActionsProxyClient> {
     params: Record<string, unknown>
   ) => Promise<ToolCallResult>;
 
-  registerTools = vi.fn().mockResolvedValue(undefined);
+  registerTools = vi.fn().mockResolvedValue("generated-client-id");
   connectWebSocket = vi.fn().mockResolvedValue(undefined);
   close = vi.fn();
 
@@ -151,7 +151,7 @@ describe("ActionsManager and ActionsProxyClient Integration", () => {
   });
 
   it("should register tools with the actions server and connect", async () => {
-    await actionsManager.connectToActionsServer("test-client-id");
+    await actionsManager.connectToActionsServer();
 
     // Verify tools were registered
     expect(mockProxyClient.registerTools).toHaveBeenCalledWith(
@@ -160,13 +160,12 @@ describe("ActionsManager and ActionsProxyClient Integration", () => {
           name: "localTool",
           description: "A local tool for testing"
         })
-      ]),
-      "test-client-id"
+      ])
     );
 
-    // Verify WebSocket connection was established
+    // Verify WebSocket connection was established with the generated client ID
     expect(mockProxyClient.connectWebSocket).toHaveBeenCalledWith(
-      "test-client-id"
+      "generated-client-id"
     );
 
     // Verify connection status
@@ -188,7 +187,7 @@ describe("ActionsManager and ActionsProxyClient Integration", () => {
     // is forwarded to the actions server
 
     // Connect to the actions server
-    await actionsManager.connectToActionsServer("test-client-id");
+    await actionsManager.connectToActionsServer();
 
     // Call the mock client directly to simulate a remote tool call
     const result = await mockProxyClient.callTool("remoteTool", {
@@ -201,7 +200,7 @@ describe("ActionsManager and ActionsProxyClient Integration", () => {
 
   it("should handle disconnection", async () => {
     // Connect first
-    await actionsManager.connectToActionsServer("test-client-id");
+    await actionsManager.connectToActionsServer();
     expect(actionsManager.isConnectedToActionsServer()).toBe(true);
 
     // Disconnect

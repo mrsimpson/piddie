@@ -7,7 +7,7 @@ import { z } from "zod";
 
 // Create a real mock instance instead of using vi.mock
 class MockActionsProxyClient implements Partial<ActionsProxyClient> {
-  registerTools = vi.fn().mockResolvedValue(undefined);
+  registerTools = vi.fn().mockResolvedValue("generated-client-id");
   connectWebSocket = vi.fn().mockResolvedValue(undefined);
   close = vi.fn();
 
@@ -72,18 +72,16 @@ describe("ActionsManager", () => {
     });
 
     it("should connect to actions server", async () => {
-      await actionsManager.connectToActionsServer("test-client-id");
+      await actionsManager.connectToActionsServer();
 
-      // Verify registerTools was called (but don't check exact content)
-      expect(mockActionsProxyClient.registerTools).toHaveBeenCalled();
-      // Verify the second argument is the client ID
-      expect(mockActionsProxyClient.registerTools.mock.calls[0][1]).toBe(
-        "test-client-id"
+      // Verify registerTools was called with available tools
+      expect(mockActionsProxyClient.registerTools).toHaveBeenCalledWith(
+        expect.any(Array)
       );
 
-      // Verify WebSocket connection was established
+      // Verify WebSocket connection was established with the generated client ID
       expect(mockActionsProxyClient.connectWebSocket).toHaveBeenCalledWith(
-        "test-client-id"
+        "generated-client-id"
       );
       expect(actionsManager.isConnectedToActionsServer()).toBe(true);
     });

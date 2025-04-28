@@ -23,24 +23,27 @@ describe("ActionsProxyClient", () => {
         parameters: {} as any // Mock for test
       }
     ];
-    const clientId = "test-client";
+    const expectedClientId = "generated-client-id";
 
-    const mockResponse = new Response(JSON.stringify({}), {
+    const mockResponse = new Response(JSON.stringify({ clientId: expectedClientId }), {
       status: 200,
       statusText: "OK"
     });
 
     global.fetch = vi.fn().mockResolvedValue(mockResponse);
 
-    await client.registerTools(tools, clientId);
+    const clientId = await client.registerTools(tools);
 
     expect(global.fetch).toHaveBeenCalledWith(
       "http://localhost:3000/register-tools",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ tools, clientId })
+        body: JSON.stringify({ tools })
       })
     );
+
+    // Verify the clientId was returned properly
+    expect(clientId).toBe(expectedClientId);
   });
 
   it("should handle tool calls", async () => {

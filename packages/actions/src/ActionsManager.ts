@@ -107,10 +107,9 @@ export class ActionsManager {
 
   /**
    * Connect to the actions server using the configured client
-   * @param clientId Optional client ID to use for connection
    * @returns Promise that resolves when connected or rejects on error
    */
-  public async connectToActionsServer(clientId?: string): Promise<void> {
+  public async connectToActionsServer(): Promise<void> {
     if (!this.actionsProxyClient) {
       throw new Error("ActionsProxyClient not configured");
     }
@@ -121,10 +120,10 @@ export class ActionsManager {
       const clientTools = tools.map((tool) => this.toolToClientTool(tool));
 
       // Register tools with server
-      await this.actionsProxyClient.registerTools(clientTools, clientId || "");
+      const clientId = await this.actionsProxyClient.registerTools(clientTools);
 
       // Connect WebSocket
-      await this.actionsProxyClient.connectWebSocket(clientId || "");
+      await this.actionsProxyClient.connectWebSocket(clientId);
 
       this.connectionStatus = "connected";
       this.connectionError = null;

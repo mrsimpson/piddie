@@ -9,7 +9,7 @@ import type { ChatManager, ToolCall } from "@piddie/chat-management";
 import { MessageStatus } from "@piddie/chat-management";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { LlmAdapter } from "./index";
-import { ActionsManager, type Tool } from "@piddie/actions";
+import { ActionsManager, ActionsProxyClient type Tool } from "@piddie/actions";
 import { AgentManager } from "./AgentManager";
 import { ToolCallQueue } from "./utils/ToolCallQueue";
 import { extractToolCallsFromPartialText } from "./utils/toolExtractor";
@@ -81,9 +81,63 @@ export class Orchestrator implements LlmAdapter {
       executeToolCall(toolCall, actionsManager)
     );
 
+    // Initialize actions server connection
+    this.initializeActionsServerConnection();
+
     // Initialize agent manager if chat manager is available
     if (this.chatManager) {
       this.agentManager = new AgentManager();
+    }
+  }
+
+  /**
+   * Initialize the connection to the actions server
+   */
+  private async initializeActionsServerConnection(): Promise<void> {
+    try {
+      // Import directly to avoid circular dependencies
+      const { settingsManager, WorkbenchSettingKey } = await import("@piddie/settings");
+
+      // First ensure the actions manager is initialized
+      await this.actionsManager.initialize();
+
+      // Get the actions server URL from settings
+      const settings = await settingsManager.getWorkbenchSettings();
+      const actionsServerUrl = settings[WorkbenchSettingKey.ACTIONS_SERVER_URL] as string || "http://localhost:9100";
+
+      // Check if there's already a connection
+      const connectionStatus = this.actionsManager.getConnectionStatus();
+      if (connectionStatus.status === "connected") {
+        console.log("[Orchestrator] Already connected to actions server");
+        return;
+      }
+
+      try {
+
+        // Create a proxy client for the actions server
+        const actionsProxyClient = new ActionsProxyClient(
+          actionsServerUrl,
+          // This callback will execute when the actions server requests a tool execution
+          async (toolName, params) => {
+            return this.actionsManager.executeToolCall(toolName, params);
+          }
+        );
+
+        const availableTools = await this.getAvailableTools();
+        actionsProxyClient.registerTools(availableTools);
+
+        // Set the proxy client in the actions manager
+        this.actionsManager.setActionsProxyClient(actionsProxyClient);
+
+        // Connect to the actions server
+        await this.actionsManager.connectToActionsServer();
+        console.log("[Orchestrator] Connected to actions server successfully");
+      } catch (error) {
+        console.warn("[Orchestrator] Failed to connect to actions server:", error);
+        // Continue without connection - this is not a fatal error
+      }
+    } catch (error) {
+      console.error("[Orchestrator] Error initializing actions server connection:", error);
     }
   }
 

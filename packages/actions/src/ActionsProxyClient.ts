@@ -1,113 +1,115 @@
 import type {
-  ClientTool,
-  ToolRequestMessage,
-  ToolResponseMessage
+    ClientTool,
+    ToolRequestMessage,
+    ToolResponseMessage
 } from "@piddie/actions-server";
 
 export interface ToolCallResult {
-  status: "success" | "error";
-  value: unknown;
-  contentType?: string;
-  timestamp: Date;
+    status: "success" | "error";
+    value: unknown;
+    contentType?: string;
+    timestamp: Date;
 }
 
 export class ActionsProxyClient {
-  private ws: WebSocket | null = null;
-  private actionsServerUrl: string;
-  private onToolCall: (
-    toolName: string,
-    params: Record<string, unknown>
-  ) => Promise<ToolCallResult>;
+    private ws: WebSocket | null = null;
+    private actionsServerUrl: string;
+    private onToolCall: (
+        toolName: string,
+        params: Record<string, unknown>
+    ) => Promise<ToolCallResult>;
 
-  constructor(
-    actionsServerUrl: string,
-    onToolCall: (
-      toolName: string,
-      params: Record<string, unknown>
-    ) => Promise<ToolCallResult>
-  ) {
-    this.actionsServerUrl = actionsServerUrl;
-    this.onToolCall = onToolCall;
-  }
-
-  async registerTools(tools: ClientTool[], clientId: string): Promise<void> {
-    const response = await fetch(`${this.actionsServerUrl}/register-tools`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        tools,
-        clientId
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to register tools: ${response.statusText}`);
+    constructor(
+        actionsServerUrl: string,
+        onToolCall: (
+            toolName: string,
+            params: Record<string, unknown>
+        ) => Promise<ToolCallResult>
+    ) {
+        this.actionsServerUrl = actionsServerUrl;
+        this.onToolCall = onToolCall;
     }
-  }
 
-  async connectWebSocket(clientId: string): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      const ws = new WebSocket(
-        `${this.actionsServerUrl.replace("http", "ws")}?clientId=${clientId}`
-      );
+    async registerTools(tools: ClientTool[]): Promise<string> {
+        const response = await fetch(`${this.actionsServerUrl}/register-tools`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                tools
+            })
+        });
 
-      ws.onopen = () => {
-        this.ws = ws;
-        resolve();
-      };
-
-      ws.onerror = (event: Event) => {
-        reject(new Error("WebSocket connection failed"));
-      };
-
-      ws.onclose = () => {
-        this.ws = null;
-      };
-
-      ws.onmessage = (event: MessageEvent) => {
-        this.handleToolCall(event.data);
-      };
-    });
-  }
-
-  private async handleToolCall(data: string): Promise<void> {
-    try {
-      const message = JSON.parse(data) as ToolRequestMessage;
-      if (message.type === "TOOL_REQUEST") {
-        const result = await this.onToolCall(
-          message.payload.toolName,
-          message.payload.parameters
-        );
-
-        const response: ToolResponseMessage = {
-          type: "TOOL_RESPONSE",
-          payload: {
-            requestId: message.payload.requestId,
-            result
-          }
-        };
-
-        this.ws?.send(JSON.stringify(response));
-      }
-    } catch (error) {
-      if (!this.ws) return;
-
-      const errorResponse: ToolResponseMessage = {
-        type: "TOOL_RESPONSE",
-        payload: {
-          requestId: (JSON.parse(data) as ToolRequestMessage).payload.requestId,
-          result: null,
-          error: error instanceof Error ? error.message : String(error)
+        if (!response.ok) {
+            throw new Error(`Failed to register tools: ${response.statusText}`);
         }
-      };
 
-      this.ws.send(JSON.stringify(errorResponse));
+        const { clientId } = await response.json();
+        return clientId;
     }
-  }
 
-  close(): void {
-    this.ws?.close();
-  }
+    async connectWebSocket(clientId: string): Promise<void> {
+        return new Promise<void>((resolve, reject) => {
+            const ws = new WebSocket(
+                `${this.actionsServerUrl.replace("http", "ws")}?clientId=${clientId}`
+            );
+
+            ws.onopen = () => {
+                this.ws = ws;
+                resolve();
+            };
+
+            ws.onerror = (event: Event) => {
+                reject(new Error("WebSocket connection failed"));
+            };
+
+            ws.onclose = () => {
+                this.ws = null;
+            };
+
+            ws.onmessage = (event: MessageEvent) => {
+                this.handleToolCall(event.data);
+            };
+        });
+    }
+
+    private async handleToolCall(data: string): Promise<void> {
+        try {
+            const message = JSON.parse(data) as ToolRequestMessage;
+            if (message.type === "TOOL_REQUEST") {
+                const result = await this.onToolCall(
+                    message.payload.toolName,
+                    message.payload.parameters
+                );
+
+                const response: ToolResponseMessage = {
+                    type: "TOOL_RESPONSE",
+                    payload: {
+                        requestId: message.payload.requestId,
+                        result
+                    }
+                };
+
+                this.ws?.send(JSON.stringify(response));
+            }
+        } catch (error) {
+            if (!this.ws) return;
+
+            const errorResponse: ToolResponseMessage = {
+                type: "TOOL_RESPONSE",
+                payload: {
+                    requestId: (JSON.parse(data) as ToolRequestMessage).payload.requestId,
+                    result: null,
+                    error: error instanceof Error ? error.message : String(error)
+                }
+            };
+
+            this.ws.send(JSON.stringify(errorResponse));
+        }
+    }
+
+    close(): void {
+        this.ws?.close();
+    }
 }

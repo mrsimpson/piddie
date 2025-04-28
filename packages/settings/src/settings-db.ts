@@ -42,7 +42,8 @@ export enum WorkbenchSettingKey {
   RUNTIME_PANEL_WIDTH = "runtimePanelWidth",
   IS_RUNTIME_PANEL_COLLAPSED = "isRuntimePanelCollapsed",
   SELECTED_PROVIDER = "selectedProvider",
-  LLM_CONFIG = "llmConfig"
+  LLM_CONFIG = "llmConfig",
+  ACTIONS_SERVER_URL = "actionsServerUrl"
 }
 
 // Keep these for migration purposes
@@ -202,7 +203,8 @@ export const DEFAULT_WORKBENCH_SETTINGS = {
   [WorkbenchSettingKey.RUNTIME_PANEL_WIDTH]: 500,
   [WorkbenchSettingKey.IS_RUNTIME_PANEL_COLLAPSED]: false,
   [WorkbenchSettingKey.SELECTED_PROVIDER]: "litellm",
-  [WorkbenchSettingKey.LLM_CONFIG]: DEFAULT_LLM_CONFIG
+  [WorkbenchSettingKey.LLM_CONFIG]: DEFAULT_LLM_CONFIG,
+  [WorkbenchSettingKey.ACTIONS_SERVER_URL]: "http://localhost:8080"
 };
 
 /**

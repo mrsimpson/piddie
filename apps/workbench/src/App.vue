@@ -3,6 +3,7 @@ import { ref } from "vue";
 import { storeToRefs } from "pinia";
 import { useProjectStore } from "@piddie/project-management-ui-vue";
 import { ThemeToggle } from "@piddie/common-ui-vue";
+import ActionsStatus from "./components/ActionsStatus.vue";
 import "@piddie/common-ui-vue/style";
 
 const projectStore = useProjectStore();
@@ -30,6 +31,7 @@ function handleSidePanelCollapse(collapsed: boolean) {
         <router-view />
       </div>
       <div class="side-panel-right">
+        <ActionsStatus />
         <ThemeToggle />
       </div>
     </div>
@@ -68,7 +70,9 @@ function handleSidePanelCollapse(collapsed: boolean) {
 .side-panel-right {
   width: 50px;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
   padding-top: 1rem;
   background-color: var(--sl-color-neutral-0);
   border-left: 1px solid var(--sl-color-neutral-200);
