@@ -1,18 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { McpHost, Tool, McpToolExecutionError } from "./mcp/McpHost";
+import { Tool, CallToolResult } from "@modelcontextprotocol/sdk/types";
+import { McpHost, McpToolExecutionError } from "./mcp/McpHost";
 import { ActionsProxyClient } from "./ActionsProxyClient";
-import { ZodObject, z } from "zod";
-import type { ClientTool } from "@piddie/actions-server";
-
-/**
- * Represents a tool call result for external consumers
- */
-export interface ToolCallResult {
-  status: "success" | "error";
-  value: unknown;
-  contentType?: string;
-  timestamp: Date;
-}
 
 /**
  * Singleton manager for all actions and MCP servers
@@ -74,38 +63,6 @@ export class ActionsManager {
   }
 
   /**
-   * Convert a Tool to a ClientTool
-   * @param tool The Tool to convert
-   * @returns A ClientTool representation
-   */
-  private toolToClientTool(tool: Tool): ClientTool {
-    // Create a zod schema from the inputSchema
-    const properties = tool.inputSchema.properties || {};
-    const zodSchema: Record<string, any> = {};
-
-    // Convert each property to a zod schema
-    Object.entries(properties).forEach(([key, value]) => {
-      const propType = (value as any)?.type;
-      if (propType === "string") {
-        zodSchema[key] = z.string();
-      } else if (propType === "number") {
-        zodSchema[key] = z.number();
-      } else if (propType === "boolean") {
-        zodSchema[key] = z.boolean();
-      } else {
-        // Default to any
-        zodSchema[key] = z.any();
-      }
-    });
-
-    return {
-      name: tool.name,
-      description: tool.description || "No description provided",
-      parameters: z.object(zodSchema)
-    };
-  }
-
-  /**
    * Connect to the actions server using the configured client
    * @returns Promise that resolves when connected or rejects on error
    */
@@ -117,10 +74,9 @@ export class ActionsManager {
     try {
       // Get all available tools
       const tools = await this.getAvailableTools();
-      const clientTools = tools.map((tool) => this.toolToClientTool(tool));
 
       // Register tools with server
-      const clientId = await this.actionsProxyClient.registerTools(clientTools);
+      const clientId = await this.actionsProxyClient.registerTools(tools);
 
       // Connect WebSocket
       await this.actionsProxyClient.connectWebSocket(clientId);
@@ -244,57 +200,16 @@ export class ActionsManager {
    * Execute a tool call with standard error handling
    * @param toolName The name of the tool to call
    * @param args The arguments for the tool
-   * @returns Result of the tool call conforming to ToolCallResult interface
+   * @returns Result of the tool call conforming to CallToolResult interface
    */
   public async executeToolCall(
     toolName: string,
     args: Record<string, unknown>
-  ): Promise<ToolCallResult> {
+  ): Promise<CallToolResult> {
     try {
-      // McpHost.executeToolCall now throws errors instead of returning them
+      // Call the tool via McpHost
       const result = await this.mcpHost.executeToolCall(toolName, args);
-
-      // Determine content type based on result type
-      let contentType = "application/json";
-      let value = result;
-
-      // Handle MCP protocol response structure
-      if (
-        typeof result === "object" &&
-        result !== null &&
-        "content" in result
-      ) {
-        const mcpResponse = result as {
-          content?: Array<{ type: string; text: string }>;
-        };
-
-        if (mcpResponse.content && mcpResponse.content.length > 0) {
-          // For simple text responses, combine all text content
-          const allTextContent = mcpResponse.content
-            .filter((item) => item.type === "text")
-            .map((item) => item.text)
-            .join("\n");
-
-          if (allTextContent.length > 0) {
-            value = allTextContent;
-            contentType = "text/plain";
-          }
-        }
-      } else if (typeof result === "string") {
-        contentType = "text/plain";
-      } else if (
-        (typeof Buffer !== "undefined" && result instanceof Buffer) ||
-        (typeof Uint8Array !== "undefined" && result instanceof Uint8Array)
-      ) {
-        contentType = "application/octet-stream";
-      }
-
-      return {
-        status: "success",
-        value,
-        contentType,
-        timestamp: new Date()
-      };
+      return result;
     } catch (error) {
       console.error(
         `[ActionsManager] Error executing tool call ${toolName}:`,
@@ -311,11 +226,16 @@ export class ActionsManager {
         errorMessage = String(error);
       }
 
+      // Return an error result in CallToolResult format
       return {
-        status: "error",
-        value: { error: errorMessage },
-        contentType: "application/json",
-        timestamp: new Date()
+        content: [
+          {
+            type: "text",
+            text: errorMessage
+          }
+        ],
+        _meta: {},
+        isError: true
       };
     }
   }

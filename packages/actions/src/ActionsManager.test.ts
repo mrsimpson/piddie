@@ -1,9 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ActionsManager } from "./ActionsManager";
-import { ActionsProxyClient, ToolCallResult } from "./ActionsProxyClient";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { McpHost } from "./mcp/McpHost";
-import { z } from "zod";
+import { ActionsProxyClient } from "./ActionsProxyClient";
 
 // Create a real mock instance instead of using vi.mock
 class MockActionsProxyClient implements Partial<ActionsProxyClient> {
@@ -113,28 +110,6 @@ describe("ActionsManager", () => {
       await expect(actionsManager.connectToActionsServer()).rejects.toThrow(
         "ActionsProxyClient not configured"
       );
-    });
-
-    it("should convert tools correctly", () => {
-      const tool = {
-        name: "testTool",
-        description: "A test tool",
-        inputSchema: {
-          type: "object",
-          properties: {
-            stringProp: { type: "string" },
-            numberProp: { type: "number" },
-            booleanProp: { type: "boolean" },
-            customProp: { type: "custom" }
-          }
-        }
-      };
-
-      const clientTool = actionsManager["toolToClientTool"](tool);
-
-      expect(clientTool.name).toBe("testTool");
-      expect(clientTool.description).toBe("A test tool");
-      expect(clientTool.parameters).toBeInstanceOf(z.ZodObject);
     });
   });
 });

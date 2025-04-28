@@ -1,3 +1,4 @@
-export { ActionsManager, ToolCallResult } from "./ActionsManager";
+export { ActionsManager } from "./ActionsManager";
 export { ActionsProxyClient } from "./ActionsProxyClient";
-export { McpHost, Tool } from "./mcp/McpHost";
+export { McpHost, McpToolExecutionError } from "./mcp/McpHost";
+export type { Tool, CallToolResult } from "@modelcontextprotocol/sdk/types";

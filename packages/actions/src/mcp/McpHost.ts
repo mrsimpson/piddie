@@ -1,17 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { CallToolResult } from "@modelcontextprotocol/sdk/types";
+import { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-
-// Define Tool interface locally to avoid import issues
-export interface Tool {
-  name: string;
-  description?: string | undefined;
-  inputSchema: {
-    type: string;
-    properties?: Record<string, unknown> | undefined;
-  };
-}
 
 /**
  * Custom error class for MCP tool execution errors
@@ -195,7 +185,7 @@ export class McpHost {
   async executeToolCall(
     toolName: string,
     args: Record<string, unknown>
-  ): Promise<unknown> {
+  ): Promise<CallToolResult> {
     try {
       const response = await this.callTool(toolName, args);
 

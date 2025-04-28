@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { ActionsProxy } from "./ActionsProxy.js";
 import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { z } from "zod";
+import { Tool } from "./types.js";
 import { WebSocket } from "ws";
 
 interface ToolResult {
@@ -39,10 +39,13 @@ describe("ActionsProxy", () => {
       {
         name: "testTool",
         description: "A test tool",
-        parameters: z.object({
-          input: z.string()
-        })
-      }
+        inputSchema: {
+          type: "object",
+          properties: {
+            input: { type: "string" }
+          }
+        }
+      } as Tool
     ]);
 
     // Create client and connect
@@ -130,12 +133,15 @@ describe("ActionsProxy", () => {
 
   it("should handle tool execution errors", async () => {
     // Define a test tool
-    const testTool = {
+    const testTool: Tool = {
       name: "test-tool",
       description: "A test tool",
-      parameters: z.object({
-        input: z.string()
-      })
+      inputSchema: {
+        type: "object",
+        properties: {
+          input: { type: "string" }
+        }
+      }
     };
 
     // Register the tool
@@ -169,20 +175,26 @@ describe("ActionsProxy", () => {
       {
         name: "client1Tool",
         description: "Tool for client 1",
-        parameters: z.object({
-          input: z.string()
-        })
-      }
+        inputSchema: {
+          type: "object",
+          properties: {
+            input: { type: "string" }
+          }
+        }
+      } as Tool
     ]);
 
     const client2Id = await server.registerTools([
       {
         name: "client2Tool",
         description: "Tool for client 2",
-        parameters: z.object({
-          input: z.string()
-        })
-      }
+        inputSchema: {
+          type: "object",
+          properties: {
+            input: { type: "string" }
+          }
+        }
+      } as Tool
     ]);
 
     // Create two WebSocket connections

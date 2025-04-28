@@ -1,15 +1,8 @@
 import type {
-    ClientTool,
     ToolRequestMessage,
     ToolResponseMessage
 } from "@piddie/actions-server";
-
-export interface ToolCallResult {
-    status: "success" | "error";
-    value: unknown;
-    contentType?: string;
-    timestamp: Date;
-}
+import { Tool, CallToolResult } from "@modelcontextprotocol/sdk/types";
 
 export class ActionsProxyClient {
     private ws: WebSocket | null = null;
@@ -17,20 +10,20 @@ export class ActionsProxyClient {
     private onToolCall: (
         toolName: string,
         params: Record<string, unknown>
-    ) => Promise<ToolCallResult>;
+    ) => Promise<CallToolResult>;
 
     constructor(
         actionsServerUrl: string,
         onToolCall: (
             toolName: string,
             params: Record<string, unknown>
-        ) => Promise<ToolCallResult>
+        ) => Promise<CallToolResult>
     ) {
         this.actionsServerUrl = actionsServerUrl;
         this.onToolCall = onToolCall;
     }
 
-    async registerTools(tools: ClientTool[]): Promise<string> {
+    async registerTools(tools: Tool[]): Promise<string> {
         const response = await fetch(`${this.actionsServerUrl}/register-tools`, {
             method: "POST",
             headers: {

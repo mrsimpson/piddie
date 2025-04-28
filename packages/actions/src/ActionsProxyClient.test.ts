@@ -1,13 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { ActionsProxyClient } from "./ActionsProxyClient";
-import type { ClientTool, ToolRequestMessage } from "@piddie/actions-server";
+import type { ToolRequestMessage } from "@piddie/actions-server";
+import { Tool } from "@modelcontextprotocol/sdk/types";
 
 describe("ActionsProxyClient", () => {
   let client: ActionsProxyClient;
   const mockOnToolCall = vi.fn();
 
   beforeEach(() => {
-    client = new ActionsProxyClient("http://localhost:3000", mockOnToolCall);
+    client = new ActionsProxyClient("http://localhost:55555", mockOnToolCall);
     vi.useFakeTimers();
   });
 
@@ -16,11 +17,16 @@ describe("ActionsProxyClient", () => {
   });
 
   it("should register tools", async () => {
-    const tools: ClientTool[] = [
+    const tools: Tool[] = [
       {
         name: "test",
         description: "test",
-        parameters: {} as any // Mock for test
+        inputSchema: {
+          type: "object",
+          properties: {
+            param: { type: "string" }
+          }
+        }
       }
     ];
     const expectedClientId = "generated-client-id";
@@ -35,7 +41,7 @@ describe("ActionsProxyClient", () => {
     const clientId = await client.registerTools(tools);
 
     expect(global.fetch).toHaveBeenCalledWith(
-      "http://localhost:3000/register-tools",
+      "http://localhost:55555/register-tools",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ tools })

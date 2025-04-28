@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ActionsManager } from "./ActionsManager";
-import { ActionsProxyClient, ToolCallResult } from "./ActionsProxyClient";
+import { ActionsProxyClient } from "./ActionsProxyClient";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { CallToolResult } from "@modelcontextprotocol/sdk/types";
 import { z } from "zod";
 
 // Create a proper mock for ActionsProxyClient
@@ -9,7 +10,7 @@ class MockActionsProxyClient implements Partial<ActionsProxyClient> {
   private callbackFn: (
     toolName: string,
     params: Record<string, unknown>
-  ) => Promise<ToolCallResult>;
+  ) => Promise<CallToolResult>;
 
   registerTools = vi.fn().mockResolvedValue("generated-client-id");
   connectWebSocket = vi.fn().mockResolvedValue(undefined);
@@ -19,7 +20,7 @@ class MockActionsProxyClient implements Partial<ActionsProxyClient> {
     callbackFn: (
       toolName: string,
       params: Record<string, unknown>
-    ) => Promise<ToolCallResult>
+    ) => Promise<CallToolResult>
   ) {
     this.callbackFn = callbackFn;
   }
@@ -28,7 +29,7 @@ class MockActionsProxyClient implements Partial<ActionsProxyClient> {
   async callTool(
     toolName: string,
     params: Record<string, unknown>
-  ): Promise<ToolCallResult> {
+  ): Promise<CallToolResult> {
     return this.callbackFn(toolName, params);
   }
 }
@@ -65,10 +66,21 @@ vi.mock("./mcp/McpHost", async () => {
                     type: "text",
                     text: `Local tool executed with: ${params.input}`
                   }
-                ]
+                ],
+                _meta: {},
+                isError: false
               };
             }
-            return { result: "Tool executed" };
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: "Tool executed"
+                }
+              ],
+              _meta: {},
+              isError: false
+            };
           }
         )
     }))
@@ -81,11 +93,15 @@ describe("ActionsManager and ActionsProxyClient Integration", () => {
   let mockProxyClient: MockActionsProxyClient;
 
   // Test tool result for the mock proxy client
-  const toolCallResult: ToolCallResult = {
-    status: "success",
-    value: "test result",
-    contentType: "text/plain",
-    timestamp: new Date()
+  const toolCallResult: CallToolResult = {
+    content: [
+      {
+        type: "text",
+        text: "test result"
+      }
+    ],
+    _meta: {},
+    isError: false
   };
 
   // This runs before each test
@@ -132,8 +148,14 @@ describe("ActionsManager and ActionsProxyClient Integration", () => {
       // to the actions server and eventually executed by a client
       if (toolName === "remoteTool") {
         return {
-          ...toolCallResult,
-          value: `Remote tool executed with: ${params.input}`
+          content: [
+            {
+              type: "text",
+              text: `Remote tool executed with: ${params.input}`
+            }
+          ],
+          _meta: {},
+          isError: false
         };
       }
       return toolCallResult;
@@ -178,8 +200,8 @@ describe("ActionsManager and ActionsProxyClient Integration", () => {
       input: "test input"
     });
 
-    expect(result.status).toBe("success");
-    expect(result.value).toBe("Local tool executed with: test input");
+    expect(result.isError).toBe(false);
+    expect(result.content[0].text).toBe("Local tool executed with: test input");
   });
 
   it("should execute remote tools through the proxy client", async () => {
@@ -194,8 +216,8 @@ describe("ActionsManager and ActionsProxyClient Integration", () => {
       input: "remote test"
     });
 
-    expect(result.status).toBe("success");
-    expect(result.value).toBe("Remote tool executed with: remote test");
+    expect(result.isError).toBe(false);
+    expect(result.content[0].text).toBe("Remote tool executed with: remote test");
   });
 
   it("should handle disconnection", async () => {
