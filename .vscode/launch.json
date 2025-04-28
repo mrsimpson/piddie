@@ -5,10 +5,10 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug Actions Server",
+      "name": "actions-server: dev",
       "type": "node-terminal",
       "request": "launch",
-      "command": "pnpm test",
+      "command": "pnpm dev",
       "cwd": "${workspaceFolder}/packages/actions-server",
       "skipFiles": ["<node_internals>/**"]
     },

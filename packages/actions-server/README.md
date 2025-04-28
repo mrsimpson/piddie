@@ -1,193 +1,89 @@
 # Actions Server
 
-## Purpose
+## Overview
 
-The Actions Server enables server-side LLM agents to safely interact with client-side tools running in browser sandboxes. It:
-
-- Provides a WebSocket endpoint for client connections
-- Manages client-specific tool registrations
-- Exposes client tools to server-side agents
-- Proxies tool executions between agents and clients
-
-## System Flow
-
-### 1. Initial Setup & Tool Registration
-
-```mermaid
-sequenceDiagram
-    participant Client
-    participant ActionsServer
-    participant Agent
-
-    Note over Client: Workbench starts
-    Client->>Client: Generate clientId
-    Client->>ActionsServer: POST /register-tools
-    Note over Client: Send tool definitions
-    ActionsServer->>ActionsServer: Store tool-client mapping
-    ActionsServer->>Client: Return { clientId }
-    ActionsServer->>Agent: Expose available tools
-```
-
-### 2. Tool Execution
-
-```mermaid
-sequenceDiagram
-    participant LLM
-    participant Agent
-    participant ActionsServer
-    participant Client
-
-    LLM->>Agent: Use client tool
-    Note over Agent: LLM received clientId & clientSecret from client onMessage
-    Agent->>ActionsServer: Execute tool with clientId & clientSecret
-    ActionsServer->>Client: Forward via WebSocket
-    Client->>Client: Validate clientSecret
-    Client->>Client: Execute in sandbox
-    Client->>ActionsServer: Return result
-    ActionsServer->>Agent: Forward result
-    Agent->>LLM: Process result
-```
+The Actions Server enables MCP clients (LLM agents) to execute tools that run in browser-based workbenches. It provides a WebSocket-based proxy system that routes tool execution requests from MCP clients to the appropriate workbench instance while maintaining security and isolation.
 
 ## Core Components
 
-### 1. WebSocket Connection Manager
+### 1. Actions Server
+- Provides WebSocket endpoint for workbench connections
+- Manages workbench registrations and tool mappings
+- Routes tool execution requests from MCP clients to workbenches
+- Exposes registered tools to MCP clients
 
-```typescript
-interface ClientConnection {
-  clientId: string;
-  connection: WebSocket;
-  tools: Map<string, ProxiedTool>;
-  status: "connected" | "disconnected";
-}
+### 2. ActionsProxyClient (Workbench)
+- Client-side component that connects to Actions Server
+- Generates and manages client secrets
+- Handles WebSocket communication
+- Validates and executes tool requests
+- Manages tool registration
 
-class WebSocketManager {
-  private connections: Map<string, ClientConnection>;
+### 3. ActionsManager (Workbench)
+- Singleton manager for all actions and MCP servers
+- Central entry point for tool discovery and execution
+- Manages MCP server registrations
+- Executes tools within the workbench sandbox
 
-  async handleConnection(ws: WebSocket, clientId: string): Promise<void>;
-  async handleDisconnection(clientId: string): Promise<void>;
-  async sendToClient(clientId: string, message: ServerMessage): Promise<void>;
-}
+## System Flow
+
+### 1. Workbench Registration
+
+```mermaid
+sequenceDiagram
+    participant Workbench as ActionsProxyClient
+    participant Server as ActionsServer
+    participant Manager as ActionsManager
+
+    Note over Workbench: Workbench starts
+    Workbench->>Manager: Get available tools
+    Manager-->>Workbench: Return tool definitions
+    Workbench->>Workbench: Generate clientSecret
+    Workbench->>Server: POST /register-tools
+    Note over Workbench: Send tool definitions
+    Server->>Server: Store tool-workbench mapping
+    Server->>Workbench: Return clientId
+    Workbench->>Server: Connect WebSocket
+    Server->>Server: Store WebSocket connection
+    Workbench->>Workbench: Register ActionsManager as tool execution callback
 ```
 
-### 2. Tool Registry
+### 2. MCP Client Tool Execution
 
-```typescript
-interface ProxiedTool {
-  name: string;
-  description: string;
-  parameters: JSONSchema;
-  clientId: string;
-  execute: (params: unknown) => Promise<unknown>;
-}
+```mermaid
+sequenceDiagram
+    participant MCP as MCP Client
+    participant Server as ActionsServer
+    participant Workbench as ActionsProxyClient
+    participant Manager as ActionsManager
 
-class ToolRegistry {
-  private tools: Map<string, ProxiedTool>;
-
-  async registerTools(clientId: string, tools: Tool[]): Promise<void>;
-  async getToolsForClient(clientId: string): Promise<ProxiedTool[]>;
-  async unregisterClientTools(clientId: string): Promise<void>;
-}
-```
-
-### 3. MCP Server Integration
-
-```typescript
-interface McpToolDefinition {
-  name: string;
-  description: string;
-  parameters: {
-    clientId: string;
-    clientSecret: string;
-    [key: string]: unknown;
-  };
-}
-
-class McpServer {
-  private toolRegistry: ToolRegistry;
-
-  async registerTools(tools: McpToolDefinition[]): Promise<void>;
-  async executeTool(toolName: string, params: unknown): Promise<unknown>;
-}
+    MCP->>Server: Connect via MCP
+    Server->>MCP: Expose available tools
+    
+    MCP->>Server: Execute tool with clientId & clientSecret
+    Server->>Workbench: Forward via WebSocket
+    Workbench->>Workbench: Validate clientSecret
+    Workbench->>Manager: Forward to tool handler
+    Manager->>Manager: Execute in workbench sandbox
+    Manager->>Workbench: Return result
+    Workbench->>Server: Forward via WebSocket
+    Server->>MCP: Return result
 ```
 
 ## Security Implementation
 
-### 1. Client Registration
+### Workbench Authentication
+- Each workbench generates a unique clientSecret using UUID
+- ClientSecret is validated by the workbench on every tool execution request
+- WebSocket connections require valid clientId
+- Tool requests include both clientId and clientSecret
 
+### Message Protocol
+
+#### Tool Request (MCP to Server)
 ```typescript
-interface RegistrationResponse {
-  clientId: string;
-}
-
-class ActionsManager {
-  private clientId: string;
-  private clientSecret: string;
-
-  constructor() {
-    this.clientSecret = generateSecret(); // Generate secret locally
-  }
-
-  async registerTools(tools: McpToolDefinition[]): Promise<void> {
-    const response = await fetch("/api/register-tools", {
-      method: "POST",
-      body: JSON.stringify(tools)
-    });
-    const { clientId } = await response.json();
-    this.clientId = clientId;
-  }
-
-  // Method to expose credentials to LLM/Agent
-  getToolCredentials(): { clientId: string; clientSecret: string } {
-    return {
-      clientId: this.clientId,
-      clientSecret: this.clientSecret
-    };
-  }
-}
-```
-
-### 2. Tool Execution Validation
-
-```typescript
-class ActionsManager {
-  private validateToolExecution(params: unknown): boolean {
-    const { clientId, clientSecret } = params as {
-      clientId: string;
-      clientSecret: string;
-    };
-    return clientId === this.clientId && clientSecret === this.clientSecret;
-  }
-
-  async handleToolExecution(params: unknown): Promise<unknown> {
-    if (!this.validateToolExecution(params)) {
-      throw new Error("Invalid client credentials");
-    }
-    // Execute tool...
-  }
-}
-```
-
-## Message Protocol
-
-### Client Messages
-
-```typescript
-interface ClientMessage {
-  type: "TOOL_RESPONSE" | "ERROR";
-  payload: {
-    clientId: string;
-    tools?: Tool[];
-    result?: unknown;
-    error?: string;
-  };
-}
-```
-
-### Server Messages
-
-```typescript
-interface ServerMessage {
-  type: "TOOL_REQUEST" | "ERROR";
+interface ToolRequestMessage {
+  type: "TOOL_REQUEST";
   payload: {
     toolName: string;
     parameters: {
@@ -200,10 +96,21 @@ interface ServerMessage {
 }
 ```
 
+#### Tool Response (Server to MCP)
+```typescript
+interface ToolResponseMessage {
+  type: "TOOL_RESPONSE";
+  payload: {
+    requestId: string;
+    result: CallToolResult;
+    error?: string;
+  };
+}
+```
+
 ## Implementation Example
 
 ### 1. Server Setup
-
 ```typescript
 const server = new ActionsServer({
   port: 3000,
@@ -215,60 +122,72 @@ const server = new ActionsServer({
 await server.start();
 ```
 
-### 2. Client Connection
-
+### 2. Workbench Integration
 ```typescript
-const client = new ActionsClient(ws, {
-  clientId: "unique-client-id",
-  tools: [
-    {
-      name: "writeFile",
-      description: "Write to sandboxed filesystem",
-      parameters: {
-        type: "object",
-        properties: {
-          path: { type: "string" },
-          content: { type: "string" }
-        }
+// Initialize ActionsManager
+const actionsManager = ActionsManager.getInstance();
+await actionsManager.initialize();
+
+// Create and configure ActionsProxyClient
+const client = new ActionsProxyClient(
+  "http://localhost:3000",
+  "ws://localhost:3000",
+  async (toolName: string, params: Record<string, unknown>) => {
+    // Handle tool execution in workbench sandbox
+    return { success: true };
+  }
+);
+
+// Register tools and connect
+const clientId = await client.registerTools([
+  {
+    name: "writeFile",
+    description: "Write to sandboxed filesystem",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        content: { type: "string" }
       }
     }
-  ]
-});
+  }
+]);
+
+await client.connectWebSocket(clientId);
+
+// Set up ActionsManager with the client
+actionsManager.setActionsProxyClient(client);
 ```
 
-### 3. Agent Usage
-
+### 3. MCP Client Usage
 ```typescript
-const actions = ActionsManager.getInstance();
-const result = await actions.executeToolCall("writeFile", {
+// Connect to Actions Server via MCP
+const mcpClient = new McpClient({
+  // MCP configuration
+});
+
+// Get available tools
+const tools = await mcpClient.listTools();
+
+// Execute a tool
+const result = await mcpClient.executeTool("writeFile", {
+  clientId: "workbench-id",
+  clientSecret: "workbench-secret",
   path: "/example.txt",
-  content: "Hello"
+  content: "Hello World"
 });
 ```
 
-## Security & Error Handling
+## Error Handling
 
-### Authentication
+- Invalid client credentials result in immediate rejection
+- WebSocket connection failures trigger reconnection attempts
+- Tool execution errors are properly propagated
+- Connection status is monitored and reported
 
-```typescript
-interface AuthConfig {
-  token: string;
-  origin: string;
-  rateLimit: number;
-}
+## Security Considerations
 
-class AuthManager {
-  async validateConnection(auth: AuthConfig): Promise<boolean>;
-  async validateRequest(clientId: string): Promise<boolean>;
-}
-```
-
-### Error Handling
-
-```typescript
-class ErrorHandler {
-  static handleConnectionError(error: Error): void;
-  static handleToolError(error: Error): void;
-  static handleProtocolError(error: Error): void;
-}
-```
+- Client secrets are generated and validated by the workbench
+- WebSocket connections require valid client IDs
+- Tool execution is sandboxed within the workbench
+- All messages are validated before processing

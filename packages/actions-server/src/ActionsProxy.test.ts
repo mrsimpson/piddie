@@ -17,9 +17,13 @@ interface ToolResult {
 interface ToolRequest {
   type: "TOOL_REQUEST";
   payload: {
-    toolName: string;
-    parameters: Record<string, unknown>;
+    method: "tools/call";
     requestId: string;
+    params: {
+      name: string;
+      arguments: Record<string, unknown>;
+      _meta: Record<string, unknown>;
+    };
   };
 }
 
@@ -114,7 +118,16 @@ describe("ActionsProxy", () => {
         type: "TOOL_RESPONSE",
         payload: {
           requestId: request.payload.requestId,
-          result: { success: true, input: request.payload.parameters.input }
+          result: {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({ success: true, input: request.payload.params.arguments.input })
+              }
+            ],
+            _meta: {},
+            isError: false
+          }
         }
       })
     );
@@ -288,8 +301,8 @@ describe("ActionsProxy", () => {
     // Verify that each client only received their own messages
     expect(client1Messages.length).toBe(1);
     expect(client2Messages.length).toBe(1);
-    expect(client1Messages[0].payload.toolName).toBe("client1Tool");
-    expect(client2Messages[0].payload.toolName).toBe("client2Tool");
+    expect(client1Messages[0].payload.params.name).toBe("client1Tool");
+    expect(client2Messages[0].payload.params.name).toBe("client2Tool");
 
     // Clean up
     ws1.close();

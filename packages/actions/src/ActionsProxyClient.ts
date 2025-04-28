@@ -3,11 +3,13 @@ import type {
     ToolResponseMessage
 } from "@piddie/actions-server";
 import { Tool, CallToolResult } from "@modelcontextprotocol/sdk/types";
+import { v4 as uuid } from "uuid";
 
 export class ActionsProxyClient {
     private ws: WebSocket | null = null;
     private httpUrl: string;
     private wsUrl: string;
+    private clientSecret: string;
     private onToolCall: (
         toolName: string,
         params: Record<string, unknown>
@@ -24,6 +26,11 @@ export class ActionsProxyClient {
         this.httpUrl = httpUrl;
         this.wsUrl = wsUrl;
         this.onToolCall = onToolCall;
+        this.clientSecret = this.generateClientSecret();
+    }
+
+    private generateClientSecret(): string {
+        return uuid();
     }
 
     async registerTools(tools: Tool[]): Promise<string> {
@@ -74,9 +81,17 @@ export class ActionsProxyClient {
         try {
             const message = JSON.parse(data) as ToolRequestMessage;
             if (message.type === "TOOL_REQUEST") {
+                // Validate client secret
+                if (message.payload.parameters.clientSecret !== this.clientSecret) {
+                    throw new Error("Invalid client secret");
+                }
+
+                // Strip out clientSecret before calling onToolCall
+                const { clientSecret, ...params } = message.payload.parameters;
+
                 const result = await this.onToolCall(
                     message.payload.toolName,
-                    message.payload.parameters
+                    params
                 );
 
                 const response: ToolResponseMessage = {
@@ -107,5 +122,9 @@ export class ActionsProxyClient {
 
     close(): void {
         this.ws?.close();
+    }
+
+    isConnected(): boolean {
+        return this.ws?.readyState === WebSocket.OPEN;
     }
 }

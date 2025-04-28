@@ -108,6 +108,10 @@ export class ActionsProxy {
         const clientId = uuidv4();
         const clientTools = new Map<string, Tool>();
 
+        debugger;
+        if (!tools || tools.length === 0) {
+            return clientId;
+        }
         // Register each tool with MCP server
         for (const toolDef of tools) {
             // Convert from our Tool to Zod schema for MCP server

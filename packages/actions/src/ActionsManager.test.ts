@@ -4,9 +4,16 @@ import { ActionsProxyClient } from "./ActionsProxyClient";
 
 // Create a real mock instance instead of using vi.mock
 class MockActionsProxyClient implements Partial<ActionsProxyClient> {
+  private _isConnected = false;
+
   registerTools = vi.fn().mockResolvedValue("generated-client-id");
-  connectWebSocket = vi.fn().mockResolvedValue(undefined);
-  close = vi.fn();
+  connectWebSocket = vi.fn().mockImplementation(async () => {
+    this._isConnected = true;
+  });
+  close = vi.fn().mockImplementation(() => {
+    this._isConnected = false;
+  });
+  isConnected = vi.fn().mockImplementation(() => this._isConnected);
 
   constructor() {
     // This constructor is needed to match the real ActionsProxyClient
@@ -92,9 +99,8 @@ describe("ActionsManager", () => {
       );
       expect(actionsManager.isConnectedToActionsServer()).toBe(false);
 
-      const status = actionsManager.getConnectionStatus();
-      expect(status.status).toBe("error");
-      expect(status.error).toBe("Connection failed");
+      const status = actionsManager.isConnectedToActionsServer();
+      expect(status).toBe(false);
     });
 
     it("should disconnect from actions server", () => {

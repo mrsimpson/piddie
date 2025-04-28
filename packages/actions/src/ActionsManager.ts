@@ -14,9 +14,6 @@ export class ActionsManager {
   private initialized = false;
   private toolsBuffer: Tool[] | null = null;
   private actionsProxyClient: ActionsProxyClient | null = null;
-  private connectionStatus: "connected" | "disconnected" | "error" =
-    "disconnected";
-  private connectionError: string | null = null;
 
   /**
    * Private constructor to enforce singleton pattern
@@ -56,9 +53,8 @@ export class ActionsManager {
    */
   public setActionsProxyClient(client: ActionsProxyClient | null): void {
     if (this.actionsProxyClient) {
-      this.disconnect();
+      this.actionsProxyClient.close();
     }
-
     this.actionsProxyClient = client;
   }
 
@@ -72,57 +68,27 @@ export class ActionsManager {
     }
 
     try {
-      // Get all available tools
       const tools = await this.getAvailableTools();
-
-      // Register tools with server
       const clientId = await this.actionsProxyClient.registerTools(tools);
-
-      // Connect WebSocket
       await this.actionsProxyClient.connectWebSocket(clientId);
-
-      this.connectionStatus = "connected";
-      this.connectionError = null;
-
-      console.log("[ActionsManager] Connected to actions server successfully");
     } catch (error) {
-      this.connectionStatus = "error";
-      this.connectionError =
-        error instanceof Error ? error.message : String(error);
-      console.error(
-        "[ActionsManager] Failed to connect to actions server:",
-        error
-      );
+      console.error("[ActionsManager] Failed to connect to actions server:", error);
       throw error;
     }
-  }
-
-  /**
-   * Get the current connection status
-   */
-  public getConnectionStatus(): { status: string; error: string | null } {
-    return {
-      status: this.connectionStatus,
-      error: this.connectionError
-    };
   }
 
   /**
    * Check if connected to actions server
    */
   public isConnectedToActionsServer(): boolean {
-    return this.connectionStatus === "connected";
+    return this.actionsProxyClient?.isConnected() ?? false;
   }
 
   /**
    * Disconnect from the actions server
    */
   public disconnect(): void {
-    if (this.actionsProxyClient) {
-      this.actionsProxyClient.close();
-    }
-
-    this.connectionStatus = "disconnected";
+    this.actionsProxyClient?.close();
   }
 
   /**

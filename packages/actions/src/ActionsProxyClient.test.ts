@@ -88,7 +88,7 @@ describe("ActionsProxyClient", () => {
       type: "TOOL_REQUEST",
       payload: {
         toolName: "test",
-        parameters: { param: "value" },
+        parameters: { param: "value", clientSecret: client["clientSecret"] },
         requestId: "123"
       }
     };
@@ -130,7 +130,7 @@ describe("ActionsProxyClient", () => {
       type: "TOOL_REQUEST",
       payload: {
         toolName: "test",
-        parameters: { param: "value" },
+        parameters: { param: "value", clientSecret: client["clientSecret"] },
         requestId: "123"
       }
     };

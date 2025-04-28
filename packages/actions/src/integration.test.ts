@@ -11,10 +11,16 @@ class MockActionsProxyClient implements Partial<ActionsProxyClient> {
     toolName: string,
     params: Record<string, unknown>
   ) => Promise<CallToolResult>;
+  private _isConnected = false;
 
   registerTools = vi.fn().mockResolvedValue("generated-client-id");
-  connectWebSocket = vi.fn().mockResolvedValue(undefined);
-  close = vi.fn();
+  connectWebSocket = vi.fn().mockImplementation(async () => {
+    this._isConnected = true;
+  });
+  close = vi.fn().mockImplementation(() => {
+    this._isConnected = false;
+  });
+  isConnected = vi.fn().mockImplementation(() => this._isConnected);
 
   constructor(
     callbackFn: (
@@ -243,8 +249,7 @@ describe("ActionsManager and ActionsProxyClient Integration", () => {
     );
 
     // Check connection status reflects the error
-    const status = actionsManager.getConnectionStatus();
-    expect(status.status).toBe("error");
-    expect(status.error).toBe("Failed to connect");
+    const status = actionsManager.isConnectedToActionsServer();
+    expect(status).toBe(false);
   });
 });
