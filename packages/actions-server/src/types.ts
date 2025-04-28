@@ -1,4 +1,4 @@
-import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types";
+import type { CallToolResult, CallToolRequest, Tool } from "@modelcontextprotocol/sdk/types";
 
 /**
  * Request message for tool execution
@@ -25,5 +25,4 @@ export interface ToolResponseMessage {
   };
 }
 
-// Re-export relevant types from MCP SDK for convenience
-export { CallToolResult, Tool };
+export type { CallToolResult, CallToolRequest, Tool };

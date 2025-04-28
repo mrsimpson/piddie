@@ -3,6 +3,7 @@ import { ActionsManager } from "@piddie/actions";
 import { EventEmitter } from "@piddie/shared-types";
 import type { LlmStreamChunk } from "../types";
 import { ToolCallQueue } from "./ToolCallQueue";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types";
 
 /**
  * Execute a tool call by delegating to the ActionsManager
@@ -32,15 +33,18 @@ export async function executeToolCall(
 
     // Call the tool via the ActionsManager
     console.log(`[Orchestrator] Executing tool call: ${toolName}`);
-    const result = await actionsManager.executeToolCall(toolName, parsedArgs);
+    const mcpResult = await actionsManager.executeToolCall(toolName, parsedArgs);
+
+    // Convert MCP result to our ToolCallResult format
+    const result: ToolCallResult = {
+      status: mcpResult.isError ? "error" : "success",
+      value: mcpResult.content[0]?.text || "",
+      contentType: mcpResult.content[0]?.type === "text" ? "text/plain" : undefined,
+      timestamp: new Date()
+    };
 
     // Attach the result to the tool call
-    toolCall.result = {
-      status: result.status,
-      value: result.value,
-      contentType: result.contentType,
-      timestamp: result.timestamp
-    };
+    toolCall.result = result;
 
     console.log(
       `[Orchestrator] Tool call executed successfully: ${toolName}`,
@@ -49,12 +53,13 @@ export async function executeToolCall(
     return result;
   } catch (error) {
     // Attach error result to the tool call
-    toolCall.result = {
+    const errorResult: ToolCallResult = {
       status: "error",
       value: error instanceof Error ? error.message : String(error),
       contentType: "text/plain",
       timestamp: new Date()
     };
+    toolCall.result = errorResult;
 
     // Return the error to be handled by the caller
     console.error(`[Orchestrator] Error executing tool call:`, error);

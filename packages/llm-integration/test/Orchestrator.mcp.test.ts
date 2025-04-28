@@ -51,10 +51,14 @@ vi.mock("@piddie/actions", () => {
                   if (server.callTool) {
                     const result = await server.callTool(name, args);
                     return {
-                      status: "success" as const,
-                      value: result,
-                      contentType: "application/json",
-                      timestamp: new Date()
+                      content: [
+                        {
+                          type: "text",
+                          text: JSON.stringify(result)
+                        }
+                      ],
+                      _meta: {},
+                      isError: false
                     };
                   }
                 } catch (error) {
@@ -65,21 +69,26 @@ vi.mock("@piddie/actions", () => {
                     continue;
                   }
                   return {
-                    status: "error" as const,
-                    value: {
-                      error:
-                        error instanceof Error ? error.message : String(error)
-                    },
-                    contentType: "application/json",
-                    timestamp: new Date()
+                    content: [
+                      {
+                        type: "text",
+                        text: error instanceof Error ? error.message : String(error)
+                      }
+                    ],
+                    _meta: {},
+                    isError: true
                   };
                 }
               }
               return {
-                status: "error" as const,
-                value: { error: `Tool ${name} not found` },
-                contentType: "application/json",
-                timestamp: new Date()
+                content: [
+                  {
+                    type: "text",
+                    text: `Tool ${name} not found`
+                  }
+                ],
+                _meta: {},
+                isError: true
               };
             }
           )
@@ -196,10 +205,14 @@ describe("Orchestrator MCP Integration", () => {
               if (server.callTool) {
                 const result = await server.callTool(name, args);
                 return {
-                  status: "success" as const,
-                  value: result,
-                  contentType: "application/json",
-                  timestamp: new Date()
+                  content: [
+                    {
+                      type: "text",
+                      text: JSON.stringify(result)
+                    }
+                  ],
+                  _meta: {},
+                  isError: false
                 };
               }
             } catch (error) {
@@ -210,20 +223,26 @@ describe("Orchestrator MCP Integration", () => {
                 continue;
               }
               return {
-                status: "error" as const,
-                value: {
-                  error: error instanceof Error ? error.message : String(error)
-                },
-                contentType: "application/json",
-                timestamp: new Date()
+                content: [
+                  {
+                    type: "text",
+                    text: error instanceof Error ? error.message : String(error)
+                  }
+                ],
+                _meta: {},
+                isError: true
               };
             }
           }
           return {
-            status: "error" as const,
-            value: { error: `Tool ${name} not found` },
-            contentType: "application/json",
-            timestamp: new Date()
+            content: [
+              {
+                type: "text",
+                text: `Tool ${name} not found`
+              }
+            ],
+            _meta: {},
+            isError: true
           };
         }
       )

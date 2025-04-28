@@ -9,7 +9,7 @@ import type { ChatManager, ToolCall } from "@piddie/chat-management";
 import { MessageStatus } from "@piddie/chat-management";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { LlmAdapter } from "./index";
-import { ActionsManager, ActionsProxyClient type Tool } from "@piddie/actions";
+import { ActionsManager, ActionsProxyClient, type Tool } from "@piddie/actions";
 import { AgentManager } from "./AgentManager";
 import { ToolCallQueue } from "./utils/ToolCallQueue";
 import { extractToolCallsFromPartialText } from "./utils/toolExtractor";
@@ -29,6 +29,7 @@ import {
   enhanceMessageWithSystemPrompt
 } from "./utils/messagePreparationUtils";
 import { compileSystemPrompt } from "./utils/systemPromptUtils";
+import { settingsManager, WorkbenchSettingKey } from "@piddie/settings";
 
 /**
  * Configuration for agentic behavior
@@ -95,15 +96,13 @@ export class Orchestrator implements LlmAdapter {
    */
   private async initializeActionsServerConnection(): Promise<void> {
     try {
-      // Import directly to avoid circular dependencies
-      const { settingsManager, WorkbenchSettingKey } = await import("@piddie/settings");
-
       // First ensure the actions manager is initialized
       await this.actionsManager.initialize();
 
-      // Get the actions server URL from settings
+      // Get the actions server URLs from settings
       const settings = await settingsManager.getWorkbenchSettings();
-      const actionsServerUrl = settings[WorkbenchSettingKey.ACTIONS_SERVER_URL] as string || "http://localhost:9100";
+      const httpUrl = settings[WorkbenchSettingKey.ACTIONS_SERVER_HTTP_URL] as string || "http://localhost:9100";
+      const wsUrl = settings[WorkbenchSettingKey.ACTIONS_SERVER_WS_URL] as string || "ws://localhost:9101";
 
       // Check if there's already a connection
       const connectionStatus = this.actionsManager.getConnectionStatus();
@@ -113,10 +112,10 @@ export class Orchestrator implements LlmAdapter {
       }
 
       try {
-
         // Create a proxy client for the actions server
         const actionsProxyClient = new ActionsProxyClient(
-          actionsServerUrl,
+          httpUrl,
+          wsUrl,
           // This callback will execute when the actions server requests a tool execution
           async (toolName, params) => {
             return this.actionsManager.executeToolCall(toolName, params);
@@ -124,7 +123,8 @@ export class Orchestrator implements LlmAdapter {
         );
 
         const availableTools = await this.getAvailableTools();
-        actionsProxyClient.registerTools(availableTools);
+        const clientId = await actionsProxyClient.registerTools(availableTools);
+        await actionsProxyClient.connectWebSocket(clientId);
 
         // Set the proxy client in the actions manager
         this.actionsManager.setActionsProxyClient(actionsProxyClient);

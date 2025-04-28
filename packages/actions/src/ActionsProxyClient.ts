@@ -6,25 +6,28 @@ import { Tool, CallToolResult } from "@modelcontextprotocol/sdk/types";
 
 export class ActionsProxyClient {
     private ws: WebSocket | null = null;
-    private actionsServerUrl: string;
+    private httpUrl: string;
+    private wsUrl: string;
     private onToolCall: (
         toolName: string,
         params: Record<string, unknown>
     ) => Promise<CallToolResult>;
 
     constructor(
-        actionsServerUrl: string,
+        httpUrl: string,
+        wsUrl: string,
         onToolCall: (
             toolName: string,
             params: Record<string, unknown>
         ) => Promise<CallToolResult>
     ) {
-        this.actionsServerUrl = actionsServerUrl;
+        this.httpUrl = httpUrl;
+        this.wsUrl = wsUrl;
         this.onToolCall = onToolCall;
     }
 
     async registerTools(tools: Tool[]): Promise<string> {
-        const response = await fetch(`${this.actionsServerUrl}/register-tools`, {
+        const response = await fetch(`${this.httpUrl}/register-tools`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json"
@@ -45,7 +48,7 @@ export class ActionsProxyClient {
     async connectWebSocket(clientId: string): Promise<void> {
         return new Promise<void>((resolve, reject) => {
             const ws = new WebSocket(
-                `${this.actionsServerUrl.replace("http", "ws")}?clientId=${clientId}`
+                `${this.wsUrl}?clientId=${clientId}`
             );
 
             ws.onopen = () => {

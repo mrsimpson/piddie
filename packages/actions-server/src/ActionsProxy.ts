@@ -1,8 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { CallToolRequest } from "@modelcontextprotocol/sdk/types";
 import { z } from "zod";
 import { v4 as uuidv4 } from "uuid";
 import { WebSocketServer, WebSocket } from "ws";
-import { Tool, ToolResponseMessage, ToolRequestMessage, CallToolResult } from "./types";
+import { Tool, ToolResponseMessage, CallToolResult } from "./types";
 
 interface ClientRegistration {
     clientId: string;
@@ -20,7 +21,7 @@ export class ActionsProxy {
     > = new Map();
     private connectedClients: Map<string, ClientRegistration> = new Map();
 
-    constructor(port: number = 9100) {
+    constructor(port: number = 9101) {
         this.mcpServer = new McpServer({
             name: "actions-server",
             version: "1.0.0"
@@ -81,7 +82,7 @@ export class ActionsProxy {
 
     private async sendRequest(
         clientId: string,
-        request: ToolRequestMessage
+        request: CallToolRequest & { requestId: string }
     ): Promise<ToolResponseMessage> {
         const client = this.connectedClients.get(clientId);
         if (!client || !client.ws) {
@@ -89,10 +90,13 @@ export class ActionsProxy {
         }
 
         return new Promise((resolve) => {
-            this.pendingRequests.set(request.payload.requestId, resolve);
+            this.pendingRequests.set(request.requestId, resolve);
             const ws = this.connectedClients.get(clientId)?.ws;
             if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify(request));
+                ws.send(JSON.stringify({
+                    type: "TOOL_REQUEST",
+                    payload: request
+                }));
             }
         });
     }
@@ -158,11 +162,12 @@ export class ActionsProxy {
 
                         const requestId = uuidv4();
                         const response = await this.sendRequest(clientId, {
-                            type: "TOOL_REQUEST",
-                            payload: {
-                                toolName: toolDef.name,
-                                parameters: toolParams,
-                                requestId
+                            method: "tools/call",
+                            requestId,
+                            params: {
+                                name: toolDef.name,
+                                arguments: toolParams,
+                                _meta: {}
                             }
                         });
 

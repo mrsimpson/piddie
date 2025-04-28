@@ -13,7 +13,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "build:clean": "find . -name '*.buildinfo' -o -name '*.tsbuildinfo' -delete  && rimraf ./dist",
-    "dev": "tsc -p tsconfig.build.json --watch",
+    "dev": "concurrently \"pnpm dev:run\" \"pnpm dev:build\"",
+    "dev:run": "PORT=9101 node dist/server.js",
+    "dev:build": "tsc -p tsconfig.build.json --watch",
     "lint": "eslint .",
     "lint:fix": "pnpm lint --fix",
     "format": "prettier --check .",
@@ -32,6 +34,6 @@
     "@types/node": "^20.11.19",
     "@types/uuid": "^9.0.8",
     "@types/ws": "^8.5.10",
-    "vitest": "3.1.1"
+    "concurrently": "^8.2.2"
   }
 }

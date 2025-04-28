@@ -43,7 +43,8 @@ export enum WorkbenchSettingKey {
   IS_RUNTIME_PANEL_COLLAPSED = "isRuntimePanelCollapsed",
   SELECTED_PROVIDER = "selectedProvider",
   LLM_CONFIG = "llmConfig",
-  ACTIONS_SERVER_URL = "actionsServerUrl"
+  ACTIONS_SERVER_HTTP_URL = "actionsServerHttpUrl",
+  ACTIONS_SERVER_WS_URL = "actionsServerWsUrl"
 }
 
 // Keep these for migration purposes
@@ -83,6 +84,22 @@ export const DEFAULT_AGENT_SETTINGS: Omit<
   maxRoundtrips: 10,
   autoContinue: true
 };
+
+/**
+ * Interface for workbench settings
+ */
+export interface WorkbenchSettings {
+  [WorkbenchSettingKey.FILE_EXPLORER_WIDTH]: number;
+  [WorkbenchSettingKey.CHAT_PANEL_WIDTH]: number;
+  [WorkbenchSettingKey.IS_FILE_EXPLORER_COLLAPSED]: boolean;
+  [WorkbenchSettingKey.IS_CHAT_PANEL_COLLAPSED]: boolean;
+  [WorkbenchSettingKey.RUNTIME_PANEL_WIDTH]: number;
+  [WorkbenchSettingKey.IS_RUNTIME_PANEL_COLLAPSED]: boolean;
+  [WorkbenchSettingKey.SELECTED_PROVIDER]: string;
+  [WorkbenchSettingKey.LLM_CONFIG]: LlmProviderConfig;
+  [WorkbenchSettingKey.ACTIONS_SERVER_HTTP_URL]: string;
+  [WorkbenchSettingKey.ACTIONS_SERVER_WS_URL]: string;
+}
 
 /**
  * Database schema for application settings
@@ -195,7 +212,7 @@ export const DEFAULT_LAYOUT_SETTINGS = {
 /**
  * Default workbench settings
  */
-export const DEFAULT_WORKBENCH_SETTINGS = {
+export const DEFAULT_WORKBENCH_SETTINGS: WorkbenchSettings = {
   [WorkbenchSettingKey.FILE_EXPLORER_WIDTH]: 250,
   [WorkbenchSettingKey.CHAT_PANEL_WIDTH]: 300,
   [WorkbenchSettingKey.IS_FILE_EXPLORER_COLLAPSED]: false,
@@ -204,7 +221,8 @@ export const DEFAULT_WORKBENCH_SETTINGS = {
   [WorkbenchSettingKey.IS_RUNTIME_PANEL_COLLAPSED]: false,
   [WorkbenchSettingKey.SELECTED_PROVIDER]: "litellm",
   [WorkbenchSettingKey.LLM_CONFIG]: DEFAULT_LLM_CONFIG,
-  [WorkbenchSettingKey.ACTIONS_SERVER_URL]: "http://localhost:8080"
+  [WorkbenchSettingKey.ACTIONS_SERVER_HTTP_URL]: "http://localhost:9100",
+  [WorkbenchSettingKey.ACTIONS_SERVER_WS_URL]: "ws://localhost:9101"
 };
 
 /**

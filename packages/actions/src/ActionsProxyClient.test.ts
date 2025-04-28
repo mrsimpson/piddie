@@ -8,7 +8,11 @@ describe("ActionsProxyClient", () => {
   const mockOnToolCall = vi.fn();
 
   beforeEach(() => {
-    client = new ActionsProxyClient("http://localhost:55555", mockOnToolCall);
+    client = new ActionsProxyClient(
+      "http://localhost:55555",
+      "ws://localhost:55556",
+      mockOnToolCall
+    );
     vi.useFakeTimers();
   });
 
