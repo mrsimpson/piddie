@@ -10,12 +10,11 @@ const actionsManager = ActionsManager.getInstance();
 
 // Update the connection status
 function updateStatus() {
-  const status = actionsManager.getConnectionStatus();
-  connectionStatus.value = status.status as
-    | "connected"
-    | "disconnected"
-    | "error";
-  errorMessage.value = status.error;
+  if (actionsManager.isConnectedToActionsServer()) {
+    connectionStatus.value = "connected";
+  } else {
+    connectionStatus.value = "error";
+  }
 }
 
 // Set up an interval to periodically check connection status
@@ -43,7 +42,6 @@ onUnmounted(() => {
         class="status-badge"
         :class="{
           connected: connectionStatus === 'connected',
-          disconnected: connectionStatus === 'disconnected',
           error: connectionStatus === 'error'
         }"
         :title="errorMessage || ''"

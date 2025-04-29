@@ -7,27 +7,32 @@ The Actions Server enables MCP clients (LLM agents) to execute tools that run in
 ## Core Components
 
 ### 1. Actions Server
+
 - Provides WebSocket endpoint for workbench connections
 - Manages workbench registrations and tool mappings
 - Routes tool execution requests from MCP clients to workbenches
 - Exposes registered tools to MCP clients
+- Supports dynamic tool registration via HTTP endpoints
 
 ### 2. ActionsProxyClient (Workbench)
+
 - Client-side component that connects to Actions Server
 - Generates and manages client secrets
 - Handles WebSocket communication
 - Validates and executes tool requests
-- Manages tool registration
+- Manages tool registration and dynamic tool updates
 
 ### 3. ActionsManager (Workbench)
+
 - Singleton manager for all actions and MCP servers
 - Central entry point for tool discovery and execution
 - Manages MCP server registrations
 - Executes tools within the workbench sandbox
+- Propagates tool registrations to the Actions Server
 
 ## System Flow
 
-### 1. Workbench Registration
+### 1. Initial Workbench Registration
 
 ```mermaid
 sequenceDiagram
@@ -48,7 +53,28 @@ sequenceDiagram
     Workbench->>Workbench: Register ActionsManager as tool execution callback
 ```
 
-### 2. MCP Client Tool Execution
+### 2. Dynamic Tool Registration
+
+```mermaid
+sequenceDiagram
+    participant WB as Workbench
+    participant Manager as ActionsManager
+    participant Client as ActionsProxyClient
+    participant Server as ActionsServer
+
+    Note over WB: New client side tool registered
+    WB->>Manager: registerServer(mcpServer)
+    Manager->>Manager: Store server reference
+    Manager->>Manager: Invalidate tools cache
+    Manager->>Manager: Get updated tools list
+    Manager->>Client: addTools(clientId, updatedTools)
+    Client->>Server: POST /add-tools?clientId=...
+    Server->>Server: Register new tools
+    Server->>Server: Update MCP tool definitions
+    Note over Server: Tools now available to MCP clients
+```
+
+### 3. MCP Client Tool Execution
 
 ```mermaid
 sequenceDiagram
@@ -59,7 +85,7 @@ sequenceDiagram
 
     MCP->>Server: Connect via MCP
     Server->>MCP: Expose available tools
-    
+
     MCP->>Server: Execute tool with clientId & clientSecret
     Server->>Workbench: Forward via WebSocket
     Workbench->>Workbench: Validate clientSecret
@@ -73,6 +99,7 @@ sequenceDiagram
 ## Security Implementation
 
 ### Workbench Authentication
+
 - Each workbench generates a unique clientSecret using UUID
 - ClientSecret is validated by the workbench on every tool execution request
 - WebSocket connections require valid clientId
@@ -81,6 +108,7 @@ sequenceDiagram
 ### Message Protocol
 
 #### Tool Request (MCP to Server)
+
 ```typescript
 interface ToolRequestMessage {
   type: "TOOL_REQUEST";
@@ -97,6 +125,7 @@ interface ToolRequestMessage {
 ```
 
 #### Tool Response (Server to MCP)
+
 ```typescript
 interface ToolResponseMessage {
   type: "TOOL_RESPONSE";
@@ -111,6 +140,7 @@ interface ToolResponseMessage {
 ## Implementation Example
 
 ### 1. Server Setup
+
 ```typescript
 const server = new ActionsServer({
   port: 3000,
@@ -123,6 +153,7 @@ await server.start();
 ```
 
 ### 2. Workbench Integration
+
 ```typescript
 // Initialize ActionsManager
 const actionsManager = ActionsManager.getInstance();
@@ -138,35 +169,29 @@ const client = new ActionsProxyClient(
   }
 );
 
-// Register tools and connect
-const clientId = await client.registerTools([
-  {
-    name: "writeFile",
-    description: "Write to sandboxed filesystem",
-    parameters: {
-      type: "object",
-      properties: {
-        path: { type: "string" },
-        content: { type: "string" }
-      }
-    }
-  }
-]);
-
+// Register initial tools and connect
+const initialTools = await actionsManager.getAvailableTools();
+const clientId = await client.registerTools(initialTools);
 await client.connectWebSocket(clientId);
 
 // Set up ActionsManager with the client
 actionsManager.setActionsProxyClient(client);
+
+// Later, when new MCP servers are registered
+const newServer = new CustomMcpServer();
+await actionsManager.registerServer(newServer, "custom-server");
+// Tools are automatically propagated to Actions Server
 ```
 
 ### 3. MCP Client Usage
+
 ```typescript
 // Connect to Actions Server via MCP
 const mcpClient = new McpClient({
   // MCP configuration
 });
 
-// Get available tools
+// Get available tools (including dynamically added ones)
 const tools = await mcpClient.listTools();
 
 // Execute a tool
@@ -191,3 +216,32 @@ const result = await mcpClient.executeTool("writeFile", {
 - WebSocket connections require valid client IDs
 - Tool execution is sandboxed within the workbench
 - All messages are validated before processing
+
+## Summary of Improvements
+
+The Actions Server system has been enhanced with dynamic tool registration capabilities:
+
+1. **Initial Empty Registration**
+
+   - Workbench can register with an initially empty tool set
+   - ActionsManager tracks the clientId for future updates
+
+2. **Dynamic Tool Updates**
+
+   - New MCP servers automatically propagate tools to Actions Server
+   - Existing WebSocket connections remain active during updates
+   - MCP clients instantly see new tools without reconnection
+
+3. **Technical Implementation**
+
+   - New `/add-tools` HTTP endpoint on Actions Server
+   - `addTools` method in ActionsProxyClient
+   - Enhanced `registerServer` in ActionsManager
+   - Tool cache invalidation for consistent state
+
+4. **Benefits**
+   - Smoother workbench startup (no need to wait for all tools)
+   - Reduced race conditions during initialization
+   - Better support for dynamically loaded plugins
+   - Improved user experience with real-time tool updates
+   - Simplified integration with external tool providers

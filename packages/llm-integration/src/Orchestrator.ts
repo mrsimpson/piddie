@@ -101,12 +101,15 @@ export class Orchestrator implements LlmAdapter {
 
       // Get the actions server URLs from settings
       const settings = await settingsManager.getWorkbenchSettings();
-      const httpUrl = settings[WorkbenchSettingKey.ACTIONS_SERVER_HTTP_URL] as string || "http://localhost:9100";
-      const wsUrl = settings[WorkbenchSettingKey.ACTIONS_SERVER_WS_URL] as string || "ws://localhost:9101";
+      const httpUrl =
+        (settings[WorkbenchSettingKey.ACTIONS_SERVER_HTTP_URL] as string) ||
+        "http://localhost:9100";
+      const wsUrl =
+        (settings[WorkbenchSettingKey.ACTIONS_SERVER_WS_URL] as string) ||
+        "ws://localhost:9101";
 
       // Check if there's already a connection
-      const connectionStatus = this.actionsManager.getConnectionStatus();
-      if (connectionStatus.status === "connected") {
+      if (this.actionsManager.isConnectedToActionsServer()) {
         console.log("[Orchestrator] Already connected to actions server");
         return;
       }
@@ -133,11 +136,17 @@ export class Orchestrator implements LlmAdapter {
         await this.actionsManager.connectToActionsServer();
         console.log("[Orchestrator] Connected to actions server successfully");
       } catch (error) {
-        console.warn("[Orchestrator] Failed to connect to actions server:", error);
+        console.warn(
+          "[Orchestrator] Failed to connect to actions server:",
+          error
+        );
         // Continue without connection - this is not a fatal error
       }
     } catch (error) {
-      console.error("[Orchestrator] Error initializing actions server connection:", error);
+      console.error(
+        "[Orchestrator] Error initializing actions server connection:",
+        error
+      );
     }
   }
 
@@ -195,21 +204,12 @@ export class Orchestrator implements LlmAdapter {
   }
 
   /**
-   * Register a local MCP server
-   * @param server The MCP server to register
-   * @param name The name to register the server under
-   */
-  async registerLocalMcpServer(server: McpServer, name: string): Promise<void> {
-    await this.actionsManager.registerServer(server, name);
-  }
-
-  /**
-   * Register an MCP server (backward compatibility)
+   * Register an MCP server
    * @param server The MCP server to register
    * @param name The name to register the server under
    */
   async registerMcpServer(server: McpServer, name: string): Promise<void> {
-    await this.registerLocalMcpServer(server, name);
+    await this.actionsManager.registerServer(server, name);
   }
 
   /**

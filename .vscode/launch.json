@@ -5,12 +5,20 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "actions-server: dev",
-      "type": "node-terminal",
+      "name": "Debug Actions-Server",
+      "type": "node",
       "request": "launch",
-      "command": "pnpm dev",
       "cwd": "${workspaceFolder}/packages/actions-server",
-      "skipFiles": ["<node_internals>/**"]
+      "runtimeExecutable": "${workspaceFolder}/packages/actions-server/node_modules/.bin/ts-node-dev",
+      "runtimeArgs": ["--respawn", "--transpile-only"],
+      "args": ["src/server.ts"],
+      "env": {
+        "NODE_ENV": "development",
+        "HTTP_PORT": "9100",
+        "WS_PORT": "9101"
+      },
+      "skipFiles": ["<node_internals>/**"],
+      "console": "integratedTerminal"
     },
     {
       "type": "chrome",

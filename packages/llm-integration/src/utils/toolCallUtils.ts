@@ -33,13 +33,17 @@ export async function executeToolCall(
 
     // Call the tool via the ActionsManager
     console.log(`[Orchestrator] Executing tool call: ${toolName}`);
-    const mcpResult = await actionsManager.executeToolCall(toolName, parsedArgs);
+    const mcpResult = await actionsManager.executeToolCall(
+      toolName,
+      parsedArgs
+    );
 
     // Convert MCP result to our ToolCallResult format
     const result: ToolCallResult = {
       status: mcpResult.isError ? "error" : "success",
       value: mcpResult.content[0]?.text || "",
-      contentType: mcpResult.content[0]?.type === "text" ? "text/plain" : undefined,
+      contentType:
+        mcpResult.content[0]?.type === "text" ? "text/plain" : undefined,
       timestamp: new Date()
     };
 

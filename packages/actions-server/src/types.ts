@@ -1,4 +1,8 @@
-import type { CallToolResult, CallToolRequest, Tool } from "@modelcontextprotocol/sdk/types";
+import type {
+  CallToolResult,
+  CallToolRequest,
+  Tool
+} from "@modelcontextprotocol/sdk/types";
 
 /**
  * Request message for tool execution

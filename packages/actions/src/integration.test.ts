@@ -223,7 +223,9 @@ describe("ActionsManager and ActionsProxyClient Integration", () => {
     });
 
     expect(result.isError).toBe(false);
-    expect(result.content[0].text).toBe("Remote tool executed with: remote test");
+    expect(result.content[0].text).toBe(
+      "Remote tool executed with: remote test"
+    );
   });
 
   it("should handle disconnection", async () => {

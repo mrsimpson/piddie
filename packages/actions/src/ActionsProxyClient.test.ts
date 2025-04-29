@@ -35,10 +35,13 @@ describe("ActionsProxyClient", () => {
     ];
     const expectedClientId = "generated-client-id";
 
-    const mockResponse = new Response(JSON.stringify({ clientId: expectedClientId }), {
-      status: 200,
-      statusText: "OK"
-    });
+    const mockResponse = new Response(
+      JSON.stringify({ clientId: expectedClientId }),
+      {
+        status: 200,
+        statusText: "OK"
+      }
+    );
 
     global.fetch = vi.fn().mockResolvedValue(mockResponse);
 
@@ -48,7 +51,7 @@ describe("ActionsProxyClient", () => {
       "http://localhost:55555/register-tools",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ tools })
+        body: JSON.stringify(tools)
       })
     );
 

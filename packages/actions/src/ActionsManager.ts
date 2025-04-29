@@ -67,13 +67,32 @@ export class ActionsManager {
       throw new Error("ActionsProxyClient not configured");
     }
 
-    try {
-      const tools = await this.getAvailableTools();
-      const clientId = await this.actionsProxyClient.registerTools(tools);
-      await this.actionsProxyClient.connectWebSocket(clientId);
-    } catch (error) {
-      console.error("[ActionsManager] Failed to connect to actions server:", error);
-      throw error;
+    if (!this.isConnectedToActionsServer()) {
+      try {
+        // Get initial tools - this might be an empty array at first
+        const initialTools = await this.getAvailableTools();
+
+        const clientId =
+          await this.actionsProxyClient.registerTools(initialTools);
+
+        // Connect WebSocket
+        await this.actionsProxyClient.connectWebSocket(clientId);
+
+        console.log(
+          "[ActionsManager] Connected to actions server successfully"
+        );
+      } catch (error) {
+        console.error(
+          "[ActionsManager] Failed to connect to actions server:",
+          error
+        );
+        throw error;
+      }
+    } else {
+      const availableTools = await this.getAvailableTools();
+      if (availableTools.length > 0) {
+        await this.actionsProxyClient?.addTools(availableTools);
+      }
     }
   }
 
@@ -102,7 +121,7 @@ export class ActionsManager {
   /**
    * Register an MCP server with the ActionsManager
    * @param server The MCP server to register
-   * @param name The name to register the server under
+   * @param name The name of the server
    */
   public async registerServer(server: McpServer, name: string): Promise<void> {
     try {
@@ -112,6 +131,28 @@ export class ActionsManager {
 
       // Invalidate the tools buffer when registering a new server
       this.toolsBuffer = null;
+
+      // If we're connected to the actions server, update the tools there too
+      if (this.isConnectedToActionsServer()) {
+        try {
+          // Invalidate the tools buffer to force a refresh
+          this.toolsBuffer = null;
+
+          // Get the latest tools after adding the new server
+          const allTools = await this.getAvailableTools();
+
+          // Add them to the actions server
+          await this.actionsProxyClient?.addTools(allTools);
+
+          console.log(`[ActionsManager] Updated tools in actions server`);
+        } catch (error) {
+          console.error(
+            `[ActionsManager] Failed to add tools from ${name} to actions server:`,
+            error
+          );
+          // Don't throw here - we still want to keep the server registered locally
+        }
+      }
     } catch (error) {
       console.error(
         `[ActionsManager] Failed to register ${name} server:`,

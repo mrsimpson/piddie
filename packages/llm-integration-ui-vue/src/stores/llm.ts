@@ -7,7 +7,7 @@ import type {
   LlmProviderConfig as WorkbenchLlmConfig,
   ModelInfo
 } from "@piddie/settings";
-import { LlmProviderFactory } from "@piddie/llm-integration";
+import { LlmProviderFactory, type LlmAdapter } from "@piddie/llm-integration";
 import type { ProviderType } from "@piddie/shared-types";
 
 import {
@@ -27,6 +27,8 @@ export const useLlmStore = defineStore("llm", () => {
   const isVerifying = ref(false);
   const connectionStatus = ref<"none" | "success" | "error">("none");
   const availableModels = ref<ModelInfo[]>([]);
+
+  let llmAdapter: LlmAdapter | undefined;
 
   // Reactive configuration object for workbench
   const workbenchConfig = reactive<WorkbenchLlmConfig>({
@@ -72,10 +74,6 @@ export const useLlmStore = defineStore("llm", () => {
       provider: workbenchConfig.provider || "litellm"
     };
   };
-  let llmAdapter = createLlmAdapter(
-    getLlmProviderConfig(),
-    chatStore.chatManager
-  );
 
   async function initializeStore(): Promise<void> {
     try {

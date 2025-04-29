@@ -72,7 +72,8 @@ vi.mock("@piddie/actions", () => {
                     content: [
                       {
                         type: "text",
-                        text: error instanceof Error ? error.message : String(error)
+                        text:
+                          error instanceof Error ? error.message : String(error)
                       }
                     ],
                     _meta: {},
