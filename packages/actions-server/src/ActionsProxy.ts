@@ -154,8 +154,108 @@ export class ActionsProxy {
       return;
     }
 
-    // Register new tools with client-specific MCP server
-    await this.registerClientTools(clientId, tools, client.tools);
+    // Check if we need to temporarily disconnect from a transport
+    const needsReconnect = this.mcpServerTransports.has(clientId);
+    if (needsReconnect) {
+      await this.disconnectMcpServerTransport(clientId);
+    }
+
+    try {
+      // If we've created a new MCP server, we need to re-register all existing tools first
+      // This ensures the new server has all the tools that were previously registered
+      if (needsReconnect) {
+        const existingTools = Array.from(client.tools.values());
+        if (existingTools.length > 0) {
+          console.log(`Re-registering ${existingTools.length} existing tools for client ${clientId}`);
+          await this.registerClientTools(clientId, existingTools, client.tools);
+        }
+      }
+
+      // Now register the new tools
+      console.log(`Registering ${tools.length} new tools for client ${clientId}`);
+      await this.registerClientTools(clientId, tools, client.tools);
+    } finally {
+      // Reconnect to transport if needed
+      if (needsReconnect) {
+        await this.reconnectMcpServerTransport(clientId);
+      }
+    }
+  }
+
+  /**
+   * Disconnects an MCP server from its transport temporarily
+   * @param clientId The client ID
+   */
+  private async disconnectMcpServerTransport(clientId: string): Promise<void> {
+    const transport = this.mcpServerTransports.get(clientId);
+    if (!transport) {
+      return;
+    }
+
+    console.log(`Temporarily disconnecting MCP server for client ${clientId}`);
+    try {
+      // Store state that we'll need for reconnection
+      transport._disconnectedForToolAddition = true;
+
+      // Get the MCP server
+      const mcpServer = this.getMcpServerForClient(clientId);
+      if (!mcpServer) {
+        throw new Error(`MCP server not found for client ${clientId}`);
+      }
+
+      // Only close the server, don't try to close the transport
+      // StdioServerTransport can't be restarted once closed
+      if (typeof mcpServer.close === "function") {
+        await mcpServer.close();
+      }
+
+      console.log(`Successfully disconnected MCP server for client ${clientId}`);
+
+      // Create a new MCP server instance to replace the old one
+      const newMcpServer = new McpServer({
+        name: `client-${clientId}`,
+        version: "1.0.0"
+      });
+
+      // Replace the old server with the new one
+      const client = this.clients.get(clientId);
+      if (client) {
+        client.mcpServer = newMcpServer;
+      }
+    } catch (error) {
+      console.error(`Error disconnecting transport for client ${clientId}:`, error);
+    }
+  }
+
+  /**
+   * Reconnects an MCP server to its transport after adding tools
+   * @param clientId The client ID 
+   */
+  private async reconnectMcpServerTransport(clientId: string): Promise<void> {
+    const transport = this.mcpServerTransports.get(clientId);
+    if (!transport || !transport._disconnectedForToolAddition) {
+      return;
+    }
+
+    console.log(`Reconnecting MCP server for client ${clientId}`);
+    try {
+      const mcpServer = this.getMcpServerForClient(clientId);
+      if (!mcpServer) {
+        throw new Error(`MCP server not found for client ${clientId}`);
+      }
+
+      // We don't need to reconnect here - we'll let the clientManager handle it
+      // by creating a fresh StdioServerTransport
+      delete transport._disconnectedForToolAddition;
+
+      // Remove the old transport reference since it can't be reused
+      this.mcpServerTransports.delete(clientId);
+
+      console.log(`Successfully prepared MCP server for reconnection for client ${clientId}`);
+    } catch (error) {
+      console.error(`Error reconnecting transport for client ${clientId}:`, error);
+      throw error;
+    }
   }
 
   /**
@@ -178,6 +278,13 @@ export class ActionsProxy {
 
     // Register each tool with client-specific MCP server
     for (const toolDef of tools) {
+      // Skip if this tool is already in the map (for re-registrations)
+      const isAlreadyRegistered = toolsMap.has(toolDef.name);
+      if (isAlreadyRegistered) {
+        console.log(`Skipping re-registration of tool ${toolDef.name} for client ${clientId}`);
+        continue;
+      }
+
       // Convert from our Tool to Zod schema for MCP server
       // Create a zod schema based on the tool's inputSchema
       const schemaObj: Record<string, z.ZodTypeAny> = {};
@@ -211,73 +318,84 @@ export class ActionsProxy {
         clientSecret: z.string()
       };
 
-      console.log(`Registering tool ${toolDef.name} for client ${clientId}`);
+      if (isAlreadyRegistered) {
+        console.log(`Re-registering existing tool ${toolDef.name} for client ${clientId}`);
+      } else {
+        console.log(`Registering new tool ${toolDef.name} for client ${clientId}`);
+      }
 
-      mcpServer.tool(
-        toolDef.name,
-        toolDef.description || toolDef.name,
-        extendedSchema,
-        async (params: Record<string, unknown>) => {
-          try {
-            const {
-              clientId: paramClientId,
-              clientSecret,
-              ...toolParams
-            } = params;
+      try {
+        mcpServer.tool(
+          toolDef.name,
+          toolDef.description || toolDef.name,
+          extendedSchema,
+          async (params: Record<string, unknown>) => {
+            try {
+              const {
+                clientId: paramClientId,
+                clientSecret,
+                ...toolParams
+              } = params;
 
-            // Use type guard to ensure clientId is a string
-            if (typeof paramClientId !== "string") {
-              throw new Error("Client ID must be a string");
-            }
-
-            // Verify that the client ID in params matches this server's client ID
-            if (paramClientId !== clientId) {
-              throw new Error(
-                `Client ID mismatch: expected ${clientId}, got ${paramClientId}`
-              );
-            }
-
-            const client = this.clients.get(paramClientId);
-
-            if (!client) {
-              throw new Error(`Client ${paramClientId} not found`);
-            }
-
-            const requestId = uuidv4();
-            const response = await this.sendRequest(paramClientId, {
-              method: "tools/call",
-              requestId,
-              params: {
-                name: toolDef.name,
-                arguments: toolParams,
-                _meta: {}
+              // Use type guard to ensure clientId is a string
+              if (typeof paramClientId !== "string") {
+                throw new Error("Client ID must be a string");
               }
-            });
 
-            if (response.payload.error) {
-              throw new Error(response.payload.error);
-            }
+              // Verify that the client ID in params matches this server's client ID
+              if (paramClientId !== clientId) {
+                throw new Error(
+                  `Client ID mismatch: expected ${clientId}, got ${paramClientId}`
+                );
+              }
 
-            // Handle the result which should be a CallToolResult
-            const result = response.payload.result;
+              const client = this.clients.get(paramClientId);
 
-            return result as CallToolResult;
-          } catch (error) {
-            return {
-              content: [
-                {
-                  type: "text" as const,
-                  text: error instanceof Error ? error.message : String(error)
+              if (!client) {
+                throw new Error(`Client ${paramClientId} not found`);
+              }
+
+              const requestId = uuidv4();
+              const response = await this.sendRequest(paramClientId, {
+                method: "tools/call",
+                requestId,
+                params: {
+                  name: toolDef.name,
+                  arguments: toolParams,
+                  _meta: {}
                 }
-              ],
-              _meta: {},
-              isError: true
-            } as CallToolResult;
-          }
-        }
-      );
+              });
 
-      toolsMap.set(toolDef.name, toolDef);
+              if (response.payload.error) {
+                throw new Error(response.payload.error);
+              }
+
+              // Handle the result which should be a CallToolResult
+              const result = response.payload.result;
+
+              return result as CallToolResult;
+            } catch (error) {
+              return {
+                content: [
+                  {
+                    type: "text" as const,
+                    text: error instanceof Error ? error.message : String(error)
+                  }
+                ],
+                _meta: {},
+                isError: true
+              } as CallToolResult;
+            }
+          }
+        );
+      } catch (error) {
+        console.error(`Error registering tool ${toolDef.name} for client ${clientId}:`, error);
+      }
+
+      // Only store in the map if it's a new tool
+      if (!isAlreadyRegistered) {
+        toolsMap.set(toolDef.name, toolDef);
+      }
     }
   }
 
@@ -321,5 +439,14 @@ export class ActionsProxy {
 
   public isClientConnected(clientId: string): boolean {
     return this.connectedClients.has(clientId);
+  }
+
+  /**
+   * Store a transport used for an MCP server to enable reconnection support
+   * @param clientId The client ID
+   * @param transport The transport instance
+   */
+  public storeMcpServerTransport(clientId: string, transport: any): void {
+    this.mcpServerTransports.set(clientId, transport);
   }
 }

@@ -9,7 +9,7 @@ const actionsProxy = new ActionsProxy(wsPort);
 import { createServer } from "http";
 import { IncomingMessage, ServerResponse } from "http";
 import { Tool } from "./types";
-import { connectToStdio } from "./clientManager";
+import { connectToStdio, reconnectToStdioAfterToolsAdded } from "./clientManager";
 
 /**
  * Validates that the input data is an array of Tool objects
@@ -111,7 +111,12 @@ const httpServer = createServer(async (req, res) => {
         return;
       }
 
+      // First add the tools to the ActionsProxy
       await actionsProxy.addTools(clientId, tools);
+
+      // Then force reconnect to stdio - this creates a fresh transport
+      await reconnectToStdioAfterToolsAdded(actionsProxy, clientId);
+
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ success: true }));
     } catch (error) {

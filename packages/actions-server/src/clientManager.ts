@@ -38,6 +38,9 @@ export async function connectToStdio(
     // Store the transport to prevent garbage collection
     activeTransports.set(clientId, transport);
 
+    // Store the transport in ActionsProxy for reconnection support
+    actionsProxy.storeMcpServerTransport(clientId, transport);
+
     // Connect the MCP server to the transport
     await mcpServer.connect(transport);
 
@@ -73,4 +76,42 @@ export function disconnectFromStdio(clientId: string): void {
       console.error(`Error disconnecting client ${clientId}:`, error);
     }
   }
+}
+
+/**
+ * Reconnects to stdio after adding tools
+ * This should be called after adding tools to a client
+ * 
+ * @param actionsProxy The ActionsProxy instance
+ * @param clientId The client ID
+ * @returns A promise that resolves when reconnected
+ */
+export async function reconnectToStdioAfterToolsAdded(
+  actionsProxy: ActionsProxy,
+  clientId: string
+): Promise<void> {
+  // First, check if the client is already connected
+  const isConnected = actionsProxy.isClientConnected(clientId);
+
+  // If the client isn't even WebSocket-connected, we don't need to do anything
+  if (!isConnected) {
+    return;
+  }
+
+  // Remove any existing transport for this client
+  const existingTransport = activeTransports.get(clientId);
+  if (existingTransport) {
+    try {
+      // We don't call close() on the transport as that would terminate the process
+      // Just remove it from our tracking map
+      activeTransports.delete(clientId);
+      console.log(`Removed old transport for client ${clientId} for reconnection`);
+    } catch (error) {
+      console.error(`Error removing old transport for client ${clientId}:`, error);
+    }
+  }
+
+  // Always create a new transport and connect
+  await connectToStdio(actionsProxy, clientId);
+  console.log(`Reconnected client ${clientId} to stdio after adding tools`);
 }
