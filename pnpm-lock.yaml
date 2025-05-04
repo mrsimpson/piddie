@@ -78,6 +78,9 @@ importers:
       rimraf:
         specifier: ^6.0.1
         version: 6.0.1
+      ts-node:
+        specifier: ^10.9.2
+        version: 10.9.2(@swc/core@1.10.9)(@types/node@22.10.7)(typescript@5.7.3)
       turbo:
         specifier: ^2.3.3
         version: 2.3.3
@@ -228,8 +231,8 @@ importers:
   apps/workbench:
     dependencies:
       '@modelcontextprotocol/sdk':
-        specifier: 1.6.1
-        version: 1.6.1
+        specifier: 1.11.0
+        version: 1.11.0
       '@piddie/actions':
         specifier: workspace:*
         version: link:../../packages/actions
@@ -362,8 +365,8 @@ importers:
   packages/actions:
     dependencies:
       '@modelcontextprotocol/sdk':
-        specifier: 1.6.1
-        version: 1.6.1
+        specifier: 1.11.0
+        version: 1.11.0
       '@piddie/actions-server':
         specifier: workspace:*
         version: link:../actions-server
@@ -380,6 +383,9 @@ importers:
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
+      ts-node:
+        specifier: ^10.9.2
+        version: 10.9.2(@swc/core@1.10.9)(@types/node@22.13.14)(typescript@5.8.2)
       vitest:
         specifier: 3.1.1
         version: 3.1.1(@types/node@22.13.14)(jiti@2.4.2)(yaml@2.6.1)
@@ -388,7 +394,7 @@ importers:
     dependencies:
       '@modelcontextprotocol/sdk':
         specifier: latest
-        version: 1.10.2
+        version: 1.11.0
       dotenv:
         specifier: ^16.3.1
         version: 16.5.0
@@ -528,8 +534,8 @@ importers:
         specifier: 4.6.0
         version: 4.6.0
       '@modelcontextprotocol/sdk':
-        specifier: 1.6.1
-        version: 1.6.1
+        specifier: 1.11.0
+        version: 1.11.0
       '@piddie/shared-types':
         specifier: workspace:*
         version: link:../shared-types
@@ -638,8 +644,8 @@ importers:
   packages/llm-integration:
     dependencies:
       '@modelcontextprotocol/sdk':
-        specifier: 1.6.1
-        version: 1.6.1
+        specifier: 1.11.0
+        version: 1.11.0
       '@piddie/actions':
         specifier: workspace:*
         version: link:../actions
@@ -678,8 +684,8 @@ importers:
   packages/llm-integration-ui-vue:
     dependencies:
       '@modelcontextprotocol/sdk':
-        specifier: 1.6.1
-        version: 1.6.1
+        specifier: 1.11.0
+        version: 1.11.0
       '@piddie/actions':
         specifier: workspace:*
         version: link:../actions
@@ -818,8 +824,8 @@ importers:
   packages/runtime-environment:
     dependencies:
       '@modelcontextprotocol/sdk':
-        specifier: 1.6.1
-        version: 1.6.1
+        specifier: 1.11.0
+        version: 1.11.0
       '@piddie/files-management':
         specifier: workspace:*
         version: link:../files-management
@@ -1797,12 +1803,8 @@ packages:
   '@microsoft/tsdoc@0.15.1':
     resolution: {integrity: sha512-4aErSrCR/On/e5G2hDP0wjooqDdauzEbIq8hIkIe5pXV0rtWJZvdCEKL0ykZxex+IxIwBp0eGeV48hQN07dXtw==}
 
-  '@modelcontextprotocol/sdk@1.10.2':
-    resolution: {integrity: sha512-rb6AMp2DR4SN+kc6L1ta2NCpApyA9WYNx3CrTSZvGxq9wH71bRur+zRqPfg0vQ9mjywR7qZdX2RGHOPq3ss+tA==}
-    engines: {node: '>=18'}
-
-  '@modelcontextprotocol/sdk@1.6.1':
-    resolution: {integrity: sha512-oxzMzYCkZHMntzuyerehK3fV6A2Kwh5BD6CGEJSVDU2QNEhfLOptf2X7esQgaHZXHZY0oHmMsOtIDLP71UJXgA==}
+  '@modelcontextprotocol/sdk@1.11.0':
+    resolution: {integrity: sha512-k/1pb70eD638anoi0e8wUGAlbMJXyvdV4p62Ko+EZ7eBe1xMx8Uhak1R5DgfoofsK5IBBnRwsYGTaLZl+6/+RQ==}
     engines: {node: '>=18'}
 
   '@nodelib/fs.scandir@2.1.5':
@@ -4429,10 +4431,6 @@ packages:
       typescript:
         optional: true
 
-  pkce-challenge@4.1.0:
-    resolution: {integrity: sha512-ZBmhE1C9LcPoH9XZSdwiPtbPHZROwAnMy+kIFQVrnMCxY4Cudlz3gBOpzilgc0jOgRaiT3sIWfpMomW2ar2orQ==}
-    engines: {node: '>=16.20.0'}
-
   pkce-challenge@5.0.0:
     resolution: {integrity: sha512-ueGLflrrnvwB3xuo/uGob5pd5FN7l0MsLf0Z87o/UQmRtwjvfylfc9MurIxRAWywCYTgrvpXBcqjV4OfCYGCIQ==}
     engines: {node: '>=16.20.0'}
@@ -6457,7 +6455,7 @@ snapshots:
 
   '@microsoft/tsdoc@0.15.1': {}
 
-  '@modelcontextprotocol/sdk@1.10.2':
+  '@modelcontextprotocol/sdk@1.11.0':
     dependencies:
       content-type: 1.0.5
       cors: 2.8.5
@@ -6466,20 +6464,6 @@ snapshots:
       express: 5.0.1
       express-rate-limit: 7.5.0(express@5.0.1)
       pkce-challenge: 5.0.0
-      raw-body: 3.0.0
-      zod: 3.24.2
-      zod-to-json-schema: 3.24.3(zod@3.24.2)
-    transitivePeerDependencies:
-      - supports-color
-
-  '@modelcontextprotocol/sdk@1.6.1':
-    dependencies:
-      content-type: 1.0.5
-      cors: 2.8.5
-      eventsource: 3.0.5
-      express: 5.0.1
-      express-rate-limit: 7.5.0(express@5.0.1)
-      pkce-challenge: 4.1.0
       raw-body: 3.0.0
       zod: 3.24.2
       zod-to-json-schema: 3.24.3(zod@3.24.2)
@@ -9408,8 +9392,6 @@ snapshots:
     optionalDependencies:
       typescript: 5.8.2
 
-  pkce-challenge@4.1.0: {}
-
   pkce-challenge@5.0.0: {}
 
   pkg-types@1.3.1:
@@ -9889,6 +9871,46 @@ snapshots:
       '@tsconfig/node14': 1.0.3
       '@tsconfig/node16': 1.0.4
       '@types/node': 20.17.30
+      acorn: 8.14.0
+      acorn-walk: 8.3.4
+      arg: 4.1.3
+      create-require: 1.1.1
+      diff: 4.0.2
+      make-error: 1.3.6
+      typescript: 5.8.2
+      v8-compile-cache-lib: 3.0.1
+      yn: 3.1.1
+    optionalDependencies:
+      '@swc/core': 1.10.9
+
+  ts-node@10.9.2(@swc/core@1.10.9)(@types/node@22.10.7)(typescript@5.7.3):
+    dependencies:
+      '@cspotcode/source-map-support': 0.8.1
+      '@tsconfig/node10': 1.0.11
+      '@tsconfig/node12': 1.0.11
+      '@tsconfig/node14': 1.0.3
+      '@tsconfig/node16': 1.0.4
+      '@types/node': 22.10.7
+      acorn: 8.14.0
+      acorn-walk: 8.3.4
+      arg: 4.1.3
+      create-require: 1.1.1
+      diff: 4.0.2
+      make-error: 1.3.6
+      typescript: 5.7.3
+      v8-compile-cache-lib: 3.0.1
+      yn: 3.1.1
+    optionalDependencies:
+      '@swc/core': 1.10.9
+
+  ts-node@10.9.2(@swc/core@1.10.9)(@types/node@22.13.14)(typescript@5.8.2):
+    dependencies:
+      '@cspotcode/source-map-support': 0.8.1
+      '@tsconfig/node10': 1.0.11
+      '@tsconfig/node12': 1.0.11
+      '@tsconfig/node14': 1.0.3
+      '@tsconfig/node16': 1.0.4
+      '@types/node': 22.13.14
       acorn: 8.14.0
       acorn-walk: 8.3.4
       arg: 4.1.3

@@ -18,7 +18,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.6.1",
+    "@modelcontextprotocol/sdk": "1.11.0",
     "@piddie/actions": "workspace:*",
     "@piddie/chat-management": "workspace:*",
     "@piddie/files-management": "workspace:*",

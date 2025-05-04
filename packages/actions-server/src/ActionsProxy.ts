@@ -4,12 +4,14 @@ import { z } from "zod";
 import { v4 as uuidv4 } from "uuid";
 import { WebSocketServer, WebSocket } from "ws";
 import { Tool, ToolResponseMessage, CallToolResult } from "./types";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
 interface ClientRegistration {
   clientId: string;
   mcpServer: McpServer;
   tools: Map<string, Tool>;
   ws?: WebSocket;
+  httpTransport?: StreamableHTTPServerTransport;
 }
 
 export class ActionsProxy {
@@ -448,5 +450,106 @@ export class ActionsProxy {
    */
   public storeMcpServerTransport(clientId: string, transport: any): void {
     this.mcpServerTransports.set(clientId, transport);
+  }
+
+  /**
+   * Handle HTTP request for an MCP client
+   * @param clientId The client ID
+   * @param req Express request object
+   * @param res Express response object 
+   */
+  public async handleHttpRequest(clientId: string, req: any, res: any): Promise<void> {
+    const client = this.clients.get(clientId);
+    if (!client) {
+      console.error(`Client ${clientId} not found`);
+      if (!res.headersSent) {
+        res.writeHead(404, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          jsonrpc: "2.0",
+          error: {
+            code: -32602,
+            message: `Client ${clientId} not found`
+          },
+          id: null
+        }));
+      }
+      return;
+    }
+
+    try {
+      // Lazily create HTTP transport if it doesn't exist
+      if (!client.httpTransport) {
+        console.log(`Creating new HTTP transport for client ${clientId}`);
+
+        try {
+          // Create transport with a unique session ID generator
+          const transport = new StreamableHTTPServerTransport({
+            sessionIdGenerator: () => uuidv4()
+          });
+
+          console.log(`Connecting MCP server for client ${clientId} to transport`);
+
+          // First connect the MCP server to the transport
+          await client.mcpServer.connect(transport);
+
+          // Then store the transport
+          client.httpTransport = transport;
+          this.mcpServerTransports.set(`http-${clientId}`, transport);
+
+          console.log(`Successfully connected MCP server for client ${clientId} to HTTP transport`);
+        } catch (error: any) {
+          const connectError = error;
+          console.error(`Failed to create HTTP transport for client ${clientId}:`, connectError);
+          if (!res.headersSent) {
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({
+              jsonrpc: "2.0",
+              error: {
+                code: -32603,
+                message: `Internal error creating transport: ${connectError.message || String(connectError)}`
+              },
+              id: null
+            }));
+          }
+          return;
+        }
+      }
+
+      // Use the existing HTTP transport to handle the request
+      try {
+        await client.httpTransport.handleRequest(req, res);
+      } catch (error: any) {
+        const handlerError = error;
+        console.error(`Error in transport.handleRequest for client ${clientId}:`, handlerError);
+
+        // Only send error response if headers haven't been sent already
+        if (!res.headersSent) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            jsonrpc: "2.0",
+            error: {
+              code: -32603,
+              message: `Error handling request: ${handlerError.message || String(handlerError)}`
+            },
+            id: null
+          }));
+        }
+      }
+    } catch (error: any) {
+      console.error(`Unexpected error handling HTTP request for client ${clientId}:`, error);
+
+      // Only send error response if headers haven't been sent already
+      if (!res.headersSent) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          jsonrpc: "2.0",
+          error: {
+            code: -32603,
+            message: `Unexpected error: ${error.message || String(error)}`
+          },
+          id: null
+        }));
+      }
+    }
   }
 }

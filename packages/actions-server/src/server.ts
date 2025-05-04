@@ -64,13 +64,48 @@ async function readJsonBody<T = unknown>(req: IncomingMessage): Promise<T> {
 const httpServer = createServer(async (req, res) => {
   // Set CORS headers
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
   // Handle preflight requests
   if (req.method === "OPTIONS") {
     res.writeHead(204);
     res.end();
+    return;
+  }
+
+  // Handle MCP client connections to a specific client's MCP server
+  if (req.url?.startsWith("/mcp/") && (req.method === "GET" || req.method === "POST")) {
+    console.log(`Received MCP request: ${req.method} ${req.url}`);
+
+    try {
+      // Extract clientId from URL path - format is /mcp/:clientId
+      const clientId = req.url.split("/")[2];
+
+      if (!clientId) {
+        console.error("Missing clientId in MCP request path");
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          error: "Missing clientId in path",
+          jsonrpc: "2.0",
+          id: null
+        }));
+        return;
+      }
+
+      // Forward the request directly to the handler - don't try to read the body
+      await actionsProxy.handleHttpRequest(clientId, req, res);
+    } catch (error) {
+      console.error(`Error handling MCP request: ${error}`);
+      if (!res.headersSent) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          error: String(error),
+          jsonrpc: "2.0",
+          id: null
+        }));
+      }
+    }
     return;
   }
 

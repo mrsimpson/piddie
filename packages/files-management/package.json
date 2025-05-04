@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@isomorphic-git/lightning-fs": "4.6.0",
-    "@modelcontextprotocol/sdk": "1.6.1",
+    "@modelcontextprotocol/sdk": "1.11.0",
     "@piddie/shared-types": "workspace:*",
     "@webcontainer/api": "1.5.3",
     "ignore": "^7.0.3",

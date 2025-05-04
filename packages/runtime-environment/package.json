@@ -16,7 +16,7 @@
     "typecheck": "tsc"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.6.1",
+    "@modelcontextprotocol/sdk": "1.11.0",
     "@piddie/files-management": "workspace:*",
     "@piddie/shared-types": "workspace:*",
     "@webcontainer/api": "1.5.3",
