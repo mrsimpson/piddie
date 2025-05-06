@@ -5,6 +5,14 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "mcp client sample",
+      "runtimeExecutable": "${workspaceFolder}/packages/actions-server/node_modules/.bin/ts-node-dev",
+      "program": "${workspaceFolder}/packages/actions/src/examples/mcp-client-example.ts",
+      "request": "launch",
+      "skipFiles": ["<node_internals>/**"],
+      "type": "node"
+    },
+    {
       "name": "Attach by Process ID",
       "processId": "${command:PickProcess}",
       "request": "attach",

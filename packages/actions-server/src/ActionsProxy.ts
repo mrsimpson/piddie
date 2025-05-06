@@ -11,7 +11,10 @@ interface ClientRegistration {
   mcpServer: McpServer;
   tools: Map<string, Tool>;
   ws?: WebSocket;
-  httpTransport?: StreamableHTTPServerTransport;
+  httpSessions: Map<string, {
+    transport: StreamableHTTPServerTransport;
+    lastAccess: number;
+  }>;
 }
 
 export class ActionsProxy {
@@ -125,7 +128,8 @@ export class ActionsProxy {
     const clientRegistration: ClientRegistration = {
       clientId,
       mcpServer,
-      tools: clientTools
+      tools: clientTools,
+      httpSessions: new Map()
     };
 
     this.clients.set(clientId, clientRegistration);
@@ -476,65 +480,48 @@ export class ActionsProxy {
       return;
     }
 
+    // Initialize the HTTP sessions map if it doesn't exist
+    if (!client.httpSessions) {
+      client.httpSessions = new Map();
+    }
+
     try {
-      // Lazily create HTTP transport if it doesn't exist
-      if (!client.httpTransport) {
-        console.log(`Creating new HTTP transport for client ${clientId}`);
+      // Extract session ID from request headers or create a new one
+      const sessionId = req.headers['x-mcp-session-id'] || uuidv4();
 
-        try {
-          // Create transport with a unique session ID generator
-          const transport = new StreamableHTTPServerTransport({
-            sessionIdGenerator: () => uuidv4()
-          });
+      // Check if we have a session with this ID
+      let session = client.httpSessions.get(sessionId);
 
-          console.log(`Connecting MCP server for client ${clientId} to transport`);
+      // Create a new session if needed
+      if (!session) {
+        console.log(`Creating new HTTP session ${sessionId} for client ${clientId}`);
 
-          // First connect the MCP server to the transport
-          await client.mcpServer.connect(transport);
+        // Create a new transport with the session ID
+        const newTransport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: () => sessionId
+        });
 
-          // Then store the transport
-          client.httpTransport = transport;
-          this.mcpServerTransports.set(`http-${clientId}`, transport);
+        // Connect the MCP server to the new transport
+        await client.mcpServer.connect(newTransport);
 
-          console.log(`Successfully connected MCP server for client ${clientId} to HTTP transport`);
-        } catch (error: any) {
-          const connectError = error;
-          console.error(`Failed to create HTTP transport for client ${clientId}:`, connectError);
-          if (!res.headersSent) {
-            res.writeHead(500, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({
-              jsonrpc: "2.0",
-              error: {
-                code: -32603,
-                message: `Internal error creating transport: ${connectError.message || String(connectError)}`
-              },
-              id: null
-            }));
-          }
-          return;
-        }
+        // Store the new session
+        client.httpSessions.set(sessionId, {
+          transport: newTransport,
+          lastAccess: Date.now()
+        });
+
+        session = client.httpSessions.get(sessionId)!;
       }
 
-      // Use the existing HTTP transport to handle the request
-      try {
-        await client.httpTransport.handleRequest(req, res);
-      } catch (error: any) {
-        const handlerError = error;
-        console.error(`Error in transport.handleRequest for client ${clientId}:`, handlerError);
+      // Add session ID header to response
+      res.setHeader('X-MCP-Session-ID', sessionId);
 
-        // Only send error response if headers haven't been sent already
-        if (!res.headersSent) {
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({
-            jsonrpc: "2.0",
-            error: {
-              code: -32603,
-              message: `Error handling request: ${handlerError.message || String(handlerError)}`
-            },
-            id: null
-          }));
-        }
-      }
+      // Handle the request with this session's transport
+      // Pass the original request directly without trying to read/buffer it
+      await session.transport.handleRequest(req, res);
+
+      // Update last access time
+      session.lastAccess = Date.now();
     } catch (error: any) {
       console.error(`Unexpected error handling HTTP request for client ${clientId}:`, error);
 
@@ -551,5 +538,45 @@ export class ActionsProxy {
         }));
       }
     }
+  }
+
+  /**
+   * Cleanup old HTTP sessions for all clients
+   * Should be called periodically to prevent memory leaks
+   * @param maxAgeMs Maximum age of sessions in milliseconds before they're cleaned up
+   */
+  public cleanupOldSessions(maxAgeMs: number = 3600000): void {
+    const now = Date.now();
+
+    this.clients.forEach((client, clientId) => {
+      if (client.httpSessions) {
+        const sessionsToRemove: string[] = [];
+
+        // Find old sessions
+        client.httpSessions.forEach((session, sessionId) => {
+          if (now - session.lastAccess > maxAgeMs) {
+            sessionsToRemove.push(sessionId);
+          }
+        });
+
+        // Remove old sessions
+        for (const sessionId of sessionsToRemove) {
+          const session = client.httpSessions.get(sessionId);
+          if (session) {
+            try {
+              // Close the transport if possible
+              if (typeof session.transport.close === 'function') {
+                session.transport.close();
+              }
+            } catch (error) {
+              console.error(`Error closing transport for session ${sessionId}:`, error);
+            }
+
+            client.httpSessions.delete(sessionId);
+            console.log(`Cleaned up old session ${sessionId} for client ${clientId}`);
+          }
+        }
+      }
+    });
   }
 }

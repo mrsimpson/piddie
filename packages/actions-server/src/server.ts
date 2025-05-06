@@ -179,4 +179,14 @@ httpServer.listen(httpPort, () => {
   console.log(
     `Debug mode: ${process.env.NODE_ENV === "development" ? "enabled" : "disabled"}`
   );
+
+  // Set up session cleanup to run every hour
+  const CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+  const SESSION_MAX_AGE_MS = 2 * 60 * 60 * 1000; // 2 hours
+
+  // Run session cleanup periodically
+  setInterval(() => {
+    console.log("Running session cleanup");
+    actionsProxy.cleanupOldSessions(SESSION_MAX_AGE_MS);
+  }, CLEANUP_INTERVAL_MS);
 });
