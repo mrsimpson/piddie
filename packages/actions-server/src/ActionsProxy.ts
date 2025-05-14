@@ -298,71 +298,69 @@ export class ActionsProxy {
       if (toolDef.inputSchema.properties) {
         // Convert properties to zod schema
         Object.entries(toolDef.inputSchema.properties).forEach(
-          ([key, prop]) => {
-            const propType = (prop as any)?.type;
-            if (propType === "string") {
-              schemaObj[key] = z.string();
-            } else if (propType === "number") {
-              schemaObj[key] = z.number();
-            } else if (propType === "boolean") {
-              schemaObj[key] = z.boolean();
-            } else if (propType === "object") {
-              schemaObj[key] = z.object({}).passthrough();
-            } else if (propType === "array") {
-              schemaObj[key] = z.array(z.any());
-            } else {
-              schemaObj[key] = z.any();
+          ([propName, propSchema]) => {
+            // Default to string if type is not specified
+            const propType = (propSchema as any)?.type || "string";
+
+            let zodProp: z.ZodTypeAny;
+
+            switch (propType) {
+              case "string":
+                zodProp = z.string();
+                break;
+              case "number":
+                zodProp = z.number();
+                break;
+              case "boolean":
+                zodProp = z.boolean();
+                break;
+              case "object":
+                zodProp = z.record(z.unknown());
+                break;
+              case "array":
+                zodProp = z.array(z.unknown());
+                break;
+              default:
+                zodProp = z.string();
             }
+
+            // Make property optional if not required
+            const required = toolDef.inputSchema.required || [];
+            const isRequired = required.includes(propName);
+            if (!isRequired) {
+              zodProp = zodProp.optional();
+            }
+
+            // Add description if available
+            if ((propSchema as any)?.description) {
+              zodProp = zodProp.describe((propSchema as any).description);
+            }
+
+            schemaObj[propName] = zodProp;
           }
         );
       }
 
-      // Add authentication parameters required for this proxy
-      const extendedSchema = {
-        ...schemaObj,
-        clientId: z.string(),
-        clientSecret: z.string()
-      };
-
-      if (isAlreadyRegistered) {
-        console.log(`Re-registering existing tool ${toolDef.name} for client ${clientId}`);
-      } else {
-        console.log(`Registering new tool ${toolDef.name} for client ${clientId}`);
-      }
+      // Always include clientId and clientSecret in the tool schema
+      schemaObj.clientId = z.string().describe("The client ID for this workbench");
+      schemaObj.clientSecret = z.string().describe("The client-side secret for authentication");
 
       try {
+        // Register the tool with the McpServer - using type assertion to work around MCP type issues
         mcpServer.tool(
           toolDef.name,
-          toolDef.description || toolDef.name,
-          extendedSchema,
-          async (params: Record<string, unknown>) => {
+          toolDef.description || `Tool: ${toolDef.name}`,
+          schemaObj,
+          async (params) => {
             try {
-              const {
-                clientId: paramClientId,
-                clientSecret,
-                ...toolParams
-              } = params;
-
-              // Use type guard to ensure clientId is a string
-              if (typeof paramClientId !== "string") {
-                throw new Error("Client ID must be a string");
-              }
-
-              // Verify that the client ID in params matches this server's client ID
-              if (paramClientId !== clientId) {
-                throw new Error(
-                  `Client ID mismatch: expected ${clientId}, got ${paramClientId}`
-                );
-              }
-
-              const client = this.clients.get(paramClientId);
-
-              if (!client) {
-                throw new Error(`Client ${paramClientId} not found`);
-              }
-
+              // Forward tool request to client via WebSocket
               const requestId = uuidv4();
-              const response = await this.sendRequest(paramClientId, {
+
+              // Extract the relevant parameters
+              const { clientId: paramClientId, clientSecret, ...toolParams } = params;
+
+              // Create a request with a requestId for tracking
+              const response = await this.sendRequest(clientId, {
                 method: "tools/call",
                 requestId,
                 params: {
@@ -373,14 +371,23 @@ export class ActionsProxy {
               });
 
               if (response.payload.error) {
-                throw new Error(response.payload.error);
+                // If there was an error, return error response
+                return {
+                  content: [
+                    {
+                      type: "text" as const,
+                      text: response.payload.error
+                    }
+                  ],
+                  _meta: {},
+                  isError: true
+                };
               }
 
-              // Handle the result which should be a CallToolResult
-              const result = response.payload.result;
-
-              return result as CallToolResult;
+              return response.payload.result;
             } catch (error) {
+              // Handle errors
+              console.error(`Error forwarding tool request for ${toolDef.name}:`, error);
               return {
                 content: [
                   {
@@ -390,7 +397,7 @@ export class ActionsProxy {
                 ],
                 _meta: {},
                 isError: true
-              } as CallToolResult;
+              };
             }
           }
         );
@@ -402,6 +409,44 @@ export class ActionsProxy {
       if (!isAlreadyRegistered) {
         toolsMap.set(toolDef.name, toolDef);
       }
+    }
+
+    // Manually handle the tools/list RPC method
+    // This is needed because the MCP client uses this method to list available tools
+    try {
+      // First check if this server is using rpc-style methods (McpServer implementation detail)
+      const hasHandleRpc = typeof (mcpServer as any)._handleRpc === 'function';
+
+      if (hasHandleRpc) {
+        // Override the _handleRpc method to handle tools/list specifically
+        const originalHandleRpc = (mcpServer as any)._handleRpc;
+
+        (mcpServer as any)._handleRpc = async function (method: string, params: any, id: string) {
+          // If tools/list method, handle it directly
+          if (method === 'tools/list') {
+            console.log(`Handling tools/list call for client ${clientId}`);
+
+            // Convert tools from the map to the format expected by MCP clients
+            const toolsList = Array.from(toolsMap.values()).map(tool => ({
+              name: tool.name,
+              description: tool.description || "",
+              inputSchema: tool.inputSchema
+            }));
+
+            // Return the tools list in the format expected by the MCP client
+            return {
+              tools: toolsList
+            };
+          }
+
+          // Otherwise, call the original handler
+          return originalHandleRpc.call(this, method, params, id);
+        };
+      } else {
+        console.warn(`Unable to handle tools/list for client ${clientId}: _handleRpc not available`);
+      }
+    } catch (error) {
+      console.error(`Error setting up tools/list handler for client ${clientId}:`, error);
     }
   }
 
@@ -486,6 +531,46 @@ export class ActionsProxy {
     }
 
     try {
+      // Special case for handling tools/list requests directly
+      // This works around the timeout issue with StreamableHTTPServerTransport
+      if (req.method === "POST") {
+        // Read the request body
+        const body = await new Promise<string>((resolve) => {
+          let data = "";
+          req.on("data", (chunk: Buffer) => (data += chunk.toString()));
+          req.on("end", () => resolve(data));
+        });
+
+        try {
+          const jsonRequest = JSON.parse(body);
+          // Check if this is a tools/list request
+          if (jsonRequest.method === "tools/list") {
+            console.log(`Directly handling tools/list for client ${clientId}`);
+
+            // Get the tools for this client
+            const toolsList = Array.from(client.tools.values()).map(tool => ({
+              name: tool.name,
+              description: tool.description || "",
+              inputSchema: tool.inputSchema
+            }));
+
+            // Send the response directly
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({
+              jsonrpc: "2.0",
+              result: {
+                tools: toolsList
+              },
+              id: jsonRequest.id
+            }));
+            return;
+          }
+        } catch (e) {
+          // If we can't parse the body or it's not a tools/list request,
+          // continue with normal processing
+        }
+      }
+
       // Extract session ID from request headers or create a new one
       const sessionId = req.headers['x-mcp-session-id'] || uuidv4();
 

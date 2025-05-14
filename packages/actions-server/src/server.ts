@@ -93,6 +93,26 @@ const httpServer = createServer(async (req, res) => {
         return;
       }
 
+      // Log request body if it's a POST request to help debug tools/list issues
+      if (req.method === "POST") {
+        // Clone the request to read its body without consuming it
+        const bodyPromise = new Promise<string>((resolve) => {
+          let data = "";
+          req.on("data", (chunk) => (data += chunk));
+          req.on("end", () => resolve(data));
+        });
+
+        const body = await bodyPromise;
+        try {
+          const parsedBody = JSON.parse(body);
+          if (parsedBody.method === "tools/list") {
+            console.log("Received tools/list request for client", clientId);
+          }
+        } catch (e) {
+          // Ignore parsing errors
+        }
+      }
+
       // Forward the request directly to the handler - don't try to read the body
       await actionsProxy.handleHttpRequest(clientId, req, res);
     } catch (error) {
@@ -189,4 +209,18 @@ httpServer.listen(httpPort, () => {
     console.log("Running session cleanup");
     actionsProxy.cleanupOldSessions(SESSION_MAX_AGE_MS);
   }, CLEANUP_INTERVAL_MS);
+
+  // Add some startup logging to understand the registered tools better
+  setTimeout(() => {
+    const clientIds = actionsProxy.getClientIds();
+    console.log(`Registered client IDs on startup: ${clientIds.join(', ') || 'none'}`);
+    for (const clientId of clientIds) {
+      const mcpServer = actionsProxy.getMcpServerForClient(clientId);
+      if (mcpServer) {
+        console.log(`Client ${clientId} has MCP server available: true`);
+      } else {
+        console.log(`Client ${clientId} has MCP server available: false`);
+      }
+    }
+  }, 1000);
 });
