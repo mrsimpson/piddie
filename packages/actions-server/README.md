@@ -30,77 +30,91 @@ The Actions Server enables MCP clients (LLM agents) to execute tools that run in
 - Executes tools within the workbench sandbox
 - Propagates tool registrations to the Actions Server
 
+### 4. WorkbenchToolsMcpServer
+
+- Provides a standardized MCP interface for workbench tools
+- Connects to ActionsProxy to expose registered tools via MCP protocol
+- Forwards tool execution requests from MCP clients to ActionsProxy
+- Supports streaming responses for long-running tools
+- Enables LLM agents to discover and use workbench tools via MCP
+
 ## System Flow
 
 ### 1. Initial Workbench Registration
 
 ```mermaid
 sequenceDiagram
-    participant Workbench as ActionsProxyClient
-    participant Server as ActionsServer
-    participant Manager as ActionsManager
+   participant Workbench as ActionsProxyClient
+   participant Server as ActionsServer
+   participant Manager as ActionsManager
 
-    Note over Workbench: Workbench starts
-    Workbench->>Manager: Get available tools
-    Manager-->>Workbench: Return tool definitions
-    Workbench->>Workbench: Generate clientSecret
-    Workbench->>Server: POST /register-tools
-    Note over Workbench: Send tool definitions
-    Server->>Server: Store tool-workbench mapping
-    Server->>Workbench: Return clientId
-    Workbench->>Server: Connect WebSocket
-    Server->>Server: Store WebSocket connection
-    Workbench->>Workbench: Register ActionsManager as tool execution callback
+   Note over Workbench: Workbench starts
+   Workbench->>Manager: Get available tools
+   Manager-->>Workbench: Return tool definitions
+   Workbench->>Workbench: Generate clientSecret (kept locally)
+   Workbench->>Server: POST /register-tools
+   Note over Workbench: Send tool definitions (no clientSecret)
+   Server->>Server: Store tool-workbench mapping
+   Server->>Workbench: Return clientId
+   Workbench->>Server: Connect WebSocket
+   Server->>Server: Store WebSocket connection
+   Workbench->>Workbench: Register ActionsManager as tool execution callback
 ```
 
 ### 2. Dynamic Tool Registration
 
 ```mermaid
 sequenceDiagram
-    participant WB as Workbench
-    participant Manager as ActionsManager
-    participant Client as ActionsProxyClient
-    participant Server as ActionsServer
+   participant WB as Workbench
+   participant Manager as ActionsManager
+   participant Client as ActionsProxyClient
+   participant Server as ActionsServer
 
-    Note over WB: New client side tool registered
-    WB->>Manager: registerServer(mcpServer)
-    Manager->>Manager: Store server reference
-    Manager->>Manager: Invalidate tools cache
-    Manager->>Manager: Get updated tools list
-    Manager->>Client: addTools(clientId, updatedTools)
-    Client->>Server: POST /add-tools?clientId=...
-    Server->>Server: Register new tools
-    Server->>Server: Update MCP tool definitions
-    Note over Server: Tools now available to MCP clients
-```
+   Note over WB: New client side tool registered
+   WB->>Manager: registerServer(mcpServer)
+   Manager->>Manager: Store server reference
+   Manager->>Manager: Invalidate tools cache
+   Manager->>Manager: Get updated tools list
+   Manager->>Client: addTools(clientId, updatedTools)
+   Client->>Server: POST /add-tools?clientId=...
+   Server->>Server: Register new tools
+   Server->>Server: Update MCP tool definitions
+   Note over Server: Tools now available to MCP clients
+````
 
-### 3. MCP Client Tool Execution
+### 3. MCP Client Tool Execution via WorkbenchToolsMcpServer
 
 ```mermaid
 sequenceDiagram
-    participant MCP as MCP Client
-    participant Server as ActionsServer
-    participant Workbench as ActionsProxyClient
-    participant Manager as ActionsManager
+   participant User
+   participant Agent as MCP Client (LLM Agent)
+   participant MCP as WorkbenchToolsMcpServer
+   participant Proxy as ActionsProxy
+   participant Workbench as ActionsProxyClient
 
-    MCP->>Server: Connect via MCP
-    Server->>MCP: Expose available tools
+   Note over User: Provides clientId/clientSecret to Agent
+   Agent->>MCP: Connect via MCP protocol
+   MCP->>Proxy: Query for registered tools
+   Proxy-->>MCP: Return all tools with clientIds
+   MCP-->>Agent: Expose available tools (with clientId/clientSecret params)
 
-    MCP->>Server: Execute tool with clientId & clientSecret
-    Server->>Workbench: Forward via WebSocket
-    Workbench->>Workbench: Validate clientSecret
-    Workbench->>Manager: Forward to tool handler
-    Manager->>Manager: Execute in workbench sandbox
-    Manager->>Workbench: Return result
-    Workbench->>Server: Forward via WebSocket
-    Server->>MCP: Return result
+   Agent->>MCP: Execute tool with clientId & clientSecret
+   MCP->>Proxy: Forward tool execution request
+   Proxy->>Workbench: Forward via WebSocket
+   Workbench->>Workbench: Validate clientSecret
+   Workbench->>Workbench: Execute tool in sandbox
+   Workbench-->>Proxy: Return result (possibly streaming)
+   Proxy-->>MCP: Forward result
+   MCP-->>Agent: Return result (with streaming support)
 ```
 
 ## Security Implementation
 
 ### Workbench Authentication
 
-- Each workbench generates a unique clientSecret using UUID
+- Each workbench generates a unique clientSecret using UUID (kept locally in the workbench)
+- The clientSecret is never sent to the server during registration
+- The clientSecret is communicated to the user (outside the system) who provides it to the LLM agent
 - ClientSecret is validated by the workbench on every tool execution request
 - WebSocket connections require valid clientId
 - Tool requests include both clientId and clientSecret
@@ -111,16 +125,16 @@ sequenceDiagram
 
 ```typescript
 interface ToolRequestMessage {
-  type: "TOOL_REQUEST";
-  payload: {
-    toolName: string;
-    parameters: {
-      clientId: string;
-      clientSecret: string;
-      [key: string]: unknown;
-    };
-    requestId: string;
-  };
+ type: "TOOL_REQUEST";
+ payload: {
+   toolName: string;
+   parameters: {
+     clientId: string;
+     clientSecret: string;
+     [key: string]: unknown;
+   };
+   requestId: string;
+ };
 }
 ```
 
@@ -128,12 +142,12 @@ interface ToolRequestMessage {
 
 ```typescript
 interface ToolResponseMessage {
-  type: "TOOL_RESPONSE";
-  payload: {
-    requestId: string;
-    result: CallToolResult;
-    error?: string;
-  };
+ type: "TOOL_RESPONSE";
+ payload: {
+   requestId: string;
+   result: CallToolResult;
+   error?: string;
+ };
 }
 ```
 
@@ -143,10 +157,10 @@ interface ToolResponseMessage {
 
 ```typescript
 const server = new ActionsServer({
-  port: 3000,
-  mcpOptions: {
-    // MCP server configuration
-  }
+ port: 3000,
+ mcpOptions: {
+   // MCP server configuration
+ }
 });
 
 await server.start();
@@ -161,12 +175,12 @@ await actionsManager.initialize();
 
 // Create and configure ActionsProxyClient
 const client = new ActionsProxyClient(
-  "http://localhost:3000",
-  "ws://localhost:3000",
-  async (toolName: string, params: Record<string, unknown>) => {
-    // Handle tool execution in workbench sandbox
-    return { success: true };
-  }
+ "http://localhost:3000",
+ "ws://localhost:3000",
+ async (toolName: string, params: Record<string, unknown>) => {
+   // Handle tool execution in workbench sandbox
+   return { success: true };
+ }
 );
 
 // Register initial tools and connect
@@ -183,23 +197,37 @@ await actionsManager.registerServer(newServer, "custom-server");
 // Tools are automatically propagated to Actions Server
 ```
 
-### 3. MCP Client Usage
+### 3. WorkbenchToolsMcpServer Setup
 
 ```typescript
-// Connect to Actions Server via MCP
+// Create ActionsProxy instance
+const actionsProxy = new ActionsProxy(9101); // WebSocket port
+
+// Create and start the WorkbenchToolsMcpServer
+const mcpServer = new WorkbenchToolsMcpServer(actionsProxy);
+await mcpServer.start(9102); // HTTP port for MCP
+```
+
+### 4. MCP Client Usage
+
+```typescript
+// Connect to WorkbenchToolsMcpServer via MCP
 const mcpClient = new McpClient({
-  // MCP configuration
+ baseUrl: "http://localhost:9102/mcp"
 });
 
-// Get available tools (including dynamically added ones)
+// Get available tools
 const tools = await mcpClient.listTools();
 
-// Execute a tool
-const result = await mcpClient.executeTool("writeFile", {
-  clientId: "workbench-id",
-  clientSecret: "workbench-secret",
-  path: "/example.txt",
-  content: "Hello World"
+// Execute a tool (clientId and clientSecret provided by user)
+const result = await mcpClient.callTool({
+ name: "writeFile",
+ arguments: {
+   clientId: "workbench-id",      // Provided by user
+   clientSecret: "workbench-secret", // Provided by user
+   path: "/example.txt",
+   content: "Hello World"
+ }
 });
 ```
 
@@ -209,39 +237,3 @@ const result = await mcpClient.executeTool("writeFile", {
 - WebSocket connection failures trigger reconnection attempts
 - Tool execution errors are properly propagated
 - Connection status is monitored and reported
-
-## Security Considerations
-
-- Client secrets are generated and validated by the workbench
-- WebSocket connections require valid client IDs
-- Tool execution is sandboxed within the workbench
-- All messages are validated before processing
-
-## Summary of Improvements
-
-The Actions Server system has been enhanced with dynamic tool registration capabilities:
-
-1. **Initial Empty Registration**
-
-   - Workbench can register with an initially empty tool set
-   - ActionsManager tracks the clientId for future updates
-
-2. **Dynamic Tool Updates**
-
-   - New MCP servers automatically propagate tools to Actions Server
-   - Existing WebSocket connections remain active during updates
-   - MCP clients instantly see new tools without reconnection
-
-3. **Technical Implementation**
-
-   - New `/add-tools` HTTP endpoint on Actions Server
-   - `addTools` method in ActionsProxyClient
-   - Enhanced `registerServer` in ActionsManager
-   - Tool cache invalidation for consistent state
-
-4. **Benefits**
-   - Smoother workbench startup (no need to wait for all tools)
-   - Reduced race conditions during initialization
-   - Better support for dynamically loaded plugins
-   - Improved user experience with real-time tool updates
-   - Simplified integration with external tool providers
