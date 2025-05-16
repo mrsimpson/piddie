@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "git": {
+      "command": "uvx",
+      "args": ["mcp-server-git"]
+    },
+    "mcp-typescript": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://gitmcp.io/modelcontextprotocol/typescript-sdk"
+      ]
+    },
+    "webcontainer-api": {
+      "command": "npx",
+      "args": ["mcp-remote", "https://gitmcp.io/stackblitz/webcontainer-docs"]
+    }
+  }
+}
