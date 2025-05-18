@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { CallToolRequest } from "@modelcontextprotocol/sdk/types";
-import { Request, Response } from 'express'
+import { IncomingMessage as Request, ServerResponse as Response } from 'http';
 import { z } from "zod";
 import { v4 as uuidv4 } from "uuid";
 import { WebSocketServer, WebSocket } from "ws";
@@ -31,7 +31,7 @@ export class ActionsProxy {
   // Map of connected client IDs to client registrations
   private connectedClients: Map<string, ClientRegistration> = new Map();
   // Map of server transports for each MCP server
-  private mcpServerTransports: Map<string, any> = new Map();
+  private mcpServerTransports: Map<string, StreamableHTTPServerTransport> = new Map();
 
   constructor(port: number = 9101) {
     console.log("Starting WebSocket server on port:", port);
@@ -201,8 +201,6 @@ export class ActionsProxy {
 
     console.log(`Temporarily disconnecting MCP server for client ${clientId}`);
     try {
-      // Store state that we'll need for reconnection
-      transport._disconnectedForToolAddition = true;
 
       // Get the MCP server
       const mcpServer = this.getMcpServerForClient(clientId);
@@ -240,7 +238,7 @@ export class ActionsProxy {
    */
   private async reconnectMcpServerTransport(clientId: string): Promise<void> {
     const transport = this.mcpServerTransports.get(clientId);
-    if (!transport || !transport._disconnectedForToolAddition) {
+    if (!transport) {
       return;
     }
 
@@ -250,10 +248,6 @@ export class ActionsProxy {
       if (!mcpServer) {
         throw new Error(`MCP server not found for client ${clientId}`);
       }
-
-      // We don't need to reconnect here - we'll let the clientManager handle it
-      // by creating a fresh StdioServerTransport
-      delete transport._disconnectedForToolAddition;
 
       // Remove the old transport reference since it can't be reused
       this.mcpServerTransports.delete(clientId);
@@ -346,7 +340,7 @@ workbenchSpecificMcpServer.tool(
         };
       }
 
-      return response.payload.result || { content: [], _meta: {}, isError: false };
+      return response.payload.result ?? { content: [], _meta: {}, isError: false };
     } catch (error) {
       // Handle errors
       console.error(`Error forwarding tool request for ${toolDef.name}:`, error);

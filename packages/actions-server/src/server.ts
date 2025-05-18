@@ -1,4 +1,5 @@
 import { ActionsProxy } from "./ActionsProxy";
+import { IncomingMessage as Request, ServerResponse as Response } from 'http';
 
 const httpPort = parseInt(process.env.HTTP_PORT || "9100");
 const wsPort = parseInt(process.env.WS_PORT || "9101");
@@ -9,7 +10,6 @@ const actionsProxy = new ActionsProxy(wsPort);
 import { createServer } from "http";
 import { IncomingMessage, ServerResponse } from "http";
 import { Tool } from "./types";
-import { connectToStdio, reconnectToStdioAfterToolsAdded } from "./clientManager";
 
 /**
  * Validates that the input data is an array of Tool objects
@@ -61,7 +61,7 @@ async function readJsonBody<T = unknown>(req: IncomingMessage): Promise<T> {
   return JSON.parse(body) as T;
 }
 
-const httpServer = createServer(async (req, res) => {
+const httpServer = createServer(async (req: Request, res: Response) => {
   // Set CORS headers
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE");
@@ -139,9 +139,6 @@ const httpServer = createServer(async (req, res) => {
 
       const clientId = await actionsProxy.registerTools(tools);
 
-      // Connect the client's MCP server to stdio
-      await connectToStdio(actionsProxy, clientId);
-
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ clientId }));
     } catch (error) {
@@ -166,11 +163,7 @@ const httpServer = createServer(async (req, res) => {
         return;
       }
 
-      // First add the tools to the ActionsProxy
       await actionsProxy.addTools(clientId, tools);
-
-      // Then force reconnect to stdio - this creates a fresh transport
-      await reconnectToStdioAfterToolsAdded(actionsProxy, clientId);
 
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ success: true }));
