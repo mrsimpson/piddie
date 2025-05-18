@@ -1,9 +1,10 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { CallToolRequest } from "@modelcontextprotocol/sdk/types";
+import { Request, Response } from 'express'
 import { z } from "zod";
 import { v4 as uuidv4 } from "uuid";
 import { WebSocketServer, WebSocket } from "ws";
-import { Tool, ToolResponseMessage, CallToolResult } from "./types";
+import { Tool, ToolResponseMessage } from "./types";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
 interface ClientRegistration {
@@ -280,7 +281,7 @@ export class ActionsProxy {
       throw new Error(`Client ${clientId} not found`);
     }
 
-    const mcpServer = client.mcpServer;
+    const workbenchSpecificMcpServer = client.mcpServer;
 
     // Register each tool with client-specific MCP server
     for (const toolDef of tools) {
@@ -291,116 +292,77 @@ export class ActionsProxy {
         continue;
       }
 
-      // Convert from our Tool to Zod schema for MCP server
-      // Create a zod schema based on the tool's inputSchema
-      const schemaObj: Record<string, z.ZodTypeAny> = {};
-
-      if (toolDef.inputSchema.properties) {
-        // Convert properties to zod schema
-        Object.entries(toolDef.inputSchema.properties).forEach(
-          ([propName, propSchema]) => {
-            // Default to string if type is not specified
-            const propType = (propSchema as any)?.type || "string";
-
-            let zodProp: z.ZodTypeAny;
-
-            switch (propType) {
-              case "string":
-                zodProp = z.string();
-                break;
-              case "number":
-                zodProp = z.number();
-                break;
-              case "boolean":
-                zodProp = z.boolean();
-                break;
-              case "object":
-                zodProp = z.record(z.unknown());
-                break;
-              case "array":
-                zodProp = z.array(z.unknown());
-                break;
-              default:
-                zodProp = z.string();
-            }
-
-            // Make property optional if not required
-            const required = toolDef.inputSchema.required || [];
-            const isRequired = required.includes(propName);
-            if (!isRequired) {
-              zodProp = zodProp.optional();
-            }
-
-            // Add description if available
-            if ((propSchema as any)?.description) {
-              zodProp = zodProp.describe((propSchema as any).description);
-            }
-
-            schemaObj[propName] = zodProp;
-          }
-        );
-      }
+      const schemaObj = toolDef.inputSchema as { [key: string]: z.ZodTypeAny };
 
       // Always include clientId and clientSecret in the tool schema
       schemaObj.clientId = z.string().describe("The client ID for this workbench");
       schemaObj.clientSecret = z.string().describe("The client-side secret for authentication");
 
+      // Convert schemaObj to ZodRawShape
+      const zodSchemaObj: z.ZodRawShape = {};
+      for (const key in schemaObj) {
+        if (Object.prototype.hasOwnProperty.call(schemaObj, key)) {
+          zodSchemaObj[key] = schemaObj[key];
+        }
+      }
+
       try {
         // Register the tool with the McpServer - using type assertion to work around MCP type issues
-        mcpServer.tool(
-          toolDef.name,
-          toolDef.description || `Tool: ${toolDef.name}`,
-          schemaObj,
-          async (params) => {
-            try {
-              // Forward tool request to client via WebSocket
-              const requestId = uuidv4();
+workbenchSpecificMcpServer.tool(
+  toolDef.name,
+  toolDef.description || `Tool: ${toolDef.name}`,
+  zodSchemaObj,
+  {},
+  async (params) => {
+    try {
+      // Forward tool request to client via WebSocket
+      const requestId = uuidv4();
 
-              // Extract the relevant parameters
-              const { clientId: paramClientId, clientSecret, ...toolParams } = params;
+      // Extract the relevant parameters
+      const { clientId: paramClientId, clientSecret, ...toolParams } = params;
 
-              // Create a request with a requestId for tracking
-              const response = await this.sendRequest(clientId, {
-                method: "tools/call",
-                requestId,
-                params: {
-                  name: toolDef.name,
-                  arguments: toolParams,
-                  _meta: {}
-                }
-              });
+      // Create a request with a requestId for tracking
+      const response = await this.sendRequest(clientId, {
+        method: "tools/call",
+        requestId,
+        params: {
+          name: toolDef.name,
+          arguments: toolParams,
+          _meta: {}
+        }
+      });
 
-              if (response.payload.error) {
-                // If there was an error, return error response
-                return {
-                  content: [
-                    {
-                      type: "text" as const,
-                      text: response.payload.error
-                    }
-                  ],
-                  _meta: {},
-                  isError: true
-                };
-              }
-
-              return response.payload.result;
-            } catch (error) {
-              // Handle errors
-              console.error(`Error forwarding tool request for ${toolDef.name}:`, error);
-              return {
-                content: [
-                  {
-                    type: "text" as const,
-                    text: error instanceof Error ? error.message : String(error)
-                  }
-                ],
-                _meta: {},
-                isError: true
-              };
+      if (response.payload.error) {
+        // If there was an error, return error response
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: response.payload.error
             }
+          ],
+          _meta: {},
+          isError: true
+        };
+      }
+
+      return response.payload.result || { content: [], _meta: {}, isError: false };
+    } catch (error) {
+      // Handle errors
+      console.error(`Error forwarding tool request for ${toolDef.name}:`, error);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: error instanceof Error ? error.message : String(error)
           }
-        );
+        ],
+        _meta: {},
+        isError: true
+      };
+    }
+  }
+);
       } catch (error) {
         console.error(`Error registering tool ${toolDef.name} for client ${clientId}:`, error);
       }
@@ -409,44 +371,6 @@ export class ActionsProxy {
       if (!isAlreadyRegistered) {
         toolsMap.set(toolDef.name, toolDef);
       }
-    }
-
-    // Manually handle the tools/list RPC method
-    // This is needed because the MCP client uses this method to list available tools
-    try {
-      // First check if this server is using rpc-style methods (McpServer implementation detail)
-      const hasHandleRpc = typeof (mcpServer as any)._handleRpc === 'function';
-
-      if (hasHandleRpc) {
-        // Override the _handleRpc method to handle tools/list specifically
-        const originalHandleRpc = (mcpServer as any)._handleRpc;
-
-        (mcpServer as any)._handleRpc = async function (method: string, params: any, id: string) {
-          // If tools/list method, handle it directly
-          if (method === 'tools/list') {
-            console.log(`Handling tools/list call for client ${clientId}`);
-
-            // Convert tools from the map to the format expected by MCP clients
-            const toolsList = Array.from(toolsMap.values()).map(tool => ({
-              name: tool.name,
-              description: tool.description || "",
-              inputSchema: tool.inputSchema
-            }));
-
-            // Return the tools list in the format expected by the MCP client
-            return {
-              tools: toolsList
-            };
-          }
-
-          // Otherwise, call the original handler
-          return originalHandleRpc.call(this, method, params, id);
-        };
-      } else {
-        console.warn(`Unable to handle tools/list for client ${clientId}: _handleRpc not available`);
-      }
-    } catch (error) {
-      console.error(`Error setting up tools/list handler for client ${clientId}:`, error);
     }
   }
 
@@ -497,7 +421,7 @@ export class ActionsProxy {
    * @param clientId The client ID
    * @param transport The transport instance
    */
-  public storeMcpServerTransport(clientId: string, transport: any): void {
+  public storeMcpServerTransport(clientId: string, transport: StreamableHTTPServerTransport): void {
     this.mcpServerTransports.set(clientId, transport);
   }
 
@@ -507,7 +431,7 @@ export class ActionsProxy {
    * @param req Express request object
    * @param res Express response object 
    */
-  public async handleHttpRequest(clientId: string, req: any, res: any): Promise<void> {
+  public async handleHttpRequest(clientId: string, req: Request, res: Response): Promise<void> {
     const client = this.clients.get(clientId);
     if (!client) {
       console.error(`Client ${clientId} not found`);
@@ -565,14 +489,21 @@ export class ActionsProxy {
             }));
             return;
           }
-        } catch (e) {
+        } catch {
           // If we can't parse the body or it's not a tools/list request,
           // continue with normal processing
         }
       }
 
       // Extract session ID from request headers or create a new one
-      const sessionId = req.headers['x-mcp-session-id'] || uuidv4();
+      let sessionId: string;
+      if (typeof req.headers['x-mcp-session-id'] === 'string') {
+        sessionId = req.headers['x-mcp-session-id'];
+      } else if (Array.isArray(req.headers['x-mcp-session-id'])) {
+        sessionId = req.headers['x-mcp-session-id'][0];
+      } else {
+        sessionId = uuidv4();
+      }
 
       // Check if we have a session with this ID
       let session = client.httpSessions.get(sessionId);
@@ -607,7 +538,7 @@ export class ActionsProxy {
 
       // Update last access time
       session.lastAccess = Date.now();
-    } catch (error: any) {
+    } catch (error) {
       console.error(`Unexpected error handling HTTP request for client ${clientId}:`, error);
 
       // Only send error response if headers haven't been sent already
@@ -617,7 +548,7 @@ export class ActionsProxy {
           jsonrpc: "2.0",
           error: {
             code: -32603,
-            message: `Unexpected error: ${error.message || String(error)}`
+            message: `Unexpected error`
           },
           id: null
         }));
