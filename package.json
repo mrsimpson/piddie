@@ -53,6 +53,7 @@
     "@tsconfig/strictest": "2.0.5",
     "@types/eslint-config-prettier": "6.11.3",
     "@types/node": "^22.10.7",
+    "@types/uuid": "10.0.0",
     "@typescript-eslint/eslint-plugin": "^8.21.0",
     "@typescript-eslint/parser": "^8.21.0",
     "@vitejs/plugin-vue": "5.2.3",
@@ -80,7 +81,6 @@
   },
   "packageManager": "pnpm@9.14.2",
   "dependencies": {
-    "@types/uuid": "10.0.0",
     "uuid": "11.1.0"
   }
 }
