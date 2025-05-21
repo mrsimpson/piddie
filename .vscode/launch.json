@@ -29,8 +29,8 @@
       "args": ["src/server.ts"],
       "env": {
         "NODE_ENV": "development",
-        "HTTP_PORT": "9100",
-        "WS_PORT": "9101"
+        "HTTP_PORT": "19100",
+        "WS_PORT": "19101"
       },
       "skipFiles": ["<node_internals>/**"],
       "console": "integratedTerminal"

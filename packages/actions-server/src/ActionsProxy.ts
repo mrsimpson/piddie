@@ -18,6 +18,10 @@ interface ClientRegistration {
   }>;
 }
 
+/**
+ * The ActionsProxy is responsible for registering workbench specific tools running within the browser ("clients")
+ * It manages WebSocket connections to clients, routes tool execution requests, and exposes registered tools to MCP clients.
+ */
 export class ActionsProxy {
   // Map of client ID to client registration
   private clients: Map<string, ClientRegistration> = new Map();
@@ -33,7 +37,7 @@ export class ActionsProxy {
   // Map of server transports for each MCP server
   private mcpServerTransports: Map<string, StreamableHTTPServerTransport> = new Map();
 
-  constructor(port: number = 9101) {
+  constructor(port: number = 19101) {
     console.log("Starting WebSocket server on port:", port);
     this.wss = new WebSocketServer({ port });
     this.setupWebSocketServer();
@@ -88,7 +92,13 @@ export class ActionsProxy {
     });
   }
 
-  private async sendRequest(
+  /**
+   * Send a request to a client via WebSocket
+   * @param clientId The client ID
+   * @param request The request to send
+   * @returns A promise that resolves with the response
+   */
+  async sendRequest(
     clientId: string,
     request: CallToolRequest & { requestId: string }
   ): Promise<ToolResponseMessage> {
@@ -302,61 +312,61 @@ export class ActionsProxy {
 
       try {
         // Register the tool with the McpServer - using type assertion to work around MCP type issues
-workbenchSpecificMcpServer.tool(
-  toolDef.name,
-  toolDef.description || `Tool: ${toolDef.name}`,
-  zodSchemaObj,
-  {},
-  async (params) => {
-    try {
-      // Forward tool request to client via WebSocket
-      const requestId = uuidv4();
+        workbenchSpecificMcpServer.tool(
+          toolDef.name,
+          toolDef.description || `Tool: ${toolDef.name}`,
+          zodSchemaObj,
+          {},
+          async (params) => {
+            try {
+              // Forward tool request to client via WebSocket
+              const requestId = uuidv4();
 
-      // Extract the relevant parameters
-      const { clientId: paramClientId, clientSecret, ...toolParams } = params;
+              // Extract the relevant parameters
+              const { clientId: paramClientId, clientSecret, ...toolParams } = params;
 
-      // Create a request with a requestId for tracking
-      const response = await this.sendRequest(clientId, {
-        method: "tools/call",
-        requestId,
-        params: {
-          name: toolDef.name,
-          arguments: toolParams,
-          _meta: {}
-        }
-      });
+              // Create a request with a requestId for tracking
+              const response = await this.sendRequest(clientId, {
+                method: "tools/call",
+                requestId,
+                params: {
+                  name: toolDef.name,
+                  arguments: toolParams,
+                  _meta: {}
+                }
+              });
 
-      if (response.payload.error) {
-        // If there was an error, return error response
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: response.payload.error
+              if (response.payload.error) {
+                // If there was an error, return error response
+                return {
+                  content: [
+                    {
+                      type: "text" as const,
+                      text: response.payload.error
+                    }
+                  ],
+                  _meta: {},
+                  isError: true
+                };
+              }
+
+              return response.payload.result ?? { content: [], _meta: {}, isError: false };
+            } catch (error) {
+              // Handle errors
+              console.error(`Error forwarding tool request for ${toolDef.name}:`, error);
+              return {
+                content: [
+                  {
+                    type: "text" as const,
+                    text: error instanceof Error ? error.message : String(error)
+                  }
+                ],
+                _meta: {},
+                isError: true
+              };
             }
-          ],
-          _meta: {},
-          isError: true
-        };
-      }
-
-      return response.payload.result ?? { content: [], _meta: {}, isError: false };
-    } catch (error) {
-      // Handle errors
-      console.error(`Error forwarding tool request for ${toolDef.name}:`, error);
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: error instanceof Error ? error.message : String(error)
           }
-        ],
-        _meta: {},
-        isError: true
-      };
-    }
-  }
-);
+        );
       } catch (error) {
         console.error(`Error registering tool ${toolDef.name} for client ${clientId}:`, error);
       }
@@ -386,6 +396,33 @@ workbenchSpecificMcpServer.tool(
   }
 
   /**
+   * Get all tools for a specific client
+   * @param clientId The client ID
+   * @returns Array of tools for the client, or undefined if client not found
+   */
+  getToolsForClient(clientId: string): Tool[] | undefined {
+    const client = this.clients.get(clientId);
+    if (!client) {
+      return undefined;
+    }
+    return Array.from(client.tools.values());
+  }
+
+  /**
+   * Get all clients with their tools
+   * @returns Map of client IDs to their tools
+   */
+  getAllClientsWithTools(): Map<string, Tool[]> {
+    const result = new Map<string, Tool[]>();
+
+    for (const [clientId, client] of this.clients.entries()) {
+      result.set(clientId, Array.from(client.tools.values()));
+    }
+
+    return result;
+  }
+
+  /**
    * Close the WebSocket server and clean up all connections
    */
   close() {
@@ -406,6 +443,11 @@ workbenchSpecificMcpServer.tool(
     });
   }
 
+  /**
+   * Check if a client is connected via WebSocket
+   * @param clientId The client ID to check
+   * @returns True if the client is connected, false otherwise
+   */
   public isClientConnected(clientId: string): boolean {
     return this.connectedClients.has(clientId);
   }

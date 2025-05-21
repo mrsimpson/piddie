@@ -221,8 +221,8 @@ export const DEFAULT_WORKBENCH_SETTINGS: WorkbenchSettings = {
   [WorkbenchSettingKey.IS_RUNTIME_PANEL_COLLAPSED]: false,
   [WorkbenchSettingKey.SELECTED_PROVIDER]: "litellm",
   [WorkbenchSettingKey.LLM_CONFIG]: DEFAULT_LLM_CONFIG,
-  [WorkbenchSettingKey.ACTIONS_SERVER_HTTP_URL]: "http://localhost:9100",
-  [WorkbenchSettingKey.ACTIONS_SERVER_WS_URL]: "ws://localhost:9101"
+  [WorkbenchSettingKey.ACTIONS_SERVER_HTTP_URL]: "http://localhost:19100",
+  [WorkbenchSettingKey.ACTIONS_SERVER_WS_URL]: "ws://localhost:19101"
 };
 
 /**

@@ -1,15 +1,16 @@
 import { ActionsProxy } from "./ActionsProxy";
 import { IncomingMessage as Request, ServerResponse as Response } from 'http';
-
-const httpPort = parseInt(process.env.HTTP_PORT || "9100");
-const wsPort = parseInt(process.env.WS_PORT || "9101");
-
-const actionsProxy = new ActionsProxy(wsPort);
-
-// Create HTTP server
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { randomUUID } from 'crypto';
 import { createServer } from "http";
 import { IncomingMessage, ServerResponse } from "http";
 import { Tool } from "./types";
+
+const httpPort = parseInt(process.env.HTTP_PORT || "19100");
+const wsPort = parseInt(process.env.WS_PORT || "19101");
+const mcpPort = parseInt(process.env.MCP_PORT || "9200");
+
+const actionsProxy = new ActionsProxy(wsPort);
 
 /**
  * Validates that the input data is an array of Tool objects
@@ -61,11 +62,14 @@ async function readJsonBody<T = unknown>(req: IncomingMessage): Promise<T> {
   return JSON.parse(body) as T;
 }
 
+// Map to store client-specific MCP sessions
+const clientSessions: Map<string, Map<string, StreamableHTTPServerTransport>> = new Map();
+
 const httpServer = createServer(async (req: Request, res: Response) => {
   // Set CORS headers
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, mcp-session-id");
 
   // Handle preflight requests
   if (req.method === "OPTIONS") {
@@ -75,7 +79,7 @@ const httpServer = createServer(async (req: Request, res: Response) => {
   }
 
   // Handle MCP client connections to a specific client's MCP server
-  if (req.url?.startsWith("/mcp/") && (req.method === "GET" || req.method === "POST")) {
+  if (req.url?.startsWith("/mcp/") && (req.method === "GET" || req.method === "POST" || req.method === "DELETE")) {
     console.log(`Received MCP request: ${req.method} ${req.url}`);
 
     try {
@@ -93,28 +97,96 @@ const httpServer = createServer(async (req: Request, res: Response) => {
         return;
       }
 
-      // Log request body if it's a POST request to help debug tools/list issues
-      if (req.method === "POST") {
-        // Clone the request to read its body without consuming it
-        const bodyPromise = new Promise<string>((resolve) => {
-          let data = "";
-          req.on("data", (chunk) => (data += chunk));
-          req.on("end", () => resolve(data));
-        });
-
-        const body = await bodyPromise;
-        try {
-          const parsedBody = JSON.parse(body);
-          if (parsedBody.method === "tools/list") {
-            console.log("Received tools/list request for client", clientId);
-          }
-        } catch (e) {
-          // Ignore parsing errors
-        }
+      // Check if the client exists in ActionsProxy
+      const mcpServer = actionsProxy.getMcpServerForClient(clientId);
+      if (!mcpServer) {
+        res.writeHead(404, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          jsonrpc: "2.0",
+          error: {
+            code: -32000,
+            message: `Client ${clientId} not found`
+          },
+          id: null
+        }));
+        return;
       }
 
-      // Forward the request directly to the handler - don't try to read the body
-      await actionsProxy.handleHttpRequest(clientId, req, res);
+      // Handle the MCP request based on the HTTP method
+      if (req.method === "POST") {
+        // Check for existing session ID
+        const sessionId = req.headers['mcp-session-id'] as string | undefined;
+        let transport: StreamableHTTPServerTransport;
+
+        // Get or create the sessions map for this client
+        if (!clientSessions.has(clientId)) {
+          clientSessions.set(clientId, new Map());
+        }
+        const clientSessionsMap = clientSessions.get(clientId)!;
+
+        if (sessionId && clientSessionsMap.has(sessionId)) {
+          // Reuse existing transport
+          transport = clientSessionsMap.get(sessionId)!;
+        } else {
+          // Create a new transport
+          transport = new StreamableHTTPServerTransport({
+            sessionIdGenerator: () => randomUUID(),
+            onsessioninitialized: (newSessionId) => {
+              // Store the transport by session ID
+              clientSessionsMap.set(newSessionId, transport);
+
+              // Store in ActionsProxy for reconnection support
+              actionsProxy.storeMcpServerTransport(clientId, transport);
+            },
+          });
+
+          // Clean up transport when closed
+          transport.onclose = () => {
+            if (transport.sessionId) {
+              clientSessionsMap.delete(transport.sessionId);
+            }
+          };
+
+          // Connect to the client's MCP server
+          await mcpServer.connect(transport);
+        }
+
+        // Handle the request
+        await transport.handleRequest(req, res);
+      } else if (req.method === "GET" || req.method === "DELETE") {
+        // Handle GET (SSE) and DELETE (session termination) requests
+        const sessionId = req.headers['mcp-session-id'] as string | undefined;
+
+        if (!sessionId) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            jsonrpc: "2.0",
+            error: {
+              code: -32000,
+              message: "Missing mcp-session-id header"
+            },
+            id: null
+          }));
+          return;
+        }
+
+        const clientSessionsMap = clientSessions.get(clientId);
+        if (!clientSessionsMap || !clientSessionsMap.has(sessionId)) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            jsonrpc: "2.0",
+            error: {
+              code: -32000,
+              message: "Invalid session ID"
+            },
+            id: null
+          }));
+          return;
+        }
+
+        const transport = clientSessionsMap.get(sessionId)!;
+        await transport.handleRequest(req, res);
+      }
     } catch (error) {
       console.error(`Error handling MCP request: ${error}`);
       if (!res.headersSent) {
@@ -179,6 +251,22 @@ const httpServer = createServer(async (req: Request, res: Response) => {
     const clientIds = actionsProxy.getClientIds();
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ clients: clientIds }));
+  } else if (req.method === "GET" && req.url === "/status") {
+    // Return detailed status information
+    const clientIds = actionsProxy.getClientIds();
+    const connectedClients = clientIds.filter(id => actionsProxy.isClientConnected(id));
+    const sessionCounts = Array.from(clientSessions.entries()).map(([clientId, sessions]) => ({
+      clientId,
+      sessionCount: sessions.size
+    }));
+
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({
+      status: "running",
+      registeredClients: clientIds.length,
+      connectedClients: connectedClients.length,
+      sessions: sessionCounts
+    }));
   } else {
     res.writeHead(404);
     res.end();
@@ -189,6 +277,7 @@ const httpServer = createServer(async (req: Request, res: Response) => {
 httpServer.listen(httpPort, () => {
   console.log(`Actions REST API running on port ${httpPort}`);
   console.log(`WebSocket server running on port ${wsPort}`);
+  console.log(`MCP endpoints available at /mcp/:clientId`);
   console.log(
     `Debug mode: ${process.env.NODE_ENV === "development" ? "enabled" : "disabled"}`
   );
@@ -200,7 +289,34 @@ httpServer.listen(httpPort, () => {
   // Run session cleanup periodically
   setInterval(() => {
     console.log("Running session cleanup");
+
+    // Clean up ActionsProxy sessions
     actionsProxy.cleanupOldSessions(SESSION_MAX_AGE_MS);
+
+    // Clean up MCP sessions
+    const now = Date.now();
+    for (const [clientId, sessions] of clientSessions.entries()) {
+      for (const [sessionId, transport] of sessions.entries()) {
+        // Check if the session has a lastAccess property and if it's too old
+        const lastAccess = (transport as any).lastAccess || now;
+        if (now - lastAccess > SESSION_MAX_AGE_MS) {
+          try {
+            if (typeof transport.close === 'function') {
+              transport.close();
+            }
+            sessions.delete(sessionId);
+            console.log(`Cleaned up old MCP session ${sessionId} for client ${clientId}`);
+          } catch (error) {
+            console.error(`Error closing transport for session ${sessionId}:`, error);
+          }
+        }
+      }
+
+      // Remove client entry if it has no sessions
+      if (sessions.size === 0) {
+        clientSessions.delete(clientId);
+      }
+    }
   }, CLEANUP_INTERVAL_MS);
 
   // Add some startup logging to understand the registered tools better

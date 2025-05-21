@@ -103,10 +103,10 @@ export class Orchestrator implements LlmAdapter {
       const settings = await settingsManager.getWorkbenchSettings();
       const httpUrl =
         (settings[WorkbenchSettingKey.ACTIONS_SERVER_HTTP_URL] as string) ||
-        "http://localhost:9100";
+        "http://localhost:19100";
       const wsUrl =
         (settings[WorkbenchSettingKey.ACTIONS_SERVER_WS_URL] as string) ||
-        "ws://localhost:9101";
+        "ws://localhost:19101";
 
       // Check if there's already a connection
       if (this.actionsManager.isConnectedToActionsServer()) {

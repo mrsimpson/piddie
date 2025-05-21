@@ -45,8 +45,8 @@ This will start the server with VS Code's debugger attached and watch mode enabl
 
 The server uses the following environment variables:
 
-- `HTTP_PORT` - The port for the HTTP server (default: 9100)
-- `WS_PORT` - The port for the WebSocket server (default: 9101)
+- `HTTP_PORT` - The port for the HTTP server (default: 19100)
+- `WS_PORT` - The port for the WebSocket server (default: 19101)
 - `NODE_ENV` - The environment mode (development/production)
 
 ## Build for Production

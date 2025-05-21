@@ -197,23 +197,12 @@ await actionsManager.registerServer(newServer, "custom-server");
 // Tools are automatically propagated to Actions Server
 ```
 
-### 3. WorkbenchToolsMcpServer Setup
-
-```typescript
-// Create ActionsProxy instance
-const actionsProxy = new ActionsProxy(9101); // WebSocket port
-
-// Create and start the WorkbenchToolsMcpServer
-const mcpServer = new WorkbenchToolsMcpServer(actionsProxy);
-await mcpServer.start(9102); // HTTP port for MCP
-```
-
 ### 4. MCP Client Usage
 
 ```typescript
 // Connect to WorkbenchToolsMcpServer via MCP
 const mcpClient = new McpClient({
- baseUrl: "http://localhost:9102/mcp"
+ baseUrl: "http://localhost:9101/mcp/:clientid"
 });
 
 // Get available tools
