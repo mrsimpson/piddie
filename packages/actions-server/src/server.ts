@@ -69,7 +69,9 @@ const httpServer = createServer(async (req: Request, res: Response) => {
   // Set CORS headers
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, mcp-session-id");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, mcp-session-id, X-MCP-Session-ID");
+  res.setHeader("Access-Control-Expose-Headers", "mcp-session-id, X-MCP-Session-ID");
+  res.setHeader("Access-Control-Allow-Credentials", "true");
 
   // Handle preflight requests
   if (req.method === "OPTIONS") {
@@ -134,6 +136,7 @@ const httpServer = createServer(async (req: Request, res: Response) => {
             onsessioninitialized: (newSessionId) => {
               // Store the transport by session ID
               clientSessionsMap.set(newSessionId, transport);
+              console.log(`Created new session ${newSessionId} for client ${clientId}`);
 
               // Store in ActionsProxy for reconnection support
               actionsProxy.storeMcpServerTransport(clientId, transport);
